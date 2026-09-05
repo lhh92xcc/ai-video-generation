@@ -56,6 +56,7 @@ class GenerationTaskKind(StrEnum):
     SUBTITLE_SRT = "subtitle_srt"
     SUBTITLE_ALIGN = "subtitle_align"
     SUBTITLE_ASR = "subtitle_asr"
+    LIP_SYNC = "lip_sync"
 
 
 class StageName(StrEnum):
@@ -69,6 +70,7 @@ class StageName(StrEnum):
     VIDEO_ASSEMBLY = "video_assembly"
     AUDIO = "audio"
     SUBTITLE = "subtitle"
+    LIP_SYNC = "lip_sync"
 
 
 class ProjectCreateRequest(BaseModel):
@@ -525,6 +527,7 @@ class AuditEntityType(StrEnum):
     EPISODE_SCRIPT_DRAFT = "episode_script_draft"
     ASSET = "asset"
     ASSET_REVIEW = "asset_review"
+    VOICE_ASSET = "voice_asset"
     PROJECT_MEMBER = "project_member"
     PROJECT_INVITATION = "project_invitation"
 
@@ -535,6 +538,7 @@ class AuditAction(StrEnum):
     SCRIPT_VERSION_PUBLISHED = "script_version_published"
     ASSET_VERSION_CREATED = "asset_version_created"
     ASSET_REVIEW_CREATED = "asset_review_created"
+    VOICE_ASSET_CREATED = "voice_asset_created"
     PROJECT_MEMBER_ADDED = "project_member_added"
     PROJECT_MEMBER_UPDATED = "project_member_updated"
     PROJECT_MEMBER_ROLE_CHANGED = "project_member_role_changed"
@@ -568,6 +572,12 @@ class AssetType(StrEnum):
 class AssetStatus(StrEnum):
     DRAFT = "draft"
     NEEDS_REVIEW = "needs_review"
+    READY = "ready"
+    ARCHIVED = "archived"
+
+
+class VoiceAssetStatus(StrEnum):
+    DRAFT = "draft"
     READY = "ready"
     ARCHIVED = "archived"
 
@@ -740,6 +750,51 @@ class AssetRecord(BaseModel):
             seen.add(normalized)
             result.append(normalized)
         return result
+
+
+class VoiceAssetRecord(BaseModel):
+    """A reusable voice profile optionally bound to a character asset."""
+
+    id: UUID = Field(default_factory=uuid4)
+    project_id: UUID
+    character_asset_key: UUID | None = None
+    label: str = Field(min_length=1, max_length=120)
+    language: str = Field(default="zh-CN", min_length=2, max_length=20)
+    provider: str = Field(min_length=1, max_length=80)
+    model: str = Field(default="default", min_length=1, max_length=120)
+    voice: str = Field(min_length=1, max_length=120)
+    rate: str = Field(default="-35%", min_length=1, max_length=20)
+    volume: str = Field(default="+0%", min_length=1, max_length=20)
+    style: str = Field(default="", max_length=300)
+    status: VoiceAssetStatus = VoiceAssetStatus.READY
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("label", "language", "provider", "model", "voice", "rate", "volume", "style")
+    @classmethod
+    def strip_voice_asset_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class VoiceAssetCreateRequest(BaseModel):
+    """Create a project voice profile, optionally bound to a character."""
+
+    character_asset_id: UUID | None = None
+    label: str = Field(min_length=1, max_length=120)
+    language: str = Field(default="zh-CN", min_length=2, max_length=20)
+    provider: str = Field(default="edge_tts", min_length=1, max_length=80)
+    model: str = Field(default="default", min_length=1, max_length=120)
+    voice: str = Field(default="zh-CN-YunyangNeural", min_length=1, max_length=120)
+    rate: str = Field(default="-35%", min_length=1, max_length=20)
+    volume: str = Field(default="+0%", min_length=1, max_length=20)
+    style: str = Field(default="", max_length=300)
+    status: VoiceAssetStatus = VoiceAssetStatus.READY
+
+    @field_validator("label", "language", "provider", "model", "voice", "rate", "volume", "style")
+    @classmethod
+    def strip_voice_asset_request_text(cls, value: str) -> str:
+        return value.strip()
 
 
 class AssetCreateRequest(BaseModel):
@@ -935,19 +990,83 @@ class VideoClipGenerationResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class LipSyncCreateRequest(BaseModel):
+    """Create a MuseTalk-compatible lip-sync task from existing Artifacts."""
+
+    video_artifact_id: UUID
+    audio_artifact_id: UUID
+    face_region: Literal["auto", "full_frame"] = "auto"
+    face_padding: int = Field(default=0, ge=0, le=100)
+
+
+class LipSyncGenerationRequest(BaseModel):
+    video_bytes: bytes = Field(min_length=1)
+    video_mime_type: str = Field(min_length=1, max_length=100)
+    audio_bytes: bytes = Field(min_length=1)
+    audio_mime_type: str = Field(min_length=1, max_length=100)
+    face_region: Literal["auto", "full_frame"] = "auto"
+    face_padding: int = Field(default=0, ge=0, le=100)
+
+
+class LipSyncGenerationResult(BaseModel):
+    output_uri: str | None = Field(default=None, max_length=2000)
+    video_base64: str | None = None
+    mime_type: str = Field(default="video/mp4", min_length=1, max_length=100)
+    provider: str = Field(min_length=1, max_length=80)
+    model: str = Field(min_length=1, max_length=120)
+    duration_seconds: int = Field(ge=1, le=3600)
+    duration_ms: int = Field(ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AudioNarrationCreateRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=5000)
+    text: str = Field(default="", max_length=5000)
     voice: str | None = Field(default=None, max_length=120)
     rate: str | None = Field(default=None, max_length=20)
     volume: str | None = Field(default=None, max_length=20)
+    voice_asset_id: UUID | None = None
+    speaker: str | None = Field(default=None, max_length=80)
+    voice_lines: list["AudioNarrationLineRequest"] = Field(default_factory=list, max_length=120)
 
-    @field_validator("text", "voice", "rate", "volume")
+    @field_validator("text")
     @classmethod
-    def strip_audio_text(cls, value: str | None) -> str | None:
+    def strip_audio_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("voice", "rate", "volume")
+    @classmethod
+    def strip_optional_audio_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         value = value.strip()
         return value or None
+
+    @model_validator(mode="after")
+    def validate_audio_input(self) -> "AudioNarrationCreateRequest":
+        has_text = bool(self.text.strip())
+        has_lines = bool(self.voice_lines)
+        if not has_text and not has_lines:
+            raise ValueError("text or voice_lines must be provided")
+        if has_text and has_lines:
+            raise ValueError("text and voice_lines cannot be provided together")
+        if self.voice_lines and any(line.line_index != index for index, line in enumerate(self.voice_lines, 1)):
+            raise ValueError("voice_lines line_index values must be sequential starting at 1")
+        return self
+
+
+class AudioNarrationLineRequest(BaseModel):
+    """One speaker line in a multi-role narration request."""
+
+    line_index: int = Field(ge=1)
+    speaker: str = Field(min_length=1, max_length=80)
+    text: str = Field(min_length=1, max_length=1000)
+    voice_asset_id: UUID | None = None
+    pause_after_seconds: float = Field(default=0.12, ge=0, le=5)
+
+    @field_validator("speaker", "text")
+    @classmethod
+    def strip_voice_line_text(cls, value: str) -> str:
+        return value.strip()
 
 
 class AudioBGMCreateRequest(BaseModel):
@@ -1266,6 +1385,7 @@ class ArtifactSummary(BaseModel):
         "shot_list_json",
         "reference_image",
         "video_clip",
+        "lip_synced_video",
         "rendered_video",
         "audio_narration",
         "audio_bgm",
@@ -1292,6 +1412,7 @@ class ArtifactRecord(BaseModel):
         "shot_list_json",
         "reference_image",
         "video_clip",
+        "lip_synced_video",
         "rendered_video",
         "audio_narration",
         "audio_bgm",
@@ -1379,6 +1500,112 @@ class TaskBatchResumeResponse(BaseModel):
     skipped_task_ids: list[UUID] = Field(default_factory=list)
 
 
+class IdentityAuditStatus(StrEnum):
+    """Statuses emitted by the optional identity-audit helper."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+    NO_FACE = "no_face"
+    REFERENCE_NO_FACE = "reference_no_face"
+    UNAVAILABLE = "unavailable"
+    ERROR = "error"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class IdentityCalibrationRequest(BaseModel):
+    """Read-only threshold comparison for completed video clip audits."""
+
+    episode_id: UUID | None = None
+    thresholds: list[float] = Field(
+        default_factory=lambda: [0.30, 0.35, 0.40, 0.45, 0.50],
+        min_length=1,
+        max_length=20,
+    )
+    max_artifacts: int = Field(default=500, ge=1, le=5000)
+
+    @field_validator("thresholds")
+    @classmethod
+    def normalize_thresholds(cls, value: list[float]) -> list[float]:
+        normalized: list[float] = []
+        for threshold in value:
+            if isinstance(threshold, bool) or not -1.0 <= threshold <= 1.0:
+                raise ValueError("identity thresholds must be between -1 and 1")
+            rounded = round(float(threshold), 6)
+            if rounded not in normalized:
+                normalized.append(rounded)
+        return sorted(normalized)
+
+
+class IdentityCalibrationThresholdResult(BaseModel):
+    threshold: float
+    passed_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    sample_count: int = Field(ge=0)
+    pass_rate: float = Field(ge=0, le=1)
+
+
+class IdentityCalibrationResponse(BaseModel):
+    project_id: UUID
+    episode_id: UUID | None = None
+    current_threshold: float
+    artifact_count: int = Field(ge=0)
+    audited_artifact_count: int = Field(ge=0)
+    eligible_sample_count: int = Field(ge=0)
+    excluded_artifact_count: int = Field(ge=0)
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    thresholds: list[IdentityCalibrationThresholdResult] = Field(min_length=1)
+
+
+class IdentityRetryRequest(BaseModel):
+    """Select the latest identity-failed shot task in a project for retry."""
+
+    episode_id: UUID | None = None
+    failure_scope: Literal["identity_audit"] = "identity_audit"
+    identity_statuses: list[IdentityAuditStatus] = Field(
+        default_factory=lambda: [IdentityAuditStatus.FAILED],
+        min_length=1,
+        max_length=7,
+    )
+    max_tasks: int = Field(default=100, ge=1, le=100)
+    label: str = Field(default="身份审核失败镜头重试", min_length=1, max_length=120)
+
+    @field_validator("identity_statuses")
+    @classmethod
+    def normalize_identity_statuses(
+        cls,
+        value: list[IdentityAuditStatus],
+    ) -> list[IdentityAuditStatus]:
+        normalized: list[IdentityAuditStatus] = []
+        for item in value:
+            if item not in normalized:
+                normalized.append(item)
+        return normalized
+
+    @field_validator("label")
+    @classmethod
+    def strip_identity_retry_label(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("label must not be blank")
+        return value
+
+
+class IdentityRetrySkippedItem(BaseModel):
+    source_task_id: UUID
+    episode_id: UUID
+    shot_index: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=200)
+
+
+class IdentityRetryResponse(BaseModel):
+    project_id: UUID
+    batch: TaskBatchRecord | None = None
+    inspected_task_count: int = Field(ge=0)
+    retried_task_ids: list[UUID] = Field(default_factory=list)
+    skipped_task_ids: list[UUID] = Field(default_factory=list)
+    skipped: list[IdentityRetrySkippedItem] = Field(default_factory=list)
+
+
 class EpisodeTaskPlanAction(StrEnum):
     CREATED = "created"
     REUSED = "reused"
@@ -1392,8 +1619,8 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
     ``production_mode`` keeps the original content-only planner behavior as the
     backwards-compatible default. When enabled, the planner continues through
     reviewed assets, narration, subtitles, optional BGM, shot clips and final
-    assembly. It still creates only the next ready stage because later stages
-    depend on asynchronous Artifacts produced by earlier stages.
+    assembly. The Worker can call the same planner after each successful task
+    to advance the next dependency-ready stage without another browser click.
     """
 
     episode_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=100)
@@ -1407,6 +1634,7 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
     include_assembly: bool = True
     subtitle_mode: Literal["align", "asr"] = "align"
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    auto_advance: bool = True
     bgm_source_path: str | None = Field(default=None, max_length=500)
     bgm_label: str = Field(default="licensed-local-bgm", min_length=1, max_length=120)
     bgm_rights_status: RightsStatus = RightsStatus.UNKNOWN
@@ -1461,6 +1689,8 @@ class EpisodeTaskPlanItem(BaseModel):
 class EpisodeTaskPlanResponse(BaseModel):
     project_id: UUID
     label: str
+    auto_run_id: UUID | None = None
+    auto_advance: bool = False
     batch: TaskBatchRecord | None = None
     batches: list[TaskBatchRecord] = Field(default_factory=list, max_length=100)
     items: list[EpisodeTaskPlanItem] = Field(min_length=1, max_length=100)
@@ -1468,6 +1698,75 @@ class EpisodeTaskPlanResponse(BaseModel):
     reused_count: int = Field(default=0, ge=0)
     skipped_count: int = Field(default=0, ge=0)
     blocked_count: int = Field(default=0, ge=0)
+
+
+class ProductionRunCreateRequest(EpisodeTaskPlanCreateRequest):
+    """Start the complete novel-to-video DAG from the current project state.
+
+    Unlike ``EpisodeTaskPlanCreateRequest``, this public command is allowed to
+    start before StoryBible or episode outlines exist.  The orchestrator will
+    create the missing upstream task first and keep the same run ID as it
+    advances into the episode production planner.
+    """
+
+    target_episode_count: int | None = Field(default=None, ge=1, le=100)
+
+
+class ProductionRunResponse(BaseModel):
+    """A stable response for the one-click production command."""
+
+    project_id: UUID
+    run_id: UUID
+    status: Literal["active", "blocked", "completed", "failed"]
+    stage: str = Field(min_length=1, max_length=80)
+    task_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    auto_advance: bool = True
+    message: str = Field(min_length=1, max_length=300)
+    plan: EpisodeTaskPlanResponse | None = None
+
+
+class OperationalComponentHealth(BaseModel):
+    name: str
+    status: Literal["ok", "degraded", "unavailable", "not_configured"]
+    message: str
+    latency_ms: int | None = Field(default=None, ge=0)
+
+
+class OperationalHealthResponse(BaseModel):
+    status: Literal["ok", "degraded"]
+    profile: str
+    checked_at: datetime
+    disk_free_gb: float = Field(ge=0)
+    gpu_lock_enabled: bool
+    gpu_lock_busy: bool
+    worker: dict[str, Any] = Field(default_factory=dict)
+    components: list[OperationalComponentHealth] = Field(default_factory=list)
+
+
+class ProductionQueueSnapshot(BaseModel):
+    profile: str
+    refreshed_at: datetime
+    counts: dict[str, int] = Field(default_factory=dict)
+    gpu_lock_enabled: bool
+    gpu_lock_busy: bool
+    worker: dict[str, Any] = Field(default_factory=dict)
+    auto_runs: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[GenerationTaskRecord] = Field(default_factory=list)
+
+
+class CleanupResponse(BaseModel):
+    scanned_roots: list[str] = Field(default_factory=list)
+    deleted_files: int = Field(ge=0)
+    deleted_bytes: int = Field(ge=0)
+    skipped_files: int = Field(ge=0)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    free_bytes_before: int = Field(ge=0)
+    free_bytes_after: int = Field(ge=0)
+    min_free_bytes: int = Field(ge=0)
+    low_disk: bool = False
+    free_gb_before: float = Field(ge=0)
+    free_gb_after: float = Field(ge=0)
 
 
 class ScriptGenerationRequest(BaseModel):

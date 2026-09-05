@@ -5,11 +5,12 @@ import ProviderProfileSelect from './components/ProviderProfileSelect.vue'
 import ArtifactLibrary from './components/ArtifactLibrary.vue'
 import SubtitleTaskView from './components/SubtitleTaskView.vue'
 import TaskCenter from './components/TaskCenter.vue'
+import ProductionQueue from './components/ProductionQueue.vue'
 import ScriptAssetWorkbench from './components/ScriptAssetWorkbench.vue'
 import CreatorHome from './components/CreatorHome.vue'
 import { useProviderProfiles } from './composables/useProviderProfiles'
 
-type AppView = 'overview' | 'subtitle' | 'tasks' | 'artifacts' | 'workbench'
+type AppView = 'overview' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
 type AppSurface = 'operator' | 'creator'
 
 const activeView = ref<AppView>('overview')
@@ -35,7 +36,7 @@ const healthError = ref<string | null>(null)
 
 const configuredCount = computed(() => availableProfiles.value.length)
 const selectedProfileName = computed(() => selectedProfile.value?.label ?? '尚未选择')
-const activeViewLabel = computed(() => activeView.value === 'overview' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'artifacts' ? '媒体资产' : '脚本与资产')
+const activeViewLabel = computed(() => activeView.value === 'overview' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : '脚本与资产')
 
 async function refreshHealth() {
   healthLoading.value = true
@@ -92,6 +93,10 @@ onMounted(refreshHealth)
         <button class="nav-item" :class="{ active: activeView === 'tasks' }" type="button" @click="activeView = 'tasks'">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Zm-3 1h1v12H5V6Z" /></svg>
           <span class="nav-text">生产任务</span>
+        </button>
+        <button class="nav-item" :class="{ active: activeView === 'queue' }" type="button" @click="activeView = 'queue'">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v3H4V5Zm0 5.5h10v3H4v-3Zm0 5.5h16v3H4v-3Zm13-5.5 3 1.5-3 1.5v-3Z" /></svg>
+          <span class="nav-text">远程队列</span>
         </button>
         <button class="nav-item" :class="{ active: activeView === 'subtitle' }" type="button" @click="activeView = 'subtitle'">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H8l-4 4V5Zm3 3v2h10V8H7Zm0 4v2h6v-2H7Z" /></svg>
@@ -260,6 +265,7 @@ onMounted(refreshHealth)
 
         <SubtitleTaskView v-else-if="activeView === 'subtitle'" @submitted="activeView = 'tasks'" />
         <TaskCenter v-else-if="activeView === 'tasks'" />
+        <ProductionQueue v-else-if="activeView === 'queue'" />
         <ArtifactLibrary v-else-if="activeView === 'artifacts'" />
         <ScriptAssetWorkbench v-else />
       </main>

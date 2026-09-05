@@ -261,6 +261,28 @@ class AssetRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class VoiceAssetRow(Base):
+    __tablename__ = "voice_assets"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True)
+    character_asset_key: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True, index=True
+    )
+    label: Mapped[str] = mapped_column(String(120))
+    language: Mapped[str] = mapped_column(String(20))
+    provider: Mapped[str] = mapped_column(String(80))
+    model: Mapped[str] = mapped_column(String(120))
+    voice: Mapped[str] = mapped_column(String(120))
+    rate: Mapped[str] = mapped_column(String(20))
+    volume: Mapped[str] = mapped_column(String(20))
+    style: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AssetReviewRow(Base):
     __tablename__ = "asset_reviews"
 

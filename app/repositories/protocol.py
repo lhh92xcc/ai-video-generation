@@ -27,6 +27,7 @@ from app.domain.models import (
     ReferenceImageRecord,
     ShotListRecord,
     StoryBibleRecord,
+    VoiceAssetRecord,
 )
 
 
@@ -73,6 +74,13 @@ class ProjectTaskStore(Protocol):
         ...
 
     async def get_task_batch(self, batch_id: UUID) -> TaskBatchRecord | None:
+        ...
+
+    async def get_task_batch_by_idempotency_key(
+        self,
+        project_id: UUID,
+        idempotency_key: str,
+    ) -> TaskBatchRecord | None:
         ...
 
     async def list_task_batches(
@@ -258,4 +266,13 @@ class NovelStore(Protocol):
         ...
 
     async def list_reference_images(self, asset_id: UUID) -> list[ReferenceImageRecord]:
+        ...
+
+    async def save_voice_asset(self, voice_asset: VoiceAssetRecord) -> VoiceAssetRecord:
+        ...
+
+    async def get_voice_asset(self, voice_asset_id: UUID) -> VoiceAssetRecord | None:
+        ...
+
+    async def list_voice_assets(self, project_id: UUID) -> list[VoiceAssetRecord]:
         ...

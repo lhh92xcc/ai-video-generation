@@ -64,6 +64,46 @@ def test_create_and_list_novel_project(client: TestClient) -> None:
     assert list_response.json()[0]["id"] == project_id
 
 
+def test_voice_asset_api_is_project_scoped_and_safe(client: TestClient) -> None:
+    project_response = client.post(
+        "/api/v1/novel-projects",
+        json={"title": "声音资产 API", "target_episode_count": 1},
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    create_response = client.post(
+        f"/api/v1/novel-projects/{project_id}/voice-assets",
+        json={
+            "label": "旁白",
+            "provider": "mock",
+            "voice": "mock-narrator",
+            "rate": "-20%",
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    asset = create_response.json()
+    assert asset["project_id"] == project_id
+    assert asset["label"] == "旁白"
+    assert "api_key" not in asset
+
+    list_response = client.get(f"/api/v1/novel-projects/{project_id}/voice-assets")
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [asset["id"]]
+
+    invalid_character = client.post(
+        f"/api/v1/novel-projects/{project_id}/voice-assets",
+        json={
+            "label": "无效绑定",
+            "provider": "mock",
+            "voice": "mock",
+            "character_asset_id": "00000000-0000-0000-0000-000000000000",
+        },
+    )
+    assert invalid_character.status_code == 404
+    assert invalid_character.json()["error"]["code"] == "ASSET_NOT_FOUND"
+
+
 def test_generation_task_runs_mock_script_provider(client: TestClient) -> None:
     project_response = client.post(
         "/api/v1/projects",

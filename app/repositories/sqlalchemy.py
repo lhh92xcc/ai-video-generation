@@ -29,6 +29,7 @@ from app.db import (
     ReferenceImageRow,
     ShotListRow,
     StoryBibleRow,
+    VoiceAssetRow,
 )
 from app.domain.models import (
     AssetRecord,
@@ -54,6 +55,7 @@ from app.domain.models import (
     ReferenceImageRecord,
     ShotListRecord,
     StoryBibleRecord,
+    VoiceAssetRecord,
     utc_now,
 )
 
@@ -156,6 +158,19 @@ class SqlAlchemyStore:
     async def get_task_batch(self, batch_id: UUID) -> TaskBatchRecord | None:
         async with self._session_factory() as session:
             row = await session.get(TaskBatchRow, batch_id)
+            return self._batch_from_row(row) if row else None
+
+    async def get_task_batch_by_idempotency_key(
+        self,
+        project_id: UUID,
+        idempotency_key: str,
+    ) -> TaskBatchRecord | None:
+        async with self._session_factory() as session:
+            row = await self._find_batch_by_idempotency_key(
+                session,
+                project_id,
+                idempotency_key,
+            )
             return self._batch_from_row(row) if row else None
 
     async def list_task_batches(self, project_id: UUID, limit: int = 50) -> list[TaskBatchRecord]:
@@ -769,6 +784,31 @@ class SqlAlchemyStore:
                 .order_by(ReferenceImageRow.created_at.desc())
             )
             return [self._reference_image_from_row(row) for row in result]
+
+    async def save_voice_asset(self, voice_asset: VoiceAssetRecord) -> VoiceAssetRecord:
+        async with self._session_factory() as session:
+            row = await session.get(VoiceAssetRow, voice_asset.id)
+            if row is None:
+                row = self._voice_asset_to_row(voice_asset)
+                session.add(row)
+            else:
+                self._copy_voice_asset_to_row(voice_asset, row)
+            await session.commit()
+            return self._voice_asset_from_row(row)
+
+    async def get_voice_asset(self, voice_asset_id: UUID) -> VoiceAssetRecord | None:
+        async with self._session_factory() as session:
+            row = await session.get(VoiceAssetRow, voice_asset_id)
+            return self._voice_asset_from_row(row) if row else None
+
+    async def list_voice_assets(self, project_id: UUID) -> list[VoiceAssetRecord]:
+        async with self._session_factory() as session:
+            result = await session.scalars(
+                select(VoiceAssetRow)
+                .where(VoiceAssetRow.project_id == project_id)
+                .order_by(VoiceAssetRow.created_at.desc())
+            )
+            return [self._voice_asset_from_row(row) for row in result]
 
     @staticmethod
     async def _find_by_idempotency_key(
@@ -1570,6 +1610,65 @@ class SqlAlchemyStore:
                 "duration_ms": row.duration_ms,
                 "metadata": row.metadata_json or {},
                 "error": row.error_json,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+        )
+
+    @staticmethod
+    def _voice_asset_to_row(voice_asset: VoiceAssetRecord) -> VoiceAssetRow:
+        return VoiceAssetRow(
+            id=voice_asset.id,
+            project_id=voice_asset.project_id,
+            character_asset_key=voice_asset.character_asset_key,
+            label=voice_asset.label,
+            language=voice_asset.language,
+            provider=voice_asset.provider,
+            model=voice_asset.model,
+            voice=voice_asset.voice,
+            rate=voice_asset.rate,
+            volume=voice_asset.volume,
+            style=voice_asset.style,
+            status=voice_asset.status.value,
+            metadata_json=voice_asset.metadata,
+            created_at=voice_asset.created_at,
+            updated_at=voice_asset.updated_at,
+        )
+
+    @staticmethod
+    def _copy_voice_asset_to_row(voice_asset: VoiceAssetRecord, row: VoiceAssetRow) -> None:
+        row.project_id = voice_asset.project_id
+        row.character_asset_key = voice_asset.character_asset_key
+        row.label = voice_asset.label
+        row.language = voice_asset.language
+        row.provider = voice_asset.provider
+        row.model = voice_asset.model
+        row.voice = voice_asset.voice
+        row.rate = voice_asset.rate
+        row.volume = voice_asset.volume
+        row.style = voice_asset.style
+        row.status = voice_asset.status.value
+        row.metadata_json = voice_asset.metadata
+        row.created_at = voice_asset.created_at
+        row.updated_at = voice_asset.updated_at
+
+    @staticmethod
+    def _voice_asset_from_row(row: VoiceAssetRow) -> VoiceAssetRecord:
+        return VoiceAssetRecord.model_validate(
+            {
+                "id": row.id,
+                "project_id": row.project_id,
+                "character_asset_key": row.character_asset_key,
+                "label": row.label,
+                "language": row.language,
+                "provider": row.provider,
+                "model": row.model,
+                "voice": row.voice,
+                "rate": row.rate,
+                "volume": row.volume,
+                "style": row.style,
+                "status": row.status,
+                "metadata": row.metadata_json or {},
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
             }

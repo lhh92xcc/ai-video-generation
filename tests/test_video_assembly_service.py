@@ -246,6 +246,81 @@ def test_video_assembly_renders_and_registers_rendered_video(tmp_path: Path) -> 
     asyncio.run(exercise())
 
 
+def test_video_assembly_accepts_lip_sync_task_as_shot_source(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg and ffprobe are required for assembly tests")
+
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        storage = LocalFileArtifactStorage(tmp_path / "artifacts")
+        service = VideoAssemblyTaskService(store, queue, storage)
+        queue.set_handler(service.run_task)
+        episode = _episode(uuid4())
+        await store.save_episodes([episode])
+        source = await _seed_clip(
+            store,
+            storage,
+            episode,
+            _playable_mp4(tmp_path, "lip-source.mp4", "blue"),
+            1,
+        )
+        synced_stored = await storage.put_bytes(
+            f"lip-sync/{episode.id}/synced.mp4",
+            _playable_mp4(tmp_path, "lip-synced.mp4", "green"),
+            "video/mp4",
+        )
+        lip_sync_task = GenerationTaskRecord(
+            project_id=episode.project_id,
+            kind=GenerationTaskKind.LIP_SYNC,
+            input_data={
+                "episode_id": str(episode.id),
+                "video_artifact_id": str(source.artifacts[0].id),
+                "audio_artifact_id": str(uuid4()),
+            },
+            status=TaskStatus.SUCCEEDED,
+            artifacts=[
+                ArtifactSummary(
+                    type="lip_synced_video",
+                    provider="musetalk-test",
+                    metadata={
+                        "episode_id": str(episode.id),
+                        "video_artifact_id": str(source.artifacts[0].id),
+                        "storage_key": synced_stored.storage_key,
+                        "content_type": synced_stored.content_type,
+                        "size_bytes": synced_stored.size_bytes,
+                        "sha256": synced_stored.sha256,
+                    },
+                )
+            ],
+        )
+        synced, _ = await store.create_task(lip_sync_task)
+        fallback = await _seed_clip(
+            store,
+            storage,
+            episode,
+            _playable_mp4(tmp_path, "lip-fallback.mp4", "red"),
+            2,
+        )
+
+        task, reused = await service.create_task(
+            episode.id,
+            VideoAssemblyCreateRequest(clip_task_ids=[synced.id, fallback.id]),
+        )
+        await queue.close()
+
+        assert reused is False
+        completed = await store.get_task(task.id)
+        assert completed is not None
+        assert completed.status == TaskStatus.SUCCEEDED
+        metadata = completed.artifacts[0].metadata
+        assert metadata["clip_task_ids"] == [str(synced.id), str(fallback.id)]
+        assert metadata["input_clip_count"] == 2
+        await storage.close()
+
+    asyncio.run(exercise())
+
+
 def test_video_assembly_requires_succeeded_source_tasks(tmp_path: Path) -> None:
     async def exercise() -> None:
         store = InMemoryStore()

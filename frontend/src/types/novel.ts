@@ -147,6 +147,77 @@ export interface AssetVersionCreateRequest {
   source_chapter_numbers: number[]
 }
 
+export type VoiceAssetStatus = 'draft' | 'ready' | 'archived'
+
+export interface VoiceAssetRecord {
+  id: string
+  project_id: string
+  character_asset_key: string | null
+  label: string
+  language: string
+  provider: string
+  model: string
+  voice: string
+  rate: string
+  volume: string
+  style: string
+  status: VoiceAssetStatus
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface VoiceAssetCreateRequest {
+  character_asset_id?: string
+  label: string
+  language?: string
+  provider?: string
+  model?: string
+  voice?: string
+  rate?: string
+  volume?: string
+  style?: string
+  status?: VoiceAssetStatus
+}
+
+export type IdentityAuditStatus = 'passed' | 'failed' | 'no_face' | 'reference_no_face' | 'unavailable' | 'error' | 'not_applicable'
+
+export interface IdentityCalibrationThresholdResult {
+  threshold: number
+  passed_count: number
+  failed_count: number
+  sample_count: number
+  pass_rate: number
+}
+
+export interface IdentityCalibrationResponse {
+  project_id: string
+  episode_id: string | null
+  current_threshold: number
+  artifact_count: number
+  audited_artifact_count: number
+  eligible_sample_count: number
+  excluded_artifact_count: number
+  status_counts: Record<string, number>
+  thresholds: IdentityCalibrationThresholdResult[]
+}
+
+export interface IdentityRetrySkippedItem {
+  source_task_id: string
+  episode_id: string
+  shot_index: number
+  reason: string
+}
+
+export interface IdentityRetryResponse {
+  project_id: string
+  batch: import('./task').TaskBatchRecord | null
+  inspected_task_count: number
+  retried_task_ids: string[]
+  skipped_task_ids: string[]
+  skipped: IdentityRetrySkippedItem[]
+}
+
 export interface DialogueLine {
   line_index: number
   speaker: string

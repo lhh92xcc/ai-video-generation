@@ -24,6 +24,12 @@ from app.providers.protocol import TextProvider
 from app.providers.story_bible import MockStoryBibleProvider, StoryBibleGenerationProvider
 from app.providers.video_generation import VideoGenerationProvider
 from app.providers.tts import TTSProvider
+from app.providers.lip_sync import (
+    HttpMuseTalkProvider,
+    LipSyncProvider,
+    MockLipSyncProvider,
+    SubprocessMuseTalkProvider,
+)
 from app.providers.bgm import BGMProvider
 from app.providers.asr import SubtitleASRProvider
 from app.providers.local_bgm import LocalFileBGMProvider
@@ -230,6 +236,36 @@ def create_tts_provider(settings: Settings) -> TTSProvider:
         )
     raise ValueError(
         f"Unsupported TTS provider: {settings.tts_provider}. Use mock, edge_tts, macos_say or chattts."
+    )
+
+
+def create_lip_sync_provider(settings: Settings) -> LipSyncProvider:
+    """Build the configured MuseTalk boundary without coupling task code to it."""
+
+    if settings.lip_sync_provider == "mock":
+        return MockLipSyncProvider()
+    if settings.lip_sync_provider in {"musetalk", "musetalk_subprocess"}:
+        return SubprocessMuseTalkProvider(
+            runtime_path=settings.lip_sync_runtime_path,
+            script_path=settings.lip_sync_script_path,
+            model_root=settings.lip_sync_model_root,
+            device=settings.lip_sync_device,
+            model=settings.lip_sync_model,
+            timeout_seconds=settings.lip_sync_timeout_seconds,
+        )
+    if settings.lip_sync_provider in {"musetalk_http", "http"}:
+        return HttpMuseTalkProvider(
+            base_url=settings.lip_sync_base_url,
+            create_path=settings.lip_sync_create_path,
+            health_path=settings.lip_sync_health_path,
+            api_key=settings.lip_sync_api_key,
+            model=settings.lip_sync_model,
+            timeout_seconds=settings.lip_sync_timeout_seconds,
+            max_download_bytes=settings.lip_sync_max_download_bytes,
+        )
+    raise ValueError(
+        f"Unsupported lip-sync provider: {settings.lip_sync_provider}. "
+        "Use mock, musetalk, musetalk_subprocess or musetalk_http."
     )
 
 

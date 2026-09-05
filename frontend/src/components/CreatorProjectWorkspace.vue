@@ -14,11 +14,13 @@ import {
   getEpisodes,
   getNovelChapters,
   getNovelProject,
+  startProductionRun,
   uploadNovelSource,
 } from '../api/novels'
 import { getEpisodeScript, getEpisodeShots } from '../api/novelWorkbench'
 import { getArtifact, getTasks } from '../api/tasks'
 import { useProviderProfiles } from '../composables/useProviderProfiles'
+import ProductionQualityPanel from './ProductionQualityPanel.vue'
 import type { EpisodeScriptRecord, ShotContent, ShotListRecord } from '../types/novel'
 import type {
   ChapterRecord,
@@ -29,9 +31,17 @@ import type {
   RightsStatus,
   TaskStatus,
   EpisodeTaskPlanResponse,
+  ProductionRunResponse,
 } from '../types/task'
 
 type SubtitleMode = 'asr' | 'align'
+
+type AssemblyClipSelection = {
+  shotIndex: number
+  task: GenerationTaskRecord
+  artifact: ArtifactSummary
+  source: 'video_clip' | 'lip_sync'
+}
 
 const props = defineProps<{ project: NovelProjectRecord }>()
 const emit = defineEmits<{
@@ -48,6 +58,7 @@ const episodes = ref<EpisodeRecord[]>([])
 const planEpisodeIds = ref<string[]>([])
 const planLabel = ref('分集生产计划')
 const planResponse = ref<EpisodeTaskPlanResponse | null>(null)
+const productionRun = ref<ProductionRunResponse | null>(null)
 const tasks = ref<GenerationTaskRecord[]>([])
 const selectedEpisodeId = ref<string | null>(null)
 const selectedScript = ref<EpisodeScriptRecord | null>(null)
@@ -66,6 +77,7 @@ const assemblyUseNarration = ref(true)
 const assemblyUseBgm = ref(true)
 const assemblyUseSubtitles = ref(true)
 const assemblyBgmVolume = ref(0.18)
+const assemblyUseLipSyncByShot = ref<Record<number, boolean>>({})
 const renderedVideoArtifactRecord = ref<ArtifactRecord | null>(null)
 const renderedVideoArtifactLoading = ref(false)
 const selectedFile = ref<File | null>(null)
@@ -85,6 +97,7 @@ const storyBibleReady = computed(() => Boolean(projectData.value.story_bible_id)
 const episodePlanTask = computed(() => latestTask('novel_episode_plan'))
 const episodesReady = computed(() => episodes.value.length > 0)
 const planCanSubmit = computed(() => planEpisodeIds.value.length > 0 && !action.value)
+const productionRunCanSubmit = computed(() => sourceReady.value && !action.value)
 const scriptTask = computed(() => selectedEpisodeId.value ? latestTask('novel_episode_script', selectedEpisodeId.value) : null)
 const shotTask = computed(() => selectedEpisodeId.value ? latestTask('novel_shot_list', selectedEpisodeId.value) : null)
 const audioTask = computed(() => selectedEpisodeId.value ? latestTask('audio_narration', selectedEpisodeId.value) : null)
@@ -114,12 +127,43 @@ const successfulVideoClipTasks = computed(() => {
   return [...taskByShot.values()].sort((left, right) => Number(left.input_data.shot_index) - Number(right.input_data.shot_index))
 })
 const videoClipSucceededCount = computed(() => successfulVideoClipTasks.value.length)
+const assemblyLipSyncCandidates = computed(() => {
+  const lipSyncByVideoArtifact = new Map<string, { task: GenerationTaskRecord; artifact: ArtifactSummary }>()
+  for (const task of tasks.value) {
+    if (task.kind !== 'lip_sync' || task.status !== 'succeeded' || String(task.input_data.episode_id ?? '') !== selectedEpisodeId.value) continue
+    const artifact = task.artifacts.find((item) => item.type === 'lip_synced_video')
+    const sourceArtifactId = String(task.input_data.video_artifact_id ?? artifact?.metadata.video_artifact_id ?? '')
+    if (!artifact || !sourceArtifactId) continue
+    const existing = lipSyncByVideoArtifact.get(sourceArtifactId)
+    if (!existing || existing.task.updated_at.localeCompare(task.updated_at) < 0) {
+      lipSyncByVideoArtifact.set(sourceArtifactId, { task, artifact })
+    }
+  }
+  return lipSyncByVideoArtifact
+})
+
+const assemblyClipSelections = computed<AssemblyClipSelection[]>(() => {
+
+  return successfulVideoClipTasks.value.map((task) => {
+    const videoArtifact = task.artifacts.find((artifact) => artifact.type === 'video_clip') as ArtifactSummary
+    const lipSync = assemblyLipSyncCandidates.value.get(videoArtifact.id)
+    const shotIndex = Number(task.input_data.shot_index)
+    const useLipSync = Boolean(lipSync && (assemblyUseLipSyncByShot.value[shotIndex] ?? true))
+    const selectedLipSync = useLipSync && lipSync ? lipSync : null
+    return {
+      shotIndex,
+      task: selectedLipSync?.task ?? task,
+      artifact: selectedLipSync?.artifact ?? videoArtifact,
+      source: selectedLipSync ? 'lip_sync' : 'video_clip',
+    }
+  })
+})
 const videoAssemblyTask = computed(() => selectedEpisodeId.value ? latestTask('video_assembly', selectedEpisodeId.value) : null)
 const completedVideoAssemblyTask = computed(() => selectedEpisodeId.value ? latestSucceededTask('video_assembly', selectedEpisodeId.value) : null)
 const renderedVideoArtifact = computed(() => completedVideoAssemblyTask.value?.artifacts.find((artifact) => artifact.type === 'rendered_video') ?? null)
 const assemblyCanSubmit = computed(() => Boolean(
   selectedEpisode.value
-  && successfulVideoClipTasks.value.length >= 2
+  && assemblyClipSelections.value.length >= 2
   && !action.value
   && !(videoAssemblyTask.value && isActive(videoAssemblyTask.value.status)),
 ))
@@ -157,6 +201,7 @@ const taskLabels: Record<string, string> = {
   subtitle_srt: '人工字幕',
   audio_bgm: 'BGM 生成',
   video_clip: '视频片段',
+  lip_sync: 'MuseTalk 唇形同步',
   video_assembly: '成片合成',
 }
 
@@ -247,6 +292,20 @@ function formatBgmSourceType(value: unknown) {
 
 function latestVideoClipTask(shotIndex: number): GenerationTaskRecord | null {
   return videoClipTasks.value.find((task) => Number(task.input_data.shot_index) === shotIndex) ?? null
+}
+
+function lipSyncCandidateForShot(shotIndex: number) {
+  const task = successfulVideoClipTask(shotIndex)
+  const artifact = task?.artifacts.find((item) => item.type === 'video_clip')
+  return artifact ? assemblyLipSyncCandidates.value.get(artifact.id) ?? null : null
+}
+
+function setAssemblySource(shotIndex: number, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  assemblyUseLipSyncByShot.value = {
+    ...assemblyUseLipSyncByShot.value,
+    [shotIndex]: value === 'lip_sync',
+  }
 }
 
 function videoClipArtifact(shotIndex: number) {
@@ -428,7 +487,7 @@ async function startVideoAssembly() {
     })
   }
   const payload: VideoAssemblyCreateRequest = {
-    clip_task_ids: successfulVideoClipTasks.value.map((task) => task.id),
+    clip_task_ids: assemblyClipSelections.value.map((selection) => selection.task.id),
     audio_tracks: audioTracks,
     subtitle_artifact_id: assemblyUseSubtitles.value && subtitleArtifact.value ? subtitleArtifact.value.id : undefined,
     output_format: 'mp4',
@@ -576,6 +635,29 @@ async function startEpisodeTaskPlan() {
   })
 }
 
+async function startFullProduction() {
+  if (!productionRunCanSubmit.value) return
+  await runAction('production-run', '完整生产 Run 已启动，后续会由 Windows Worker 自动推进。', async () => {
+    productionRun.value = await startProductionRun(
+      projectData.value.id,
+      {
+        target_episode_count: projectData.value.target_episode_count,
+        label: 'Windows 4060 Ti 完整生产',
+        production_mode: true,
+        include_reference_images: true,
+        include_narration: true,
+        include_subtitles: true,
+        include_bgm: false,
+        include_video: true,
+        include_assembly: true,
+        subtitle_mode: 'align',
+        auto_advance: true,
+      },
+      `creator:${projectData.value.id}:production-run`,
+    )
+  })
+}
+
 async function startScript() {
   if (!selectedEpisode.value) return
   await runAction('episode-script', '分场剧本任务已提交，完成后可以在这里预览剧本。', () =>
@@ -600,6 +682,7 @@ function selectEpisode(episodeId: string) {
   assemblyUseBgm.value = true
   assemblyUseSubtitles.value = true
   assemblyBgmVolume.value = 0.18
+  assemblyUseLipSyncByShot.value = {}
   resetBgmForm(episodes.value.find((episode) => episode.id === episodeId) ?? null)
   void loadSelectedScript(episodeId).catch((error) => {
     errorMessage.value = displayError(error)
@@ -664,7 +747,7 @@ onUnmounted(() => {
       <b>→</b>
       <div class="creator-pipeline-step" :class="{ active: videoClipReadyCount > 0, complete: selectedShotList && videoClipReadyCount > 0 && videoClipSucceededCount >= videoClipReadyCount }"><span>09</span><div><strong>画面片段</strong><small>{{ selectedShotList ? `${videoClipSucceededCount}/${videoClipReadyCount} 个可生成镜头已完成` : '等待分镜审核' }}</small></div></div>
       <b>→</b>
-      <div class="creator-pipeline-step" :class="{ active: successfulVideoClipTasks.length >= 2, complete: videoAssemblyTask?.status === 'succeeded' }"><span>10</span><div><strong>成片合成</strong><small>{{ videoAssemblyTask?.status === 'succeeded' ? '成片已生成' : successfulVideoClipTasks.length >= 2 ? '准备编排成片' : '等待至少两个片段' }}</small></div></div>
+      <div class="creator-pipeline-step" :class="{ active: assemblyClipSelections.length >= 2, complete: videoAssemblyTask?.status === 'succeeded' }"><span>10</span><div><strong>成片合成</strong><small>{{ videoAssemblyTask?.status === 'succeeded' ? '成片已生成' : assemblyClipSelections.length >= 2 ? '准备编排成片' : '等待至少两个片段' }}</small></div></div>
     </div>
 
     <div v-if="errorMessage" class="creator-alert creator-workspace-alert" role="alert"><strong>工作区提示</strong><span>{{ errorMessage }}</span><button type="button" @click="refreshWorkspace">重试</button></div>
@@ -683,6 +766,11 @@ onUnmounted(() => {
           <div v-else class="creator-source-summary"><span class="creator-source-icon">▤</span><div><strong>小说原文已接入</strong><small>{{ projectData.source_id }} · 已切分 {{ chapters.length }} 个章节</small></div><span class="creator-source-meta">{{ chapters.length ? formatBytes(chapters.reduce((total, chapter) => total + chapter.content.length, 0)) : '已保存' }}</span></div>
           <div v-if="!sourceReady" class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!selectedFile || Boolean(action)" @click="uploadSource">{{ action === 'upload' ? '上传中…' : '上传并切分章节' }} <span>→</span></button></div>
           <div v-else class="creator-chapter-preview"><div class="creator-subheading"><strong>章节预览</strong><small>{{ chapters.length }} 个章节</small></div><div v-if="chapters.length" class="creator-chapter-list"><div v-for="chapter in chapters.slice(0, 3)" :key="chapter.id"><span>第 {{ chapter.chapter_number }} 章</span><strong>{{ chapter.title }}</strong></div></div><small v-if="chapters.length > 3" class="creator-more-note">还有 {{ chapters.length - 3 }} 个章节，完整内容将在制作后台中查看。</small></div>
+          <div v-if="sourceReady" class="creator-auto-run-panel">
+            <div><span class="creator-auto-run-icon">▶</span><div><strong>Windows 4060 Ti 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
+            <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
+          </div>
+          <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRun.status === 'completed' ? '✓' : productionRun.status === 'failed' ? '!' : productionRun.status === 'blocked' ? '!' : '↻' }}</span><div><strong>Run {{ productionRun.status === 'active' ? '运行中' : productionRun.status === 'blocked' ? '等待人工处理' : productionRun.status === 'completed' ? '已完成' : '失败' }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
         </section>
 
         <section class="creator-workspace-card" :class="{ muted: !sourceReady }">
@@ -771,11 +859,11 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section v-if="successfulVideoClipTasks.length >= 2" class="creator-workspace-card creator-assembly-card">
+        <section v-if="assemblyClipSelections.length >= 2" class="creator-workspace-card creator-assembly-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 10</p><h3>编排并生成成片</h3><p>按镜头编号拼接已成功片段，可选混入旁白、BGM 和字幕。任务完成后仅生成 Artifact，不会自动发布。</p></div><span class="creator-card-state" :class="{ ready: videoAssemblyTask?.status === 'succeeded' }">{{ videoAssemblyTask?.status === 'succeeded' ? '已完成' : videoAssemblyTask ? formatStatus(videoAssemblyTask.status) : '可编排' }}</span></div>
-          <div class="creator-assembly-summary"><div><strong>{{ successfulVideoClipTasks.length }} 个镜头</strong><small>按 SHOT 编号自动排序</small></div><div><strong>{{ successfulVideoClipTasks.reduce((total, task) => total + positiveNumber(task.artifacts.find((artifact) => artifact.type === 'video_clip')?.metadata.duration_seconds), 0).toFixed(1) }} 秒</strong><small>源片段时长合计</small></div><div><strong>{{ audioTracksForAssemblyCount }} 条音轨</strong><small>旁白 / BGM 可选</small></div></div>
+          <div class="creator-assembly-summary"><div><strong>{{ assemblyClipSelections.length }} 个镜头</strong><small>按 SHOT 编号自动排序</small></div><div><strong>{{ assemblyClipSelections.reduce((total, selection) => total + positiveNumber(selection.artifact.metadata.duration_seconds), 0).toFixed(1) }} 秒</strong><small>当前选用片段合计</small></div><div><strong>{{ audioTracksForAssemblyCount }} 条音轨</strong><small>旁白 / BGM 可选</small></div></div>
           <div v-if="selectedShotList && successfulVideoClipTasks.length < selectedShotList.shots.length" class="creator-production-note"><span>i</span><p>当前只有部分镜头已成功，成片将按现有成功片段生成（{{ successfulVideoClipTasks.length }}/{{ selectedShotList.shots.length }}）。剩余镜头完成后可重新编排。</p></div>
-          <div class="creator-assembly-clip-list"><div v-for="task in successfulVideoClipTasks" :key="task.id"><span class="creator-assembly-index">{{ String(Number(task.input_data.shot_index)).padStart(2, '0') }}</span><div><strong>SHOT {{ Number(task.input_data.shot_index) }}</strong><small>{{ task.artifacts.find((artifact) => artifact.type === 'video_clip')?.provider }} · 已通过播放性校验</small></div><span class="creator-artifact-state">已就绪</span></div></div>
+          <div class="creator-assembly-clip-list"><div v-for="selection in assemblyClipSelections" :key="selection.task.id"><span class="creator-assembly-index">{{ String(selection.shotIndex).padStart(2, '0') }}</span><div><strong>SHOT {{ selection.shotIndex }}{{ selection.source === 'lip_sync' ? ' · MuseTalk' : '' }}</strong><small>{{ selection.artifact.provider }} · {{ selection.source === 'lip_sync' ? '已替换为唇形同步片段' : '原始视频片段回退' }} · 已通过播放性校验</small></div><select v-if="lipSyncCandidateForShot(selection.shotIndex)" class="creator-assembly-source" :value="selection.source" :aria-label="`选择镜头 ${selection.shotIndex} 的成片来源`" @change="setAssemblySource(selection.shotIndex, $event)"><option value="video_clip">原始片段</option><option value="lip_sync">MuseTalk 片段</option></select><span class="creator-artifact-state">已就绪</span></div></div>
           <div class="creator-assembly-options">
             <label><input v-model="assemblyUseNarration" type="checkbox" :disabled="!audioArtifact || Boolean(action) || Boolean(videoAssemblyTask && isActive(videoAssemblyTask.status))" /><span><strong>混入旁白</strong><small>{{ audioArtifact ? formatAudioDuration(audioArtifact.metadata.duration_seconds) : '暂无可用旁白' }}</small></span></label>
             <label><input v-model="assemblyUseBgm" type="checkbox" :disabled="!bgmArtifact || Boolean(action) || Boolean(videoAssemblyTask && isActive(videoAssemblyTask.status))" /><span><strong>混入 BGM</strong><small>{{ bgmArtifact ? `默认音量 ${assemblyBgmVolume.toFixed(2)}` : '暂无可用 BGM' }}</small></span></label>
@@ -789,10 +877,20 @@ onUnmounted(() => {
           <div v-else-if="renderedVideoArtifact" class="creator-production-note"><span>i</span><p>成片已生成，但当前存储后端没有提供浏览器预览/下载 URL；可以在 Worker 或媒体资产页继续读取 Artifact。</p></div>
           <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!assemblyCanSubmit" @click="startVideoAssembly">{{ action === 'video-assembly' ? '提交中…' : videoAssemblyTask?.status === 'succeeded' ? '重新生成成片' : '生成成片' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator')">查看任务与 Artifact <span>↗</span></button></div>
         </section>
+
+        <ProductionQualityPanel
+          v-if="selectedEpisode"
+          :project-id="projectData.id"
+          :episode="selectedEpisode"
+          :script="selectedScript"
+          :audio-artifact="audioArtifact"
+          :tasks="tasks"
+          @changed="refreshWorkspace"
+        />
       </main>
 
       <aside class="creator-workspace-sidebar">
-        <section class="creator-workspace-card creator-progress-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">WORKFLOW STATUS</p><h3>生产状态</h3></div><button class="creator-refresh-button" type="button" :disabled="refreshing" @click="refreshWorkspace">↻</button></div><div class="creator-status-list"><div :class="{ done: sourceReady }"><span>{{ sourceReady ? '✓' : '1' }}</span><div><strong>原文与章节</strong><small>{{ sourceReady ? `${chapters.length} 个章节已保存` : '等待上传小说' }}</small></div></div><div :class="{ done: storyBibleReady, active: sourceReady && !storyBibleReady }"><span>{{ storyBibleReady ? '✓' : '2' }}</span><div><strong>故事设定</strong><small>{{ storyBibleReady ? '可用于生成大纲' : '等待上一阶段' }}</small></div></div><div :class="{ done: episodesReady, active: storyBibleReady && !episodesReady }"><span>{{ episodesReady ? '✓' : '3' }}</span><div><strong>分集大纲</strong><small>{{ episodesReady ? `${episodes.length} 集可制作` : '等待上一阶段' }}</small></div></div><div :class="{ done: scriptReady, active: Boolean(selectedEpisode) && !scriptReady }"><span>{{ scriptReady ? '✓' : '4' }}</span><div><strong>分场剧本</strong><small>{{ scriptReady ? '可编辑、可审核' : '选择分集后生成' }}</small></div></div><div :class="{ done: Boolean(audioArtifact), active: scriptReady && !audioArtifact }"><span>{{ audioArtifact ? '✓' : '5' }}</span><div><strong>单集旁白</strong><small>{{ audioArtifact ? '可用于字幕与成片' : scriptReady ? '编辑文本后生成' : '等待剧本' }}</small></div></div><div :class="{ done: Boolean(subtitleArtifact), active: Boolean(audioArtifact) && !subtitleArtifact }"><span>{{ subtitleArtifact ? '✓' : '6' }}</span><div><strong>字幕任务</strong><small>{{ subtitleArtifact ? '等待人工审核' : audioArtifact ? '选择方式后生成' : '等待旁白' }}</small></div></div><div :class="{ done: Boolean(bgmArtifact), active: Boolean(audioArtifact) && !bgmArtifact }"><span>{{ bgmArtifact ? '✓' : '7' }}</span><div><strong>BGM</strong><small>{{ bgmArtifact ? '可用于成片编排' : audioArtifact ? '登记授权线索后生成' : '等待旁白' }}</small></div></div><div :class="{ done: Boolean(selectedShotList) && videoClipReadyCount > 0 && videoClipSucceededCount >= videoClipReadyCount, active: Boolean(selectedShotList) && videoClipReadyCount > 0 }"><span>{{ selectedShotList && videoClipSucceededCount >= videoClipReadyCount && videoClipReadyCount > 0 ? '✓' : '8' }}</span><div><strong>画面片段</strong><small>{{ selectedShotList ? `${videoClipSucceededCount}/${videoClipReadyCount} 个可生成镜头已完成` : '等待分镜审核' }}</small></div></div><div :class="{ done: videoAssemblyTask?.status === 'succeeded', active: successfulVideoClipTasks.length >= 2 }"><span>{{ videoAssemblyTask?.status === 'succeeded' ? '✓' : '9' }}</span><div><strong>成片合成</strong><small>{{ videoAssemblyTask?.status === 'succeeded' ? '已生成，可预览' : successfulVideoClipTasks.length >= 2 ? '可选择音频与字幕' : '等待两个成功片段' }}</small></div></div></div></section>
+        <section class="creator-workspace-card creator-progress-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">WORKFLOW STATUS</p><h3>生产状态</h3></div><button class="creator-refresh-button" type="button" :disabled="refreshing" @click="refreshWorkspace">↻</button></div><div class="creator-status-list"><div :class="{ done: sourceReady }"><span>{{ sourceReady ? '✓' : '1' }}</span><div><strong>原文与章节</strong><small>{{ sourceReady ? `${chapters.length} 个章节已保存` : '等待上传小说' }}</small></div></div><div :class="{ done: storyBibleReady, active: sourceReady && !storyBibleReady }"><span>{{ storyBibleReady ? '✓' : '2' }}</span><div><strong>故事设定</strong><small>{{ storyBibleReady ? '可用于生成大纲' : '等待上一阶段' }}</small></div></div><div :class="{ done: episodesReady, active: storyBibleReady && !episodesReady }"><span>{{ episodesReady ? '✓' : '3' }}</span><div><strong>分集大纲</strong><small>{{ episodesReady ? `${episodes.length} 集可制作` : '等待上一阶段' }}</small></div></div><div :class="{ done: scriptReady, active: Boolean(selectedEpisode) && !scriptReady }"><span>{{ scriptReady ? '✓' : '4' }}</span><div><strong>分场剧本</strong><small>{{ scriptReady ? '可编辑、可审核' : '选择分集后生成' }}</small></div></div><div :class="{ done: Boolean(audioArtifact), active: scriptReady && !audioArtifact }"><span>{{ audioArtifact ? '✓' : '5' }}</span><div><strong>单集旁白</strong><small>{{ audioArtifact ? '可用于字幕与成片' : scriptReady ? '编辑文本后生成' : '等待剧本' }}</small></div></div><div :class="{ done: Boolean(subtitleArtifact), active: Boolean(audioArtifact) && !subtitleArtifact }"><span>{{ subtitleArtifact ? '✓' : '6' }}</span><div><strong>字幕任务</strong><small>{{ subtitleArtifact ? '等待人工审核' : audioArtifact ? '选择方式后生成' : '等待旁白' }}</small></div></div><div :class="{ done: Boolean(bgmArtifact), active: Boolean(audioArtifact) && !bgmArtifact }"><span>{{ bgmArtifact ? '✓' : '7' }}</span><div><strong>BGM</strong><small>{{ bgmArtifact ? '可用于成片编排' : audioArtifact ? '登记授权线索后生成' : '等待旁白' }}</small></div></div><div :class="{ done: Boolean(selectedShotList) && videoClipReadyCount > 0 && videoClipSucceededCount >= videoClipReadyCount, active: Boolean(selectedShotList) && videoClipReadyCount > 0 }"><span>{{ selectedShotList && videoClipSucceededCount >= videoClipReadyCount && videoClipReadyCount > 0 ? '✓' : '8' }}</span><div><strong>画面片段</strong><small>{{ selectedShotList ? `${videoClipSucceededCount}/${videoClipReadyCount} 个可生成镜头已完成` : '等待分镜审核' }}</small></div></div><div :class="{ done: videoAssemblyTask?.status === 'succeeded', active: assemblyClipSelections.length >= 2 }"><span>{{ videoAssemblyTask?.status === 'succeeded' ? '✓' : '9' }}</span><div><strong>成片合成</strong><small>{{ videoAssemblyTask?.status === 'succeeded' ? '已生成，可预览' : assemblyClipSelections.length >= 2 ? '可选择音频与字幕' : '等待两个成功片段' }}</small></div></div></div></section>
         <section class="creator-workspace-card creator-activity-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">RECENT TASKS</p><h3>任务记录</h3></div><span class="creator-activity-count">{{ activeTaskCount ? `${activeTaskCount} 个处理中` : '已同步' }}</span></div><div v-if="loading" class="creator-activity-empty"><span class="spinner" />读取任务…</div><div v-else-if="!tasks.length" class="creator-activity-empty">完成上一步后，任务会显示在这里。</div><div v-else class="creator-activity-list"><div v-for="task in tasks.slice(0, 6)" :key="task.id"><span class="creator-activity-mark" :class="task.status">{{ task.status === 'succeeded' ? '✓' : task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(task.kind) }}</strong><small>{{ formatStatus(task.status) }} · {{ formatTime(task.updated_at) }}</small></div></div></div></section>
         <section class="creator-workspace-card creator-help-card"><span class="creator-help-icon">?</span><h3>需要人工审核</h3><p>AI 负责拆解和生成，创作者仍可以在每个阶段修改剧本、审核资产，并决定是否进入下一步。</p><button class="creator-small-link" type="button" @click="emit('openOperator')">了解制作后台 <span>→</span></button></section>
       </aside>

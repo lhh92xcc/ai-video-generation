@@ -95,6 +95,38 @@ class EpisodeTaskPlanService:
         self._video_clip_task_service = video_clip_task_service
         self._video_assembly_task_service = video_assembly_task_service
 
+    async def create_story_bible_task(
+        self,
+        project_id: UUID,
+        idempotency_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
+    ) -> tuple[GenerationTaskRecord, bool]:
+        """Expose the upstream task boundary to the production orchestrator."""
+
+        return await self._novel_task_service.create_story_bible_task(
+            project_id,
+            idempotency_key,
+            task_metadata=task_metadata,
+        )
+
+    async def create_episode_plan_task(
+        self,
+        project_id: UUID,
+        target_episode_count: int | None = None,
+        idempotency_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
+    ) -> tuple[GenerationTaskRecord, bool]:
+        """Expose episode planning without leaking the nested service field."""
+
+        return await self._novel_task_service.create_episode_plan_task(
+            project_id,
+            target_episode_count,
+            idempotency_key,
+            task_metadata=task_metadata,
+        )
+
     async def create(
         self,
         project_id: UUID,
@@ -159,6 +191,7 @@ class EpisodeTaskPlanService:
         return EpisodeTaskPlanResponse(
             project_id=project_id,
             label=request.label,
+            auto_advance=request.auto_advance,
             batch=batch,
             batches=batches,
             items=items,
@@ -166,6 +199,81 @@ class EpisodeTaskPlanService:
             reused_count=reused_count,
             skipped_count=skipped_count,
             blocked_count=blocked_count,
+        )
+
+    async def advance_after_task(
+        self,
+        task: GenerationTaskRecord,
+        *,
+        include_bgm: bool = False,
+    ) -> EpisodeTaskPlanResponse | GenerationTaskRecord | None:
+        """Advance the durable novel DAG after a successful task.
+
+        This method is intentionally event-driven: the Worker calls it after
+        ACKing a successful task, and the same idempotent planner is also safe
+        to call during startup reconciliation.  It never waits for the next
+        Provider and therefore remains safe to call from the Worker loop.
+        """
+
+        if task.status != TaskStatus.SUCCEEDED:
+            return None
+        if task.kind == GenerationTaskKind.NOVEL_STORY_BIBLE:
+            next_task, _ = await self._novel_task_service.create_episode_plan_task(
+                task.project_id,
+                idempotency_key=f"auto-dag:episode-plan:{task.project_id}",
+            )
+            return next_task
+        if task.kind == GenerationTaskKind.NOVEL_EPISODE_PLAN:
+            return await self.create(
+                task.project_id,
+                EpisodeTaskPlanCreateRequest(
+                    label="自动生产 DAG",
+                    production_mode=True,
+                    include_reference_images=True,
+                    include_narration=True,
+                    include_subtitles=True,
+                    include_bgm=include_bgm,
+                    include_video=True,
+                    include_assembly=True,
+                    auto_advance=True,
+                ),
+                idempotency_key=f"auto-dag:episodes:{task.project_id}",
+            )
+
+        if task.kind not in {
+            GenerationTaskKind.NOVEL_EPISODE_SCRIPT,
+            GenerationTaskKind.NOVEL_SHOT_LIST,
+            GenerationTaskKind.ASSET_REFERENCE_IMAGE,
+            GenerationTaskKind.AUDIO_NARRATION,
+            GenerationTaskKind.SUBTITLE_ALIGN,
+            GenerationTaskKind.SUBTITLE_ASR,
+            GenerationTaskKind.AUDIO_BGM,
+            GenerationTaskKind.VIDEO_CLIP,
+            GenerationTaskKind.VIDEO_ASSEMBLY,
+        }:
+            return None
+        raw_episode_id = task.input_data.get("episode_id")
+        if raw_episode_id is None:
+            return None
+        try:
+            episode_id = UUID(str(raw_episode_id))
+        except (TypeError, ValueError):
+            return None
+        return await self.create(
+            task.project_id,
+            EpisodeTaskPlanCreateRequest(
+                episode_ids=[episode_id],
+                label="自动生产 DAG",
+                production_mode=True,
+                include_reference_images=True,
+                include_narration=True,
+                include_subtitles=True,
+                include_bgm=include_bgm,
+                include_video=True,
+                include_assembly=True,
+                auto_advance=True,
+            ),
+            idempotency_key=f"auto-dag:episode:{episode_id}",
         )
 
     @staticmethod
@@ -233,6 +341,12 @@ class EpisodeTaskPlanService:
         if not request.production_mode:
             return self._item(episode, None, EpisodeTaskPlanAction.SKIPPED, "分场剧本和分镜均已生成；production_mode 未开启", []), []
 
+        # Keep the last completed production stage in the response when an
+        # automatic DAG tick already finished the requested work between two
+        # planner calls. A skipped response should still tell the UI what was
+        # actually completed instead of returning a misleading null stage.
+        completed_stage: str | None = None
+
         if request.include_reference_images:
             reference_item, reference_task_ids, ready_references, blocked = await self._plan_reference_images(
                 episode, shot_list.shots, project_tasks, idempotency_key,
@@ -243,6 +357,8 @@ class EpisodeTaskPlanService:
             ready_references, blocked = {}, []
         if blocked:
             return self._item(episode, GenerationTaskKind.ASSET_REFERENCE_IMAGE.value, EpisodeTaskPlanAction.BLOCKED, "参考图阶段被阻塞，请先处理资产或参考图 Artifact", [], blocked), []
+        if ready_references:
+            completed_stage = GenerationTaskKind.ASSET_REFERENCE_IMAGE.value
 
         if request.include_narration:
             narration_item, narration_task_ids, narration_artifact, blocked = await self._plan_narration(
@@ -252,6 +368,8 @@ class EpisodeTaskPlanService:
                 return narration_item, narration_task_ids
             if blocked:
                 return self._item(episode, GenerationTaskKind.AUDIO_NARRATION.value, EpisodeTaskPlanAction.BLOCKED, "旁白阶段被阻塞，请检查音频任务和 Artifact", [], blocked), []
+            if narration_artifact is not None:
+                completed_stage = GenerationTaskKind.AUDIO_NARRATION.value
         else:
             narration_artifact = None
 
@@ -266,6 +384,8 @@ class EpisodeTaskPlanService:
                 return subtitle_item, subtitle_task_ids
             if blocked:
                 return self._item(episode, self._subtitle_kind(request), EpisodeTaskPlanAction.BLOCKED, "字幕阶段被阻塞，请检查字幕 Provider 或音频 Artifact", [], blocked), []
+            if subtitle_artifact is not None:
+                completed_stage = self._subtitle_kind(request)
 
         bgm_artifact = None
         if request.include_bgm:
@@ -276,6 +396,8 @@ class EpisodeTaskPlanService:
                 return bgm_item, bgm_task_ids
             if blocked:
                 return self._item(episode, GenerationTaskKind.AUDIO_BGM.value, EpisodeTaskPlanAction.BLOCKED, "BGM 阶段被阻塞，请检查本地授权音频配置", [], blocked), []
+            if bgm_artifact is not None:
+                completed_stage = GenerationTaskKind.AUDIO_BGM.value
 
         video_clip_tasks: list[GenerationTaskRecord] = []
         if request.include_video:
@@ -286,8 +408,16 @@ class EpisodeTaskPlanService:
                 return video_item, video_task_ids
             if blocked:
                 return self._item(episode, GenerationTaskKind.VIDEO_CLIP.value, EpisodeTaskPlanAction.BLOCKED, "视频片段阶段被阻塞，请先完成分镜资产审核", [], blocked), []
+            if video_clip_tasks:
+                completed_stage = GenerationTaskKind.VIDEO_CLIP.value
         if not request.include_assembly:
-            return self._item(episode, None, EpisodeTaskPlanAction.SKIPPED, "视频片段已完成，include_assembly 未开启", []), []
+            completed_task_ids = self._completed_task_ids(
+                completed_stage,
+                project_tasks,
+                episode.id,
+                len(shot_list.shots),
+            )
+            return self._item(episode, completed_stage, EpisodeTaskPlanAction.SKIPPED, "当前配置已完成，include_assembly 未开启", completed_task_ids), completed_task_ids
         if not request.include_video:
             return self._item(episode, GenerationTaskKind.VIDEO_ASSEMBLY.value, EpisodeTaskPlanAction.BLOCKED, "成片合成依赖视频片段", [], ["VIDEO_CLIPS_REQUIRED"]), []
         if not video_clip_tasks:
@@ -301,6 +431,20 @@ class EpisodeTaskPlanService:
         )
         if assembly_item is not None:
             return assembly_item, assembly_task_ids
+        if not blocked:
+            completed_task_ids = self._completed_task_ids(
+                GenerationTaskKind.VIDEO_ASSEMBLY.value,
+                project_tasks,
+                episode.id,
+                len(shot_list.shots),
+            )
+            return self._item(
+                episode,
+                GenerationTaskKind.VIDEO_ASSEMBLY.value,
+                EpisodeTaskPlanAction.SKIPPED,
+                "成片合成已完成，复用现有 Artifact",
+                completed_task_ids,
+            ), completed_task_ids
         return self._item(episode, GenerationTaskKind.VIDEO_ASSEMBLY.value, EpisodeTaskPlanAction.BLOCKED, "成片合成阶段被阻塞，请检查可选音频、字幕和片段 Artifact", blocked), []
 
     async def _plan_reference_images(self, episode, shots, project_tasks, idempotency_key):
@@ -592,6 +736,58 @@ class EpisodeTaskPlanService:
         matching = [task for task in tasks if task.kind == kind and str(task.input_data.get("episode_id")) == str(episode_id)]
         matching.sort(key=lambda task: task.updated_at, reverse=True)
         return matching[0] if matching else None
+
+    @classmethod
+    def _completed_task_ids(
+        cls,
+        stage: str | None,
+        tasks: list[GenerationTaskRecord],
+        episode_id: UUID,
+        shot_count: int,
+    ) -> list[UUID]:
+        """Return completed task IDs for a skipped production stage.
+
+        Keeping these IDs in the response makes an automatic completion
+        observable to clients that asked for the same stage just after the
+        Worker advanced it. The generated batch is informational and does not
+        re-enqueue a succeeded task.
+        """
+
+        if stage is None:
+            return []
+        stage_kind = {
+            GenerationTaskKind.ASSET_REFERENCE_IMAGE.value: GenerationTaskKind.ASSET_REFERENCE_IMAGE,
+            GenerationTaskKind.AUDIO_NARRATION.value: GenerationTaskKind.AUDIO_NARRATION,
+            GenerationTaskKind.SUBTITLE_ALIGN.value: GenerationTaskKind.SUBTITLE_ALIGN,
+            GenerationTaskKind.SUBTITLE_ASR.value: GenerationTaskKind.SUBTITLE_ASR,
+            GenerationTaskKind.AUDIO_BGM.value: GenerationTaskKind.AUDIO_BGM,
+            GenerationTaskKind.VIDEO_ASSEMBLY.value: GenerationTaskKind.VIDEO_ASSEMBLY,
+        }.get(stage)
+        if stage_kind is not None:
+            matching = [
+                task
+                for task in tasks
+                if task.kind == stage_kind
+                and str(task.input_data.get("episode_id")) == str(episode_id)
+                and task.status == TaskStatus.SUCCEEDED
+                and task.artifacts
+            ]
+            matching.sort(key=lambda task: task.updated_at, reverse=True)
+            if matching:
+                return [matching[0].id]
+            return []
+        if stage == GenerationTaskKind.VIDEO_CLIP.value:
+            matching = [
+                task
+                for task in tasks
+                if task.kind == GenerationTaskKind.VIDEO_CLIP
+                and str(task.input_data.get("episode_id")) == str(episode_id)
+                and task.status == TaskStatus.SUCCEEDED
+                and cls._task_artifact(task, "video_clip") is not None
+            ]
+            matching.sort(key=cls._video_clip_sort_key)
+            return [task.id for task in matching[:shot_count]]
+        return []
 
     @staticmethod
     def _latest_video_clip_task(tasks, episode_id, shot_index):

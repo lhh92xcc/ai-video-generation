@@ -101,6 +101,7 @@ class Settings:
     tts_pause_scene_boundary_keep_seconds: float
     tts_binary: str
     tts_ffmpeg_binary: str
+    tts_multi_voice_timeout_seconds: int
     tts_runtime_path: str
     tts_script_path: str
     tts_device: str
@@ -112,6 +113,18 @@ class Settings:
     identity_audit_threshold: float
     identity_audit_frame_count: int
     identity_audit_timeout_seconds: int
+    lip_sync_provider: str
+    lip_sync_runtime_path: str
+    lip_sync_script_path: str
+    lip_sync_model_root: str
+    lip_sync_device: str
+    lip_sync_model: str
+    lip_sync_timeout_seconds: int
+    lip_sync_base_url: str
+    lip_sync_create_path: str
+    lip_sync_health_path: str
+    lip_sync_api_key: str | None
+    lip_sync_max_download_bytes: int
     bgm_provider: str
     bgm_source_root: str
     bgm_source_path: str | None
@@ -126,6 +139,23 @@ class Settings:
     asr_binary: str
     asr_model_path: str
     asr_threads: int
+    worker_auto_retry_enabled: bool
+    worker_max_auto_retries: int
+    worker_retry_backoff_seconds: float
+    worker_retry_max_backoff_seconds: float
+    worker_stale_task_timeout_seconds: int
+    worker_gpu_lock_enabled: bool
+    worker_gpu_lock_key: str
+    worker_gpu_lock_ttl_seconds: int
+    worker_gpu_lock_wait_seconds: int
+    worker_cleanup_enabled: bool
+    worker_cleanup_interval_seconds: int
+    worker_cleanup_max_age_hours: float
+    worker_cleanup_roots: tuple[str, ...]
+    worker_cleanup_max_files_per_run: int
+    worker_cleanup_min_free_gb: float
+    worker_scheduler_enabled: bool
+    worker_scheduler_interval_seconds: int
 
 
 def _default_config_path() -> Path:
@@ -133,9 +163,13 @@ def _default_config_path() -> Path:
     if configured_path:
         return Path(configured_path)
 
+    profile = os.getenv("AI_VIDEO_PROFILE", "")
     local_path = Path("config/config.local.toml")
-    if local_path.exists() and os.getenv("AI_VIDEO_PROFILE") == "local_mac_16gb":
+    if local_path.exists() and profile == "local_mac_16gb":
         return local_path
+    windows_path = Path("config/config.windows_4060ti_8gb.toml")
+    if windows_path.exists() and profile == "windows_4060ti_8gb":
+        return windows_path
     return Path("config/config.example.toml")
 
 
@@ -157,12 +191,42 @@ def load_settings(path: str | Path | None = None) -> Settings:
     image_config = raw_config.get("image_generation", {})
     video_config = raw_config.get("video_generation", {})
     tts_config = raw_config.get("tts", {})
+    lip_sync_config = raw_config.get("lip_sync", {})
     bgm_config = raw_config.get("bgm", {})
     subtitle_alignment_config = raw_config.get("subtitle_alignment", {})
     asr_config = raw_config.get("asr", {})
+    worker_config = raw_config.get("worker", {})
 
     def setting(section: dict[str, object], key: str, env_name: str, default: object) -> object:
-        return os.getenv(env_name, str(section.get(key, default)))
+        environment_value = os.getenv(env_name)
+        if environment_value is not None and environment_value.strip() != "":
+            return environment_value
+        return str(section.get(key, default))
+
+    def bool_setting(section: dict[str, object], key: str, env_name: str, default: bool) -> bool:
+        return str(setting(section, key, env_name, default)).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    def list_setting(
+        section: dict[str, object],
+        key: str,
+        env_name: str,
+        default: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        raw_value = os.getenv(env_name)
+        if raw_value is None:
+            raw_value = section.get(key, default)
+        if isinstance(raw_value, str):
+            values = raw_value.split(",")
+        elif isinstance(raw_value, (list, tuple)):
+            values = raw_value
+        else:
+            values = default
+        return tuple(str(value).strip() for value in values if str(value).strip())
 
     return Settings(
         app_name=str(app_config.get("name", "ai-video-generation")),
@@ -458,15 +522,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
         tts_crossfade_ms=int(
             setting(tts_config, "crossfade_ms", "AI_VIDEO_TTS_CROSSFADE_MS", 120)
         ),
-        tts_pacing_enabled=str(
-            setting(
-                tts_config,
-                "pacing_enabled",
-                "AI_VIDEO_TTS_PACING_ENABLED",
-                False,
-            )
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        tts_pacing_enabled=bool_setting(
+            tts_config,
+            "pacing_enabled",
+            "AI_VIDEO_TTS_PACING_ENABLED",
+            False,
+        ),
         tts_pacing_target_characters_per_second=float(
             setting(
                 tts_config,
@@ -491,15 +552,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 70,
             )
         ),
-        tts_pause_compaction_enabled=str(
-            setting(
-                tts_config,
-                "pause_compaction_enabled",
-                "AI_VIDEO_TTS_PAUSE_COMPACTION_ENABLED",
-                False,
-            )
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        tts_pause_compaction_enabled=bool_setting(
+            tts_config,
+            "pause_compaction_enabled",
+            "AI_VIDEO_TTS_PAUSE_COMPACTION_ENABLED",
+            False,
+        ),
         tts_pause_min_gap_seconds=float(
             setting(
                 tts_config,
@@ -552,6 +610,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
         tts_ffmpeg_binary=str(
             setting(tts_config, "ffmpeg_binary", "AI_VIDEO_TTS_FFMPEG_BINARY", "ffmpeg")
         ),
+        tts_multi_voice_timeout_seconds=int(
+            setting(
+                tts_config,
+                "multi_voice_timeout_seconds",
+                "AI_VIDEO_TTS_MULTI_VOICE_TIMEOUT_SECONDS",
+                120,
+            )
+        ),
         tts_runtime_path=str(
             setting(
                 tts_config,
@@ -577,15 +643,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 "config/pronunciation.toml",
             )
         ),
-        identity_audit_enabled=str(
-            setting(
-                video_config,
-                "identity_audit_enabled",
-                "AI_VIDEO_IDENTITY_AUDIT_ENABLED",
-                False,
-            )
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        identity_audit_enabled=bool_setting(
+            video_config,
+            "identity_audit_enabled",
+            "AI_VIDEO_IDENTITY_AUDIT_ENABLED",
+            False,
+        ),
         identity_audit_python_path=str(
             setting(
                 video_config,
@@ -634,6 +697,85 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 120,
             )
         ),
+        lip_sync_provider=str(
+            setting(lip_sync_config, "provider", "AI_VIDEO_LIP_SYNC_PROVIDER", "mock")
+        ),
+        lip_sync_runtime_path=str(
+            setting(
+                lip_sync_config,
+                "runtime_path",
+                "AI_VIDEO_LIP_SYNC_RUNTIME_PATH",
+                "",
+            )
+        ),
+        lip_sync_script_path=str(
+            setting(
+                lip_sync_config,
+                "script_path",
+                "AI_VIDEO_LIP_SYNC_SCRIPT_PATH",
+                "scripts/musetalk_infer.py",
+            )
+        ),
+        lip_sync_model_root=str(
+            setting(
+                lip_sync_config,
+                "model_root",
+                "AI_VIDEO_LIP_SYNC_MODEL_ROOT",
+                "",
+            )
+        ),
+        lip_sync_device=str(
+            setting(lip_sync_config, "device", "AI_VIDEO_LIP_SYNC_DEVICE", "cpu")
+        ),
+        lip_sync_model=str(
+            setting(
+                lip_sync_config,
+                "model",
+                "AI_VIDEO_LIP_SYNC_MODEL",
+                "MuseTalk-local",
+            )
+        ),
+        lip_sync_timeout_seconds=int(
+            setting(
+                lip_sync_config,
+                "timeout_seconds",
+                "AI_VIDEO_LIP_SYNC_TIMEOUT_SECONDS",
+                900,
+            )
+        ),
+        lip_sync_base_url=str(
+            setting(
+                lip_sync_config,
+                "base_url",
+                "AI_VIDEO_LIP_SYNC_BASE_URL",
+                "http://127.0.0.1:8090",
+            )
+        ),
+        lip_sync_create_path=str(
+            setting(
+                lip_sync_config,
+                "create_path",
+                "AI_VIDEO_LIP_SYNC_CREATE_PATH",
+                "/v1/lip-sync",
+            )
+        ),
+        lip_sync_health_path=str(
+            setting(
+                lip_sync_config,
+                "health_path",
+                "AI_VIDEO_LIP_SYNC_HEALTH_PATH",
+                "/healthz",
+            )
+        ),
+        lip_sync_api_key=os.getenv("AI_VIDEO_LIP_SYNC_API_KEY") or None,
+        lip_sync_max_download_bytes=int(
+            setting(
+                lip_sync_config,
+                "max_download_bytes",
+                "AI_VIDEO_LIP_SYNC_MAX_DOWNLOAD_BYTES",
+                524288000,
+            )
+        ),
         bgm_provider=str(setting(bgm_config, "provider", "AI_VIDEO_BGM_PROVIDER", "mock")),
         bgm_source_root=str(
             setting(bgm_config, "source_root", "AI_VIDEO_BGM_SOURCE_ROOT", ".tmp/bgm")
@@ -641,10 +783,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
         bgm_source_path=(
             str(setting(bgm_config, "source_path", "AI_VIDEO_BGM_SOURCE_PATH", "")) or None
         ),
-        bgm_normalize_audio=str(
-            setting(bgm_config, "normalize_audio", "AI_VIDEO_BGM_NORMALIZE_AUDIO", True)
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        bgm_normalize_audio=bool_setting(
+            bgm_config,
+            "normalize_audio",
+            "AI_VIDEO_BGM_NORMALIZE_AUDIO",
+            True,
+        ),
         bgm_normalization_timeout_seconds=int(
             setting(
                 bgm_config,
@@ -673,4 +817,125 @@ def load_settings(path: str | Path | None = None) -> Settings:
             setting(asr_config, "model_path", "AI_VIDEO_ASR_MODEL_PATH", "")
         ),
         asr_threads=int(setting(asr_config, "threads", "AI_VIDEO_ASR_THREADS", 4)),
+        worker_auto_retry_enabled=bool_setting(
+            worker_config,
+            "auto_retry_enabled",
+            "AI_VIDEO_WORKER_AUTO_RETRY_ENABLED",
+            True,
+        ),
+        worker_max_auto_retries=int(
+            setting(worker_config, "max_auto_retries", "AI_VIDEO_WORKER_MAX_AUTO_RETRIES", 2)
+        ),
+        worker_retry_backoff_seconds=float(
+            setting(
+                worker_config,
+                "retry_backoff_seconds",
+                "AI_VIDEO_WORKER_RETRY_BACKOFF_SECONDS",
+                5,
+            )
+        ),
+        worker_retry_max_backoff_seconds=float(
+            setting(
+                worker_config,
+                "retry_max_backoff_seconds",
+                "AI_VIDEO_WORKER_RETRY_MAX_BACKOFF_SECONDS",
+                120,
+            )
+        ),
+        worker_stale_task_timeout_seconds=int(
+            setting(
+                worker_config,
+                "stale_task_timeout_seconds",
+                "AI_VIDEO_WORKER_STALE_TASK_TIMEOUT_SECONDS",
+                3600,
+            )
+        ),
+        worker_gpu_lock_enabled=bool_setting(
+            worker_config,
+            "gpu_lock_enabled",
+            "AI_VIDEO_WORKER_GPU_LOCK_ENABLED",
+            False,
+        ),
+        worker_gpu_lock_key=str(
+            setting(
+                worker_config,
+                "gpu_lock_key",
+                "AI_VIDEO_WORKER_GPU_LOCK_KEY",
+                "ai-video:gpus:default",
+            )
+        ),
+        worker_gpu_lock_ttl_seconds=int(
+            setting(
+                worker_config,
+                "gpu_lock_ttl_seconds",
+                "AI_VIDEO_WORKER_GPU_LOCK_TTL_SECONDS",
+                7200,
+            )
+        ),
+        worker_gpu_lock_wait_seconds=int(
+            setting(
+                worker_config,
+                "gpu_lock_wait_seconds",
+                "AI_VIDEO_WORKER_GPU_LOCK_WAIT_SECONDS",
+                8,
+            )
+        ),
+        worker_cleanup_enabled=bool_setting(
+            worker_config,
+            "cleanup_enabled",
+            "AI_VIDEO_WORKER_CLEANUP_ENABLED",
+            True,
+        ),
+        worker_cleanup_interval_seconds=int(
+            setting(
+                worker_config,
+                "cleanup_interval_seconds",
+                "AI_VIDEO_WORKER_CLEANUP_INTERVAL_SECONDS",
+                900,
+            )
+        ),
+        worker_cleanup_max_age_hours=float(
+            setting(
+                worker_config,
+                "cleanup_max_age_hours",
+                "AI_VIDEO_WORKER_CLEANUP_MAX_AGE_HOURS",
+                24,
+            )
+        ),
+        worker_cleanup_roots=list_setting(
+            worker_config,
+            "cleanup_roots",
+            "AI_VIDEO_WORKER_CLEANUP_ROOTS",
+            (".tmp/work", ".tmp/renders", ".tmp/musetalk"),
+        ),
+        worker_cleanup_max_files_per_run=int(
+            setting(
+                worker_config,
+                "cleanup_max_files_per_run",
+                "AI_VIDEO_WORKER_CLEANUP_MAX_FILES_PER_RUN",
+                500,
+            )
+        ),
+        worker_cleanup_min_free_gb=float(
+            setting(
+                worker_config,
+                "cleanup_min_free_gb",
+                "AI_VIDEO_WORKER_CLEANUP_MIN_FREE_GB",
+                10,
+            )
+        ),
+        worker_scheduler_enabled=bool_setting(
+            worker_config,
+            "scheduler_enabled",
+            "AI_VIDEO_WORKER_SCHEDULER_ENABLED",
+            True,
+        ),
+        worker_scheduler_interval_seconds=int(
+            setting(
+                worker_config,
+                "scheduler_interval_seconds",
+                "AI_VIDEO_WORKER_SCHEDULER_INTERVAL_SECONDS",
+                15,
+            )
+        ),
     )

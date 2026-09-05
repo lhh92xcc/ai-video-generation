@@ -50,6 +50,7 @@ class TaskService:
         tts_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
         bgm_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
         subtitle_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
+        lip_sync_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> None:
         self._store = store
         self._text_provider = text_provider
@@ -61,6 +62,7 @@ class TaskService:
         self._tts_task_runner = tts_task_runner
         self._bgm_task_runner = bgm_task_runner
         self._subtitle_task_runner = subtitle_task_runner
+        self._lip_sync_task_runner = lip_sync_task_runner
 
     async def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
         project = ProjectRecord(
@@ -146,6 +148,11 @@ class TaskService:
             if self._video_assembly_task_runner is None:
                 raise RuntimeError("Video assembly task runner has not been configured")
             await self._video_assembly_task_runner(task_id)
+            return
+        if task.kind == GenerationTaskKind.LIP_SYNC:
+            if self._lip_sync_task_runner is None:
+                raise RuntimeError("Lip-sync task runner has not been configured")
+            await self._lip_sync_task_runner(task_id)
             return
         if task.kind == GenerationTaskKind.AUDIO_NARRATION:
             if self._tts_task_runner is None:
@@ -267,6 +274,14 @@ class TaskService:
         task.progress = 0
         task.error = None
         task.updated_at = utc_now()
+        # A manual retry takes ownership of a previously scheduled automatic
+        # retry.  Clear its deadline so the Worker scheduler cannot enqueue a
+        # second copy, while preserving the retry counter for observability.
+        task.input_data["auto_retry_pending"] = False
+        task.input_data.pop("next_retry_at", None)
+        if task.input_data.get("auto_run_id"):
+            task.input_data["auto_advance"] = True
+            task.input_data["auto_run_status"] = "active"
         stage_run = next((item for item in task.stages if item.stage == stage), None)
         if stage_run is None:
             stage_run = StageRun(stage=stage, status=TaskStatus.QUEUED)
@@ -290,3 +305,42 @@ class TaskService:
 
         await self._task_queue.enqueue(saved_task.id)
         return saved_task
+
+    async def mark_failed(
+        self,
+        task_id: UUID,
+        code: str,
+        message: str,
+    ) -> GenerationTaskRecord:
+        """Persist a failure when the Worker fails outside a task service.
+
+        Provider task services normally catch and persist their own errors. A
+        Worker timeout, process cancellation, or unexpected orchestration
+        exception can happen one layer above them, so the Worker needs a
+        single safe fallback that turns an orphaned ``running`` task into a
+        retryable ``failed`` task.
+        """
+
+        task = await self.get_task(task_id)
+        if task.status not in {TaskStatus.CREATED, TaskStatus.QUEUED, TaskStatus.RUNNING}:
+            return task
+        failed_at = utc_now()
+        task.status = TaskStatus.FAILED
+        task.current_stage = task.current_stage or (
+            task.stages[-1].stage if task.stages else None
+        )
+        task.progress = min(task.progress, 99)
+        task.updated_at = failed_at
+        task.error = TaskError(code=code, message=message)
+        if task.current_stage is not None:
+            stage_run = next(
+                (item for item in task.stages if item.stage == task.current_stage),
+                None,
+            )
+            if stage_run is None:
+                stage_run = StageRun(stage=task.current_stage, status=TaskStatus.FAILED)
+                task.stages.append(stage_run)
+            stage_run.status = TaskStatus.FAILED
+            stage_run.error_code = code
+            stage_run.finished_at = failed_at
+        return await self._store.update_task(task)

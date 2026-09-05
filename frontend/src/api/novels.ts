@@ -6,6 +6,7 @@ import type {
   NovelProjectRecord,
   NovelSourceSummary,
   EpisodeTaskPlanResponse,
+  ProductionRunResponse,
 } from '../types/task'
 
 export interface NovelProjectCreatePayload {
@@ -113,6 +114,37 @@ export function createEpisodeTaskPlan(
   idempotencyKey?: string,
 ): Promise<EpisodeTaskPlanResponse> {
   return apiRequest<EpisodeTaskPlanResponse>(`/api/v1/novel-projects/${projectId}/episode-task-plans`, {
+    method: 'POST',
+    headers: idempotencyHeaders(idempotencyKey),
+    body: JSON.stringify(payload),
+  })
+}
+
+export function startProductionRun(
+  projectId: string,
+  payload: {
+    target_episode_count?: number
+    episode_ids?: string[]
+    label?: string
+    production_mode?: boolean
+    include_reference_images?: boolean
+    include_narration?: boolean
+    include_subtitles?: boolean
+    include_bgm?: boolean
+    include_video?: boolean
+    include_assembly?: boolean
+    subtitle_mode?: 'align' | 'asr'
+    provider_profile_id?: string
+    bgm_source_path?: string
+    bgm_label?: string
+    bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'
+    bgm_rights_holder?: string
+    bgm_rights_reference?: string
+    auto_advance?: boolean
+  },
+  idempotencyKey?: string,
+): Promise<ProductionRunResponse> {
+  return apiRequest<ProductionRunResponse>(`/api/v1/novel-projects/${projectId}/production-runs`, {
     method: 'POST',
     headers: idempotencyHeaders(idempotencyKey),
     body: JSON.stringify(payload),

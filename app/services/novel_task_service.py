@@ -52,6 +52,8 @@ class NovelGenerationTaskService:
         self,
         project_id: UUID,
         idempotency_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
     ) -> tuple[GenerationTaskRecord, bool]:
         project = await self._novel_service.get_project(project_id)
         if project.source_id is None:
@@ -60,7 +62,7 @@ class NovelGenerationTaskService:
             project_id=project.id,
             kind=GenerationTaskKind.NOVEL_STORY_BIBLE,
             stage=StageName.STORY_BIBLE,
-            input_data={},
+            input_data=dict(task_metadata or {}),
             idempotency_key=idempotency_key,
         )
 
@@ -69,6 +71,8 @@ class NovelGenerationTaskService:
         project_id: UUID,
         target_episode_count: int | None = None,
         idempotency_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
     ) -> tuple[GenerationTaskRecord, bool]:
         await self._novel_service.get_story_bible(project_id)
         input_data = (
@@ -76,6 +80,7 @@ class NovelGenerationTaskService:
             if target_episode_count is not None
             else {}
         )
+        input_data.update(task_metadata or {})
         return await self._create_task(
             project_id=project_id,
             kind=GenerationTaskKind.NOVEL_EPISODE_PLAN,
@@ -89,12 +94,15 @@ class NovelGenerationTaskService:
         episode_id: UUID,
         idempotency_key: str | None = None,
         plan_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
     ) -> tuple[GenerationTaskRecord, bool]:
         episode = await self._novel_service.get_episode(episode_id)
         await self._novel_service.get_story_bible(episode.project_id)
         input_data: dict[str, object] = {"episode_id": str(episode_id)}
         if plan_key:
             input_data["episode_task_plan_key"] = plan_key
+        input_data.update(task_metadata or {})
         return await self._create_task(
             project_id=episode.project_id,
             kind=GenerationTaskKind.NOVEL_EPISODE_SCRIPT,
@@ -108,6 +116,8 @@ class NovelGenerationTaskService:
         episode_id: UUID,
         idempotency_key: str | None = None,
         plan_key: str | None = None,
+        *,
+        task_metadata: dict[str, object] | None = None,
     ) -> tuple[GenerationTaskRecord, bool]:
         episode = await self._novel_service.get_episode(episode_id)
         await self._novel_service.get_episode_script(episode_id)
@@ -115,6 +125,7 @@ class NovelGenerationTaskService:
         input_data: dict[str, object] = {"episode_id": str(episode_id)}
         if plan_key:
             input_data["episode_task_plan_key"] = plan_key
+        input_data.update(task_metadata or {})
         return await self._create_task(
             project_id=episode.project_id,
             kind=GenerationTaskKind.NOVEL_SHOT_LIST,

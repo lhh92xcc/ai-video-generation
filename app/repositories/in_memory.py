@@ -32,6 +32,7 @@ from app.domain.models import (
     ReferenceImageRecord,
     ShotListRecord,
     StoryBibleRecord,
+    VoiceAssetRecord,
     EpisodeScriptDraftRecord,
     utc_now,
 )
@@ -59,6 +60,7 @@ class InMemoryStore:
         self._asset_reviews: dict[UUID, AssetReviewRecord] = {}
         self._audit_logs: dict[UUID, AuditLogRecord] = {}
         self._reference_images: dict[UUID, ReferenceImageRecord] = {}
+        self._voice_assets: dict[UUID, VoiceAssetRecord] = {}
         self._lock = asyncio.Lock()
 
     async def create_project(self, project: ProjectRecord) -> ProjectRecord:
@@ -122,6 +124,16 @@ class InMemoryStore:
     async def get_task_batch(self, batch_id: UUID) -> TaskBatchRecord | None:
         async with self._lock:
             batch = self._task_batches.get(batch_id)
+            return batch.model_copy(deep=True) if batch else None
+
+    async def get_task_batch_by_idempotency_key(
+        self,
+        project_id: UUID,
+        idempotency_key: str,
+    ) -> TaskBatchRecord | None:
+        async with self._lock:
+            batch_id = self._batch_idempotency_keys.get((project_id, idempotency_key))
+            batch = self._task_batches.get(batch_id) if batch_id else None
             return batch.model_copy(deep=True) if batch else None
 
     async def list_task_batches(self, project_id: UUID, limit: int = 50) -> list[TaskBatchRecord]:
@@ -624,4 +636,32 @@ class InMemoryStore:
             return [
                 image.model_copy(deep=True)
                 for image in sorted(images, key=lambda value: value.created_at, reverse=True)
+            ]
+
+    async def save_voice_asset(self, voice_asset: VoiceAssetRecord) -> VoiceAssetRecord:
+        async with self._lock:
+            current = self._voice_assets.get(voice_asset.id)
+            saved = voice_asset.model_copy(
+                update={
+                    "created_at": current.created_at if current else voice_asset.created_at,
+                    "updated_at": utc_now(),
+                },
+                deep=True,
+            )
+            self._voice_assets[saved.id] = saved
+            return saved.model_copy(deep=True)
+
+    async def get_voice_asset(self, voice_asset_id: UUID) -> VoiceAssetRecord | None:
+        async with self._lock:
+            voice_asset = self._voice_assets.get(voice_asset_id)
+            return voice_asset.model_copy(deep=True) if voice_asset else None
+
+    async def list_voice_assets(self, project_id: UUID) -> list[VoiceAssetRecord]:
+        async with self._lock:
+            assets = [
+                asset for asset in self._voice_assets.values() if asset.project_id == project_id
+            ]
+            return [
+                asset.model_copy(deep=True)
+                for asset in sorted(assets, key=lambda item: item.created_at, reverse=True)
             ]

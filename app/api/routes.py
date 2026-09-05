@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -24,6 +25,12 @@ from app.domain.models import (
     AuditLogRecord,
     AudioNarrationCreateRequest,
     AudioBGMCreateRequest,
+    CleanupResponse,
+    IdentityCalibrationRequest,
+    IdentityCalibrationResponse,
+    IdentityRetryRequest,
+    IdentityRetryResponse,
+    LipSyncCreateRequest,
     ChapterRecord,
     EpisodeRecord,
     EpisodeTaskPlanCreateRequest,
@@ -40,6 +47,10 @@ from app.domain.models import (
     NovelProjectCreateRequest,
     NovelProjectRecord,
     NovelSourceSummary,
+    OperationalHealthResponse,
+    ProductionQueueSnapshot,
+    ProductionRunCreateRequest,
+    ProductionRunResponse,
     ProjectCreateRequest,
     ProjectAccessRecord,
     ProjectInvitationAcceptRequest,
@@ -65,6 +76,8 @@ from app.domain.models import (
     TaskStatus,
     VideoClipCreateRequest,
     VideoAssemblyCreateRequest,
+    VoiceAssetCreateRequest,
+    VoiceAssetRecord,
 )
 from app.services.asset_service import (
     AssetInputError,
@@ -104,6 +117,17 @@ from app.services.video_assembly_service import (
     VideoAssemblyTaskService,
 )
 from app.services.tts_service import TTSInputError, TTSTaskService
+from app.services.voice_asset_service import (
+    VoiceAssetInputError,
+    VoiceAssetNotFoundError,
+    VoiceAssetService,
+)
+from app.services.identity_retry_service import (
+    IdentityAuditRetryService,
+    IdentityRetryInputError,
+)
+from app.media.identity_calibration import IdentityCalibrationService
+from app.services.lip_sync_service import LipSyncInputError, LipSyncTaskService
 from app.services.bgm_service import BGMTaskService
 from app.services.subtitle_service import SubtitleTaskService
 from app.providers.profiles import ASRProviderProfileError
@@ -138,6 +162,7 @@ from app.services.episode_task_plan_service import (
     EpisodeTaskPlanEpisodeMismatchError,
     EpisodeTaskPlanService,
 )
+from app.services.production_orchestrator import ProductionOrchestrator
 from app.storage.protocol import StorageError
 
 router = APIRouter()
@@ -222,6 +247,10 @@ def _episode_task_plan_service(request: Request) -> EpisodeTaskPlanService:
     return request.app.state.episode_task_plan_service
 
 
+def _production_orchestrator(request: Request) -> ProductionOrchestrator:
+    return request.app.state.production_orchestrator
+
+
 def _novel_service(request: Request) -> NovelService:
     return request.app.state.novel_service
 
@@ -250,6 +279,22 @@ def _tts_task_service(request: Request) -> TTSTaskService:
     return request.app.state.tts_task_service
 
 
+def _voice_asset_service(request: Request) -> VoiceAssetService:
+    return request.app.state.voice_asset_service
+
+
+def _identity_calibration_service(request: Request) -> IdentityCalibrationService:
+    return request.app.state.identity_calibration_service
+
+
+def _identity_retry_service(request: Request) -> IdentityAuditRetryService:
+    return request.app.state.identity_retry_service
+
+
+def _lip_sync_task_service(request: Request) -> LipSyncTaskService:
+    return request.app.state.lip_sync_task_service
+
+
 def _bgm_task_service(request: Request) -> BGMTaskService:
     return request.app.state.bgm_task_service
 
@@ -268,6 +313,14 @@ def _audit_service(request: Request) -> AuditService:
 
 def _access_service(request: Request) -> ProjectAccessService:
     return request.app.state.access_service
+
+
+def _runtime_health_service(request: Request):
+    return request.app.state.runtime_health_service
+
+
+def _cleanup_service(request: Request):
+    return request.app.state.cleanup_service
 
 
 def _identity(request: Request) -> ActorIdentity:
@@ -376,6 +429,60 @@ async def list_provider_profiles(
 async def healthz(request: Request) -> HealthResponse:
     settings = request.app.state.settings
     return HealthResponse(status="ok", version=settings.app_version)
+
+
+@router.get(
+    "/api/v1/system/health",
+    response_model=OperationalHealthResponse,
+    tags=["system"],
+)
+async def system_health(request: Request) -> OperationalHealthResponse:
+    """Run a one-shot dependency check for the remote production console."""
+
+    return await _runtime_health_service(request).check()
+
+
+@router.get(
+    "/api/v1/system/queue",
+    response_model=ProductionQueueSnapshot,
+    tags=["system"],
+)
+async def system_queue(
+    request: Request,
+    project_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+) -> ProductionQueueSnapshot:
+    """Return queue, Worker, GPU-lock, auto-run and task state."""
+
+    project_ids: set[UUID] | None = None
+    if project_id is not None:
+        await _require_artifact_read_permission(request, project_id)
+        project_ids = {project_id}
+    elif request.app.state.settings.auth_mode != "local":
+        accessible = await _access_service(request).list_accessible_projects(
+            await _novel_service(request).list_projects(),
+            _identity(request),
+        )
+        project_ids = {project.id for project in accessible}
+    return await _runtime_health_service(request).queue_snapshot(
+        limit=limit,
+        project_ids=project_ids,
+    )
+
+
+@router.post(
+    "/api/v1/system/cleanup",
+    response_model=CleanupResponse,
+    tags=["system"],
+)
+async def system_cleanup(request: Request) -> CleanupResponse:
+    """Delete only old files under configured disposable temporary roots."""
+
+    report = await asyncio.to_thread(_cleanup_service(request).cleanup)
+    data = report.as_dict()
+    data["free_gb_before"] = round(int(data["free_bytes_before"]) / 1024**3, 2)
+    data["free_gb_after"] = round(int(data["free_bytes_after"]) / 1024**3, 2)
+    return CleanupResponse.model_validate(data)
 
 
 @router.post(
@@ -982,6 +1089,63 @@ async def list_assets(
 
 
 @router.post(
+    "/api/v1/novel-projects/{project_id}/voice-assets",
+    response_model=VoiceAssetRecord,
+    status_code=status.HTTP_201_CREATED,
+    tags=["voice-assets"],
+)
+async def create_voice_asset(
+    request: Request,
+    project_id: UUID,
+    payload: VoiceAssetCreateRequest,
+) -> VoiceAssetRecord:
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.EDIT_ASSET)
+        asset = await _voice_asset_service(request).create(project_id, payload)
+        actor_id, actor_name = _audit_actor(request)
+        await _audit_service(request).record(
+            AuditLogRecord(
+                project_id=project_id,
+                entity_type=AuditEntityType.VOICE_ASSET,
+                entity_id=asset.id,
+                action=AuditAction.VOICE_ASSET_CREATED,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                metadata={
+                    "label": asset.label,
+                    "provider": asset.provider,
+                    "voice": asset.voice,
+                    "character_asset_key": (
+                        str(asset.character_asset_key)
+                        if asset.character_asset_key is not None
+                        else None
+                    ),
+                },
+            )
+        )
+        return asset
+    except NovelProjectNotFoundError as exc:
+        raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
+    except AssetNotFoundError as exc:
+        raise ApiError(404, "ASSET_NOT_FOUND", "Character asset was not found") from exc
+    except VoiceAssetInputError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
+
+
+@router.get(
+    "/api/v1/novel-projects/{project_id}/voice-assets",
+    response_model=list[VoiceAssetRecord],
+    tags=["voice-assets"],
+)
+async def list_voice_assets(request: Request, project_id: UUID) -> list[VoiceAssetRecord]:
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.READ)
+        return await _voice_asset_service(request).list(project_id)
+    except NovelProjectNotFoundError as exc:
+        raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
+
+
+@router.post(
     "/api/v1/novel-projects/{project_id}/assets/review-batch",
     response_model=list[AssetReviewResult],
     status_code=status.HTTP_201_CREATED,
@@ -1265,11 +1429,19 @@ async def create_episode_task_plan(
 ) -> EpisodeTaskPlanResponse:
     try:
         await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
-        return await _episode_task_plan_service(request).create(
+        response = await _episode_task_plan_service(request).create(
             project_id,
             payload,
             idempotency_key,
         )
+        if payload.production_mode and payload.auto_advance:
+            return await _production_orchestrator(request).start(
+                project_id,
+                payload,
+                response,
+                idempotency_key,
+            )
+        return response
     except NovelProjectNotFoundError as exc:
         raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
     except StoryBibleNotFoundError as exc:
@@ -1284,6 +1456,33 @@ async def create_episode_task_plan(
         raise ApiError(409, "EPISODE_TASK_PLAN_NO_EPISODES", "No episodes are available for task planning") from exc
 
 
+@router.post(
+    "/api/v1/novel-projects/{project_id}/production-runs",
+    response_model=ProductionRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["novel-tasks"],
+)
+async def start_production_run(
+    request: Request,
+    project_id: UUID,
+    payload: ProductionRunCreateRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> ProductionRunResponse:
+    """Start or resume the complete novel-to-video production DAG."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _production_orchestrator(request).start_from_source(
+            project_id,
+            payload,
+            idempotency_key=idempotency_key,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
+    except NovelSourceNotFoundError as exc:
+        raise ApiError(409, "NOVEL_SOURCE_REQUIRED", "Upload a novel source before starting production") from exc
+
+
 @router.get(
     "/api/v1/episodes/{episode_id}",
     response_model=EpisodeRecord,
@@ -1295,8 +1494,6 @@ async def get_episode(request: Request, episode_id: UUID) -> EpisodeRecord:
         return await _novel_service(request).get_episode(episode_id)
     except EpisodeNotFoundError as exc:
         raise ApiError(404, "EPISODE_NOT_FOUND", "Episode was not found") from exc
-    except TTSInputError as exc:
-        raise ApiError(400, "TTS_TEXT_TOO_LONG", str(exc)) from exc
 
 
 @router.post(
@@ -1311,6 +1508,10 @@ async def generate_episode_script(request: Request, episode_id: UUID) -> Episode
         return await _novel_service(request).generate_episode_script(episode_id)
     except EpisodeNotFoundError as exc:
         raise ApiError(404, "EPISODE_NOT_FOUND", "Episode was not found") from exc
+    except TTSInputError as exc:
+        raise ApiError(400, "TTS_INPUT_INVALID", str(exc)) from exc
+    except VoiceAssetInputError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
     except StoryBibleNotFoundError as exc:
         raise ApiError(409, "STORY_BIBLE_REQUIRED", "Generate StoryBible before the episode script") from exc
 
@@ -1624,6 +1825,79 @@ async def get_episode_shots(request: Request, episode_id: UUID) -> ShotListRecor
 
 
 @router.post(
+    "/api/v1/novel-projects/{project_id}/identity-audit/calibrate",
+    response_model=IdentityCalibrationResponse,
+    tags=["identity-audit"],
+)
+async def calibrate_identity_thresholds(
+    request: Request,
+    project_id: UUID,
+    payload: IdentityCalibrationRequest,
+) -> IdentityCalibrationResponse:
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.READ)
+        return await _identity_calibration_service(request).calibrate(
+            project_id,
+            payload,
+            request.app.state.settings.identity_audit_threshold,
+        )
+    except NovelProjectNotFoundError as exc:
+        raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
+
+
+@router.post(
+    "/api/v1/novel-projects/{project_id}/video-clips/retry-failed",
+    response_model=IdentityRetryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["identity-audit"],
+)
+async def retry_identity_failed_video_clips(
+    request: Request,
+    project_id: UUID,
+    payload: IdentityRetryRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> IdentityRetryResponse:
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _identity_retry_service(request).retry(
+            project_id,
+            payload,
+            idempotency_key,
+        )
+    except IdentityRetryInputError as exc:
+        code = exc.code
+        status_code = 404 if code == "NOVEL_PROJECT_NOT_FOUND" else 409
+        raise ApiError(status_code, code, exc.message) from exc
+
+
+@router.post(
+    "/api/v1/episodes/{episode_id}/lip-sync",
+    response_model=GenerationTaskRecord,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["lip-sync"],
+)
+async def create_lip_sync_task(
+    request: Request,
+    episode_id: UUID,
+    payload: LipSyncCreateRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> GenerationTaskRecord:
+    try:
+        await _require_episode_permission(request, episode_id, ProjectPermission.EDIT_ASSET)
+        task, _ = await _lip_sync_task_service(request).create_task(
+            episode_id,
+            payload,
+            idempotency_key,
+        )
+        return task
+    except EpisodeNotFoundError as exc:
+        raise ApiError(404, "EPISODE_NOT_FOUND", "Episode was not found") from exc
+    except LipSyncInputError as exc:
+        status_code = 404 if exc.code.endswith("_NOT_FOUND") else 409
+        raise ApiError(status_code, exc.code, exc.message) from exc
+
+
+@router.post(
     "/api/v1/episodes/{episode_id}/audio",
     response_model=GenerationTaskRecord,
     status_code=status.HTTP_202_ACCEPTED,
@@ -1645,6 +1919,10 @@ async def create_audio_narration_task(
         return task
     except EpisodeNotFoundError as exc:
         raise ApiError(404, "EPISODE_NOT_FOUND", "Episode was not found") from exc
+    except TTSInputError as exc:
+        raise ApiError(400, "TTS_INPUT_INVALID", str(exc)) from exc
+    except VoiceAssetInputError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
 
 
 @router.post(

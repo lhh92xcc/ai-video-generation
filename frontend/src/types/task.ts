@@ -5,11 +5,22 @@ export interface SubtitleASRCreateRequest {
   provider_profile_id?: string
 }
 
-export interface AudioNarrationCreateRequest {
+export interface AudioNarrationLineRequest {
+  line_index: number
+  speaker: string
   text: string
+  voice_asset_id?: string
+  pause_after_seconds?: number
+}
+
+export interface AudioNarrationCreateRequest {
+  text?: string
   voice?: string
   rate?: string
   volume?: string
+  voice_asset_id?: string
+  speaker?: string
+  voice_lines?: AudioNarrationLineRequest[]
 }
 
 export type RightsStatus = 'unknown' | 'pending' | 'confirmed' | 'denied'
@@ -113,6 +124,8 @@ export interface EpisodeTaskPlanItem {
 export interface EpisodeTaskPlanResponse {
   project_id: string
   label: string
+  auto_run_id: string | null
+  auto_advance: boolean
   batch: TaskBatchRecord | null
   batches: TaskBatchRecord[]
   items: EpisodeTaskPlanItem[]
@@ -120,6 +133,77 @@ export interface EpisodeTaskPlanResponse {
   reused_count: number
   skipped_count: number
   blocked_count: number
+}
+
+export type ProductionRunStatus = 'active' | 'blocked' | 'completed' | 'failed'
+
+export interface ProductionRunResponse {
+  project_id: string
+  run_id: string
+  status: ProductionRunStatus
+  stage: string
+  task_ids: string[]
+  auto_advance: boolean
+  message: string
+  plan: EpisodeTaskPlanResponse | null
+}
+
+export type OperationalComponentStatus = 'ok' | 'degraded' | 'unavailable' | 'not_configured'
+
+export interface OperationalComponentHealth {
+  name: string
+  status: OperationalComponentStatus
+  message: string
+  latency_ms: number | null
+}
+
+export interface OperationalHealthResponse {
+  status: 'ok' | 'degraded'
+  profile: string
+  checked_at: string
+  disk_free_gb: number
+  gpu_lock_enabled: boolean
+  gpu_lock_busy: boolean
+  worker: Record<string, unknown>
+  components: OperationalComponentHealth[]
+}
+
+export interface ProductionQueueRun {
+  id: string
+  status: string
+  task_count: number
+  active_count: number
+  succeeded_count: number
+  failed_count: number
+  progress: number
+  episode_ids: string[]
+  updated_at: string
+}
+
+export interface ProductionQueueSnapshot {
+  profile: string
+  refreshed_at: string
+  counts: Record<string, number>
+  gpu_lock_enabled: boolean
+  gpu_lock_busy: boolean
+  worker: Record<string, unknown>
+  auto_runs: ProductionQueueRun[]
+  tasks: GenerationTaskRecord[]
+}
+
+export interface CleanupResponse {
+  scanned_roots: string[]
+  deleted_files: number
+  deleted_bytes: number
+  skipped_files: number
+  errors: string[]
+  warnings: string[]
+  free_bytes_before: number
+  free_bytes_after: number
+  min_free_bytes: number
+  low_disk: boolean
+  free_gb_before: number
+  free_gb_after: number
 }
 
 export interface ArtifactRecord extends ArtifactSummary {

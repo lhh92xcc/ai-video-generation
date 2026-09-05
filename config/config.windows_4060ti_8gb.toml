@@ -1,0 +1,154 @@
+# Windows NVIDIA RTX 4060 Ti 8 GB 运行档案
+#
+# 此文件只描述连接方式和低显存参数，不包含任何模型、用户名或密钥。
+# Windows 主机上的 Ollama / ComfyUI / MuseTalk bridge 通过
+# host.docker.internal 被 Docker API/Worker 访问。
+
+[app]
+name = "ai-video-generation"
+profile = "windows_4060ti_8gb"
+environment = "windows"
+api_host = "0.0.0.0"
+api_port = 8000
+frontend_origin = "http://localhost:3000"
+log_level = "INFO"
+
+[auth]
+mode = "local"
+identity_ttl_seconds = 60
+local_actor_id = "windows-operator"
+local_actor_name = "Windows 生产机"
+
+[database]
+url = "postgresql+asyncpg://postgres:postgres@postgres:5432/ai_video"
+
+[persistence]
+backend = "postgres"
+
+[redis]
+url = "redis://redis:6379/0"
+
+[queue]
+backend = "redis"
+name = "ai-video-generation"
+task_timeout_seconds = 3600
+max_retries = 2
+
+[storage]
+provider = "minio"
+base_path = "/app/.tmp/artifacts"
+uri_prefix = "minio://"
+endpoint = "http://minio:9000"
+public_endpoint = "http://localhost:9000"
+bucket = "ai-video-artifacts"
+region = "us-east-1"
+timeout_seconds = 180
+signed_url_expire_seconds = 3600
+
+[llm]
+provider = "ollama"
+base_url = "http://host.docker.internal:11434/v1"
+model = "qwen2.5:7b-instruct-q4_K_M"
+temperature = 0.5
+request_timeout_seconds = 600
+
+[image_generation]
+provider = "comfyui"
+base_url = "http://host.docker.internal:8188"
+model = "flux-schnell"
+request_timeout_seconds = 180
+width = 768
+height = 1024
+workflow_path = "config/comfyui/flux-schnell-t2i-api.json"
+identity_workflow_path = "config/comfyui/flux-schnell-faceid-reference-api.json"
+poll_interval_seconds = 2
+max_poll_seconds = 1800
+
+[video_generation]
+provider = "comfyui_wan_i2v"
+base_url = "http://host.docker.internal:8188"
+model = "Wan2.1-I2V-14B-GGUF-Q4"
+image_size = "320x576"
+workflow_path = "config/comfyui/wan2.1-i2v-api.json"
+request_timeout_seconds = 3600
+poll_interval_seconds = 3
+max_poll_seconds = 3600
+max_download_bytes = 524288000
+probe_timeout_seconds = 60
+output_width = 320
+output_height = 576
+fps = 8
+motion_zoom = 1.08
+binary = "ffmpeg"
+identity_audit_enabled = false
+identity_audit_python_path = ""
+identity_audit_script_path = "scripts/face_identity_audit.py"
+identity_audit_model_root = ""
+identity_audit_threshold = 0.4
+identity_audit_frame_count = 8
+identity_audit_timeout_seconds = 120
+
+[tts]
+# Docker Worker 无法直接调用 Windows Python 路径，因此默认使用免 Key 的
+# Edge TTS。若以后把 ChatTTS 包装成 HTTP 服务，可通过环境变量切换 Provider。
+provider = "edge_tts"
+voice = "zh-CN-YunyangNeural"
+rate = "-30%"
+volume = "+0%"
+request_timeout_seconds = 120
+probe_timeout_seconds = 60
+max_text_characters = 5000
+pacing_enabled = false
+pause_compaction_enabled = false
+pronunciation_dictionary_path = "config/pronunciation.toml"
+
+[lip_sync]
+provider = "musetalk_http"
+base_url = "http://host.docker.internal:8090"
+create_path = "/v1/lip-sync"
+health_path = "/healthz"
+runtime_path = ""
+script_path = ""
+model_root = ""
+device = "cuda"
+model = "MuseTalk-local"
+timeout_seconds = 1800
+max_download_bytes = 524288000
+
+[bgm]
+provider = "local_file"
+source_root = "/app/.tmp/bgm"
+source_path = ""
+normalize_audio = true
+normalization_timeout_seconds = 180
+
+[subtitle_alignment]
+provider = "mock_sentence"
+
+[asr]
+provider = "mock"
+base_url = ""
+model = "whisper-1"
+request_timeout_seconds = 180
+binary = "whisper-cli"
+model_path = ""
+threads = 4
+
+[worker]
+auto_retry_enabled = true
+max_auto_retries = 2
+retry_backoff_seconds = 10
+retry_max_backoff_seconds = 180
+stale_task_timeout_seconds = 7200
+gpu_lock_enabled = true
+gpu_lock_key = "ai-video:gpus:windows-4060ti-8gb"
+gpu_lock_ttl_seconds = 7200
+gpu_lock_wait_seconds = 10
+cleanup_enabled = true
+cleanup_interval_seconds = 900
+cleanup_max_age_hours = 24
+cleanup_roots = [".tmp/work", ".tmp/renders", ".tmp/musetalk"]
+cleanup_max_files_per_run = 500
+cleanup_min_free_gb = 10
+scheduler_enabled = true
+scheduler_interval_seconds = 15

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,15 +13,18 @@ from app.auth.identity import AuthenticationError, create_identity_provider
 from app.api.errors import ApiError
 from app.api.routes import router
 from app.config import Settings, load_settings
+from app.domain.models import TaskStatus
 from app.db import create_engine as create_database_engine, create_session_factory, init_db
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.audio_normalization import FFmpegAudioNormalizer
 from app.media.video_validation import FFprobeVideoValidator
 from app.media.identity_audit import IdentityConsistencyAuditor
+from app.media.identity_calibration import IdentityCalibrationService
 from app.media.pronunciation import load_pronunciation_dictionary
 from app.providers.factory import (
     create_image_generation_provider,
     create_identity_image_generation_provider,
+    create_lip_sync_provider,
     create_bgm_provider,
     create_novel_pipeline_provider,
     create_story_bible_provider,
@@ -49,9 +52,15 @@ from app.services.video_assembly_service import VideoAssemblyTaskService
 from app.services.tts_service import TTSTaskService
 from app.services.bgm_service import BGMTaskService
 from app.services.subtitle_service import SubtitleTaskService
+from app.services.identity_retry_service import IdentityAuditRetryService
+from app.services.lip_sync_service import LipSyncTaskService
+from app.services.voice_asset_service import VoiceAssetService
 from app.services.artifact_service import ArtifactService
 from app.services.audit_service import AuditService
 from app.services.access_service import ProjectAccessService
+from app.services.runtime_health_service import RuntimeHealthService
+from app.services.temp_cleanup_service import TemporaryDirectoryCleanupService
+from app.services.production_orchestrator import ProductionOrchestrator
 from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer
 from app.providers.profiles import ASRProviderProfileRegistry
 
@@ -80,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     identity_image_provider = create_identity_image_generation_provider(app_settings)
     video_provider = create_video_generation_provider(app_settings)
     tts_provider = create_tts_provider(app_settings)
+    lip_sync_provider = create_lip_sync_provider(app_settings)
     bgm_provider = create_bgm_provider(app_settings)
     subtitle_alignment_provider = create_subtitle_alignment_provider(app_settings)
     asr_profile_registry = ASRProviderProfileRegistry(app_settings)
@@ -91,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     novel_task_service = NovelGenerationTaskService(store, novel_service, task_queue)
     asset_service = AssetService(store, novel_service)
+    voice_asset_service = VoiceAssetService(store)
     reference_image_task_service = ReferenceImageTaskService(
         store,
         task_queue,
@@ -133,6 +144,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             timeout_seconds=app_settings.tts_probe_timeout_seconds
         ),
     )
+    lip_sync_task_service = LipSyncTaskService(
+        store,
+        task_queue,
+        lip_sync_provider,
+        artifact_storage,
+        video_validator=FFprobeVideoValidator(
+            timeout_seconds=app_settings.video_probe_timeout_seconds
+        ),
+    )
     tts_task_service = TTSTaskService(
         store,
         task_queue,
@@ -148,6 +168,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pronunciation_dictionary=load_pronunciation_dictionary(
             app_settings.tts_pronunciation_dictionary_path
         ),
+        voice_asset_service=voice_asset_service,
+        configured_provider=app_settings.tts_provider,
+        multi_voice_ffmpeg_binary=app_settings.tts_ffmpeg_binary,
+        multi_voice_timeout_seconds=app_settings.tts_multi_voice_timeout_seconds,
     )
     bgm_task_service = BGMTaskService(
         store,
@@ -188,10 +212,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tts_task_runner=tts_task_service.run_task,
         bgm_task_runner=bgm_task_service.run_task,
         subtitle_task_runner=subtitle_task_service.run_task,
+        lip_sync_task_runner=lip_sync_task_service.run_task,
     )
-    if isinstance(task_queue, InProcessTaskQueue):
-        task_queue.set_handler(task_service.run_task)
     task_batch_service = TaskBatchService(store, task_service.retry_task)
+    identity_calibration_service = IdentityCalibrationService(store)
+    identity_retry_service = IdentityAuditRetryService(store, task_queue, task_batch_service)
     episode_task_plan_service = EpisodeTaskPlanService(
         store,
         novel_service,
@@ -204,6 +229,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         video_clip_task_service,
         video_assembly_task_service,
     )
+    cleanup_service = TemporaryDirectoryCleanupService(
+        app_settings.worker_cleanup_roots,
+        storage_base_path=app_settings.storage_base_path,
+        max_age_hours=app_settings.worker_cleanup_max_age_hours,
+        max_files_per_run=app_settings.worker_cleanup_max_files_per_run,
+        min_free_gb=app_settings.worker_cleanup_min_free_gb,
+    )
+    runtime_health_service = RuntimeHealthService(app_settings, task_queue, store)
+    production_orchestrator = ProductionOrchestrator(store, episode_task_plan_service)
+
+    if isinstance(task_queue, InProcessTaskQueue):
+        async def run_in_process_task(task_id: UUID) -> None:
+            await task_service.run_task(task_id)
+            finished = await store.get_task(task_id)
+            if finished is not None and finished.status == TaskStatus.SUCCEEDED:
+                await production_orchestrator.on_task_finished(task_id)
+
+        task_queue.set_handler(run_in_process_task)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -221,6 +264,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             identity_image_provider,
             video_provider,
             tts_provider,
+            lip_sync_provider,
             bgm_provider,
             subtitle_alignment_provider,
         ):
@@ -253,6 +297,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.video_clip_task_service = video_clip_task_service
     app.state.video_assembly_task_service = video_assembly_task_service
     app.state.tts_task_service = tts_task_service
+    app.state.lip_sync_task_service = lip_sync_task_service
+    app.state.voice_asset_service = voice_asset_service
     app.state.bgm_task_service = bgm_task_service
     app.state.subtitle_task_service = subtitle_task_service
     app.state.artifact_service = artifact_service
@@ -261,6 +307,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.asr_profile_registry = asr_profile_registry
     app.state.identity_provider = identity_provider
     app.state.access_service = access_service
+    app.state.identity_calibration_service = identity_calibration_service
+    app.state.identity_retry_service = identity_retry_service
+    app.state.cleanup_service = cleanup_service
+    app.state.runtime_health_service = runtime_health_service
+    app.state.production_orchestrator = production_orchestrator
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):

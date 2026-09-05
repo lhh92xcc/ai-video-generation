@@ -247,10 +247,13 @@ class VideoAssemblyTaskService:
                     "VIDEO_ASSEMBLY_SOURCE_INVALID",
                     "All source video clip tasks must belong to the episode project",
                 )
-            if source_task.kind != GenerationTaskKind.VIDEO_CLIP:
+            if source_task.kind not in {
+                GenerationTaskKind.VIDEO_CLIP,
+                GenerationTaskKind.LIP_SYNC,
+            }:
                 raise VideoAssemblyInputError(
                     "VIDEO_ASSEMBLY_SOURCE_INVALID",
-                    f"Task {clip_task_id} is not a video clip task",
+                    f"Task {clip_task_id} is not a video clip or lip-sync task",
                 )
             if source_task.input_data.get("episode_id") != str(episode.id):
                 raise VideoAssemblyInputError(
@@ -263,14 +266,19 @@ class VideoAssemblyTaskService:
                     f"Source video clip task {clip_task_id} has not succeeded",
                 )
 
+            expected_artifact_type = (
+                "lip_synced_video"
+                if source_task.kind == GenerationTaskKind.LIP_SYNC
+                else "video_clip"
+            )
             artifact = next(
-                (item for item in source_task.artifacts if item.type == "video_clip"),
+                (item for item in source_task.artifacts if item.type == expected_artifact_type),
                 None,
             )
             if artifact is None:
                 raise VideoAssemblyInputError(
                     "VIDEO_ASSEMBLY_ARTIFACT_MISSING",
-                    f"Source task {clip_task_id} has no video_clip Artifact",
+                    f"Source task {clip_task_id} has no {expected_artifact_type} Artifact",
                 )
             storage_key = artifact.metadata.get("storage_key")
             content_type = artifact.metadata.get("content_type")

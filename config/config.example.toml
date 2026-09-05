@@ -191,11 +191,35 @@ chunk_max_characters = 120
 crossfade_ms = 120
 binary = "say"
 ffmpeg_binary = "ffmpeg"
+multi_voice_timeout_seconds = 120
 runtime_path = "local-runtimes/chattts/.venv/bin/python"
 script_path = "scripts/chattts_generate.py"
 device = "mps"
 # 发音替换只作用于 TTS Provider，字幕和剧本保留原文。
 pronunciation_dictionary_path = "config/pronunciation.toml"
+# 多角色对白通过 API 创建项目级 VoiceAsset，再在 voice_lines 中按 speaker
+# 选择 ready 声音档案；当前实现逐句生成并插入静音后用 FFmpeg 拼接。
+
+[lip_sync]
+# mock 只验证“视频 Artifact + 音频 Artifact -> lip_synced_video Artifact”的任务契约，
+# 不会修改嘴型；musetalk 通过外部 Python 包装脚本执行真实推理。
+# script_path 是占位示例，不是仓库内已提供的 MuseTalk 实现；切换为 musetalk
+# 前必须替换成实际 wrapper。wrapper 需要接受 --video、--audio、--output、
+# --face-region、--face-padding、--device，并可选接受 --model-root。
+provider = "mock"
+runtime_path = ""
+script_path = "scripts/musetalk_infer.py"
+model_root = ""
+device = "cpu"
+model = "MuseTalk-local"
+timeout_seconds = 900
+# HTTP 模式由 Docker API/Worker 调用 Windows 主机上的 bridge；bridge 本身
+# 不包含模型，模型和 CUDA 环境只安装在 Windows 4060Ti 主机。
+base_url = "http://127.0.0.1:8090"
+create_path = "/v1/lip-sync"
+health_path = "/healthz"
+max_download_bytes = 524288000
+# api_key 使用环境变量 AI_VIDEO_LIP_SYNC_API_KEY。
 
 [bgm]
 # mock 生成确定性的 WAV，适合测试和离线开发；local_file 只读取你已经拥有授权的本地音频。
@@ -283,3 +307,24 @@ max_concurrent_tasks = 2
 max_project_duration_seconds = 180
 max_scenes = 24
 max_script_characters = 5000
+
+[worker]
+# 生产 Worker 的可靠性和 Windows 单 GPU 运行参数。默认值适合开发；
+# config.windows_4060ti_8gb.toml 会打开 GPU 锁、自动推进和临时目录清理。
+auto_retry_enabled = true
+max_auto_retries = 2
+retry_backoff_seconds = 5
+retry_max_backoff_seconds = 120
+stale_task_timeout_seconds = 3600
+gpu_lock_enabled = false
+gpu_lock_key = "ai-video:gpus:default"
+gpu_lock_ttl_seconds = 7200
+gpu_lock_wait_seconds = 8
+cleanup_enabled = true
+cleanup_interval_seconds = 900
+cleanup_max_age_hours = 24
+cleanup_roots = [".tmp/work", ".tmp/renders", ".tmp/musetalk"]
+cleanup_max_files_per_run = 500
+cleanup_min_free_gb = 10
+scheduler_enabled = true
+scheduler_interval_seconds = 15
