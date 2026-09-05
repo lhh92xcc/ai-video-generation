@@ -1,0 +1,56 @@
+# ASR/字幕质量批量评估结果模板。
+# 该模板描述单个案例的字段；真实结果由 run_asr_quality_eval.py 生成。
+# 不写入 API Key、Cookie 或完整外部服务响应。
+
+schema_version = "asr-quality-result-v1"
+dataset_version = "asr-quality-v1"
+case_id = ""
+run_id = ""
+status = "pending"
+created_at = ""
+
+[input]
+language = "zh-CN"
+reference_character_count = 0
+tts_provider = ""
+tts_voice = ""
+tts_rate = "+0%"
+tts_volume = "+0%"
+
+[provider]
+asr_provider = ""
+asr_model = ""
+alignment_precision = ""
+
+[audio]
+content_type = ""
+retained = false
+path = ""
+duration_seconds = 0
+codec_name = ""
+format_name = ""
+sample_rate = 0
+channel_count = 0
+
+[quality]
+transcript_character_count = 0
+edit_distance = 0
+character_error_rate = 0
+exact_text_match = false
+transcript_text = ""
+cue_count = 0
+structural_gate_passed = false
+production_ready = false
+recommendation = "needs_review"
+warnings = []
+
+[system]
+tts_duration_ms = 0
+ffprobe_duration_ms = 0
+provider_duration_ms = 0
+total_duration_ms = 0
+cost_status = "待供应商账单核对"
+
+[failure]
+error_code = ""
+message = ""

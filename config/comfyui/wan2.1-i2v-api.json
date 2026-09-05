@@ -1,0 +1,102 @@
+{
+  "1": {
+    "class_type": "WanVideoModelLoader",
+    "inputs": {
+      "model": "__AI_VIDEO_MODEL__",
+      "base_precision": "fp16",
+      "quantization": "disabled",
+      "load_device": "offload_device",
+      "attention_mode": "sdpa",
+      "rms_norm_function": "default"
+    }
+  },
+  "2": {
+    "class_type": "WanVideoVAELoader",
+    "inputs": {
+      "model_name": "Wan2_1_VAE_bf16.safetensors",
+      "precision": "fp16",
+      "use_cpu_cache": true,
+      "verbose": false
+    }
+  },
+  "3": {
+    "class_type": "LoadWanVideoT5TextEncoder",
+    "inputs": {
+      "model_name": "umt5-xxl-enc-fp8_e4m3fn.safetensors",
+      "precision": "bf16",
+      "load_device": "offload_device",
+      "quantization": "fp8_e4m3fn"
+    }
+  },
+  "4": {
+    "class_type": "WanVideoTextEncode",
+    "inputs": {
+      "positive_prompt": "__AI_VIDEO_PROMPT__",
+      "negative_prompt": "__AI_VIDEO_NEGATIVE_PROMPT__",
+      "t5": ["3", 0],
+      "force_offload": true,
+      "use_disk_cache": true,
+      "device": "cpu"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "__AI_VIDEO_INPUT_IMAGE__"}
+  },
+  "6": {
+    "class_type": "WanVideoImageToVideoEncode",
+    "inputs": {
+      "width": "__AI_VIDEO_WIDTH__",
+      "height": "__AI_VIDEO_HEIGHT__",
+      "num_frames": "__AI_VIDEO_FRAMES__",
+      "noise_aug_strength": 0.02,
+      "start_latent_strength": 1.0,
+      "end_latent_strength": 1.0,
+      "force_offload": true,
+      "vae": ["2", 0],
+      "start_image": ["5", 0],
+      "tiled_vae": true
+    }
+  },
+  "7": {
+    "class_type": "WanVideoSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "image_embeds": ["6", 0],
+      "steps": 4,
+      "cfg": 5.0,
+      "shift": 5.0,
+      "seed": "__AI_VIDEO_SEED__",
+      "force_offload": true,
+      "scheduler": "unipc",
+      "riflex_freq_index": 0,
+      "text_embeds": ["4", 0],
+      "rope_function": "comfy"
+    }
+  },
+  "8": {
+    "class_type": "WanVideoDecode",
+    "inputs": {
+      "vae": ["2", 0],
+      "samples": ["7", 0],
+      "enable_vae_tiling": true,
+      "tile_x": 272,
+      "tile_y": 272,
+      "tile_stride_x": 144,
+      "tile_stride_y": 128,
+      "normalization": "default"
+    }
+  },
+  "9": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["8", 0],
+      "frame_rate": "__AI_VIDEO_FPS__",
+      "loop_count": 0,
+      "filename_prefix": "ai-video-wan-i2v",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}

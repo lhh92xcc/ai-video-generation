@@ -1,0 +1,65 @@
+schema_version = "evaluation-result-v1"
+dataset_version = "fixed-v1"
+case_id = ""
+run_id = ""
+status = "pending"
+created_at = ""
+reviewer = ""
+
+[input]
+language = "zh-CN"
+duration_seconds = 60
+aspect_ratio = "9:16"
+prompt_version = ""
+
+[provider]
+llm_provider = ""
+llm_model = ""
+video_provider = ""
+video_model = ""
+tts_provider = ""
+tts_voice = ""
+materials_provider = ""
+
+[artifacts]
+script_artifact_id = ""
+shot_list_artifact_id = ""
+audio_artifact_id = ""
+subtitle_artifact_id = ""
+rendered_video_artifact_id = ""
+preview_path = ""
+
+[quality]
+# 1～5 分；没有人工评分时保持 0，不要填写估计值。
+script_structure = 0
+content_accuracy = 0
+shot_alignment = 0
+asset_consistency = 0
+audio_subtitle = 0
+deliverability = 0
+hard_gate_passed = false
+notes = ""
+
+[system]
+task_success = false
+retry_count = 0
+first_attempt_error_code = ""
+recovered_after_retry = false
+schema_repair_count = 0
+repaired_after_schema_error = false
+first_schema_error_code = ""
+total_duration_ms = 0
+script_duration_ms = 0
+material_duration_ms = 0
+tts_duration_ms = 0
+subtitle_duration_ms = 0
+render_duration_ms = 0
+input_tokens = 0
+output_tokens = 0
+estimated_cost_cny = 0
+cost_status = "待实测"
+
+[failure]
+error_code = ""
+message = ""
+recoverable = false

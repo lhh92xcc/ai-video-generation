@@ -1,0 +1,64 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {"unet_name": "__AI_VIDEO_CHECKPOINT__"}
+  },
+  "2": {
+    "class_type": "DualCLIPLoaderGGUF",
+    "inputs": {
+      "clip_name1": "t5-v1_1-xxl-encoder-Q4_K_S.gguf",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {"vae_name": "flux1_vae.safetensors"}
+  },
+  "4": {
+    "class_type": "RandomNoise",
+    "inputs": {"noise_seed": "__AI_VIDEO_SEED__", "control_after_generate": "fixed"}
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "__AI_VIDEO_PROMPT__", "clip": ["2", 0]}
+  },
+  "6": {
+    "class_type": "FluxGuidance",
+    "inputs": {"conditioning": ["5", 0], "guidance": 3.5}
+  },
+  "7": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {"width": "__AI_VIDEO_WIDTH__", "height": "__AI_VIDEO_HEIGHT__", "batch_size": 1}
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {"sampler_name": "euler"}
+  },
+  "9": {
+    "class_type": "BasicScheduler",
+    "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": 4, "denoise": 1.0}
+  },
+  "10": {
+    "class_type": "BasicGuider",
+    "inputs": {"model": ["1", 0], "conditioning": ["6", 0]}
+  },
+  "11": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["4", 0],
+      "guider": ["10", 0],
+      "sampler": ["8", 0],
+      "sigmas": ["9", 0],
+      "latent_image": ["7", 0]
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["11", 0], "vae": ["3", 0]}
+  },
+  "13": {
+    "class_type": "SaveImage",
+    "inputs": {"filename_prefix": "ai-video-flux-reference", "images": ["12", 0]}
+  }
+}

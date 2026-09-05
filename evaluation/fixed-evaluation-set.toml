@@ -1,0 +1,205 @@
+dataset_version = "fixed-v1"
+language = "zh-CN"
+default_duration_seconds = 60
+default_aspect_ratio = "9:16"
+categories = ["科普解释", "清单盘点", "产品推荐", "周末攻略", "面试知识点"]
+
+[[cases]]
+id = "science-01"
+category = "科普解释"
+title = "咖啡因为什么会影响睡眠"
+topic = "用通俗语言解释咖啡因、腺苷和睡眠压力的关系"
+evaluation_focus = ["概念准确", "因果链清晰", "避免绝对化健康结论"]
+must_include = ["咖啡因的作用对象", "摄入时间与个体差异", "可执行的作息建议"]
+
+[[cases]]
+id = "science-02"
+category = "科普解释"
+title = "手机为什么冬天掉电更快"
+topic = "解释低温对锂电池电压、内阻和续航表现的影响"
+evaluation_focus = ["原理可理解", "现象与原因对应", "建议可执行"]
+must_include = ["低温影响", "电量显示与真实可用容量的区别", "安全使用提醒"]
+
+[[cases]]
+id = "science-03"
+category = "科普解释"
+title = "太阳能板是怎样发电的"
+topic = "用一分钟解释光伏电池把光能转成电能的基本过程"
+evaluation_focus = ["步骤完整", "术语控制", "画面关键词可视化"]
+must_include = ["光照", "半导体或光伏电池", "直流电与后续转换"]
+
+[[cases]]
+id = "science-04"
+category = "科普解释"
+title = "雨后路面为什么更滑"
+topic = "解释雨水、灰尘油膜和轮胎抓地力对路面摩擦的影响"
+evaluation_focus = ["机制准确", "安全提醒", "镜头与解释同步"]
+must_include = ["路面污染物", "摩擦变化", "雨天出行建议"]
+
+[[cases]]
+id = "science-05"
+category = "科普解释"
+title = "高铁进站时为什么不能靠近站台边缘"
+topic = "解释列车速度、气流和站台安全线的关系"
+evaluation_focus = ["公共安全表达", "避免夸大", "信息层次清楚"]
+must_include = ["安全线", "气流或压力变化", "遵守站台指引"]
+
+[[cases]]
+id = "list-01"
+category = "清单盘点"
+title = "租房搬家第一天必备清单"
+topic = "为第一次独立租房的人整理入住当天最需要准备的物品"
+evaluation_focus = ["清单完整", "优先级明确", "画面易拍摄"]
+must_include = ["证件与合同", "基础清洁用品", "充电和照明"]
+
+[[cases]]
+id = "list-02"
+category = "清单盘点"
+title = "露营新手周末装备清单"
+topic = "整理两人周末轻量露营的装备、食物和安全用品"
+evaluation_focus = ["场景匹配", "轻量化", "安全边界"]
+must_include = ["遮蔽物", "饮水和食物", "照明与急救"]
+
+[[cases]]
+id = "list-03"
+category = "清单盘点"
+title = "家庭数据备份清单"
+topic = "为普通家庭整理照片、证件和重要文件的备份方法"
+evaluation_focus = ["风险意识", "操作步骤", "隐私保护"]
+must_include = ["重要文件分类", "至少一种异地或离线备份", "恢复验证"]
+
+[[cases]]
+id = "list-04"
+category = "清单盘点"
+title = "旅行出发前的十项检查"
+topic = "整理短途旅行出发前的证件、交通、天气和设备检查"
+evaluation_focus = ["节奏紧凑", "覆盖关键风险", "避免无关项目"]
+must_include = ["证件", "交通和住宿信息", "天气与充电"]
+
+[[cases]]
+id = "list-05"
+category = "清单盘点"
+title = "面试前一天准备清单"
+topic = "为技术岗位候选人整理面试前一天的准备步骤"
+evaluation_focus = ["可执行", "不制造焦虑", "顺序合理"]
+must_include = ["岗位信息", "项目案例", "设备和路线"]
+
+[[cases]]
+id = "product-01"
+category = "产品推荐"
+title = "通勤降噪耳机怎么选"
+topic = "从佩戴、降噪、续航、通话和预算维度比较通勤耳机"
+evaluation_focus = ["维度完整", "不虚构参数", "推荐逻辑透明"]
+must_include = ["使用场景", "核心取舍", "购买前实测建议"]
+
+[[cases]]
+id = "product-02"
+category = "产品推荐"
+title = "小户型空气净化器怎么选"
+topic = "解释小空间选择空气净化器时需要关注的指标和限制"
+evaluation_focus = ["避免医疗化承诺", "参数解释", "适用边界"]
+must_include = ["房间面积", "滤芯维护", "通风不能被替代"]
+
+[[cases]]
+id = "product-03"
+category = "产品推荐"
+title = "入门机械键盘选择思路"
+topic = "面向第一次购买机械键盘的人解释轴体、布局和连接方式"
+evaluation_focus = ["术语通俗", "选择路径", "不强行站队"]
+must_include = ["使用场景", "布局差异", "试打或退换货建议"]
+
+[[cases]]
+id = "product-04"
+category = "产品推荐"
+title = "学生党显示器选购框架"
+topic = "从尺寸、分辨率、刷新率、接口和预算建立选购框架"
+evaluation_focus = ["需求分层", "参数与场景匹配", "不虚构品牌测评"]
+must_include = ["学习与娱乐场景", "接口兼容", "桌面空间"]
+
+[[cases]]
+id = "product-05"
+category = "产品推荐"
+title = "手机充电器如何避免买错"
+topic = "解释功率、协议、接口和安全认证之间的关系"
+evaluation_focus = ["规格准确", "安全表达", "购买建议可验证"]
+must_include = ["设备兼容", "充电协议", "线材和安全认证"]
+
+[[cases]]
+id = "weekend-01"
+category = "周末攻略"
+title = "城市公园半日轻徒步"
+topic = "设计一条不依赖具体城市的公园半日路线和拍摄节奏"
+evaluation_focus = ["时间线完整", "镜头转场自然", "准备事项明确"]
+must_include = ["出发准备", "路线节点", "天气变化预案"]
+
+[[cases]]
+id = "weekend-02"
+category = "周末攻略"
+title = "博物馆半日参观路线"
+topic = "为第一次参观大型博物馆的人设计半日参观方法"
+evaluation_focus = ["路线合理", "信息不过载", "尊重场馆规则"]
+must_include = ["预约或开放信息提醒", "重点展区取舍", "文明参观"]
+
+[[cases]]
+id = "weekend-03"
+category = "周末攻略"
+title = "雨天室内放松计划"
+topic = "设计一个低预算、低移动成本的雨天室内周末方案"
+evaluation_focus = ["情绪氛围", "方案具体", "画面可获得"]
+must_include = ["室内活动", "餐食安排", "临时变化选项"]
+
+[[cases]]
+id = "weekend-04"
+category = "周末攻略"
+title = "低预算城市骑行路线"
+topic = "设计一条适合新手的城市周末骑行计划"
+evaluation_focus = ["安全优先", "距离和休息点", "路线不虚构"]
+must_include = ["车辆检查", "补水休息", "交通安全"]
+
+[[cases]]
+id = "weekend-05"
+category = "周末攻略"
+title = "沿海城市一日慢游"
+topic = "设计一条不绑定具体商家的沿海城市一日慢游框架"
+evaluation_focus = ["时间安排", "天气与潮汐提醒", "版权可控素材"]
+must_include = ["早晚时间段", "防晒和补水", "备用室内方案"]
+
+[[cases]]
+id = "interview-01"
+category = "面试知识点"
+title = "HTTP 缓存面试题"
+topic = "用短视频解释强缓存、协商缓存和常见响应头"
+evaluation_focus = ["概念准确", "请求流程清晰", "示例简洁"]
+must_include = ["缓存命中路径", "常见响应头", "失效或更新场景"]
+
+[[cases]]
+id = "interview-02"
+category = "面试知识点"
+title = "数据库索引为什么能加速查询"
+topic = "解释索引结构、查询代价和索引失效的常见原因"
+evaluation_focus = ["避免绝对化", "执行过程可理解", "面试表达简洁"]
+must_include = ["减少扫描范围", "写入和空间成本", "不适合建索引的情况"]
+
+[[cases]]
+id = "interview-03"
+category = "面试知识点"
+title = "JavaScript 事件循环"
+topic = "用一个可视化例子解释同步任务、微任务和宏任务"
+evaluation_focus = ["时序准确", "代码示例可验证", "概念层次清楚"]
+must_include = ["调用栈", "微任务", "宏任务"]
+
+[[cases]]
+id = "interview-04"
+category = "面试知识点"
+title = "数据库事务四个特性"
+topic = "解释 ACID，并说明它们在实际业务中的意义"
+evaluation_focus = ["术语准确", "场景对应", "避免背诵式表达"]
+must_include = ["原子性", "一致性", "隔离性", "持久性"]
+
+[[cases]]
+id = "interview-05"
+category = "面试知识点"
+title = "Docker healthcheck 的作用"
+topic = "解释容器进程存在和服务真正可用之间的区别"
+evaluation_focus = ["工程实践", "状态流转", "示例可操作"]
+must_include = ["检查命令", "healthy 与 running 的区别", "依赖服务启动顺序"]

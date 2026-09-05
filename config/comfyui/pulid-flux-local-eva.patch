@@ -1,0 +1,21 @@
+diff --git a/pulidflux.py b/pulidflux.py
+index 4946fc3..03a855e 100644
+--- a/pulidflux.py
++++ b/pulidflux.py
+@@ -294,8 +294,15 @@ class PulidFluxEvaClipLoader:
+     FUNCTION = "load_eva_clip"
+     CATEGORY = "pulid"
+
+     def load_eva_clip(self):
+         from .eva_clip.factory import create_model_and_transforms
+
+-        model, _, _ = create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip', force_custom_clip=True)
++        local_eva_path = os.path.expanduser(
++            "~/.cache/clip/EVA02_CLIP_L_336_psz14_s6B.pt"
++        )
++        pretrained = local_eva_path if os.path.isfile(local_eva_path) else "eva_clip"
++        model, _, _ = create_model_and_transforms(
++            'EVA02-CLIP-L-14-336', pretrained, force_custom_clip=True
++        )
++
+         model = model.visual

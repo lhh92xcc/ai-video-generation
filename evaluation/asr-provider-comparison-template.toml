@@ -1,0 +1,20 @@
+# ASR Provider 对比结果模板。
+# 只比较相同数据集和相同 case ID 的运行结果，不自动判定供应商优劣。
+
+schema_version = "asr-quality-comparison-v1"
+dataset_version = "asr-quality-v1"
+run_count = 0
+
+[run_1]
+run_id = ""
+asr_provider = ""
+asr_model = ""
+case_count = 0
+technical_successes = 0
+technical_failures = 0
+production_ready = 0
+cer_mean = 0
+cer_max = 0
+provider_duration_mean_ms = 0
+provider_duration_p95_ms = 0
+precision_counts = []

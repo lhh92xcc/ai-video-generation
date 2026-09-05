@@ -1,0 +1,20 @@
+# ASR/字幕人工听审记录模板。
+# 分数使用 1～5；没有听审时保持 0，decision 保持 pending。
+
+schema_version = "asr-human-review-v1"
+dataset_version = "asr-quality-v1"
+case_id = ""
+run_id = ""
+audio_path = ""
+reference_text = ""
+transcript_text = ""
+
+[review]
+reviewer = ""
+reviewed_at = ""
+speech_clarity = 0
+speech_naturalness = 0
+transcript_matches_audio = 0
+timing_confidence = 0
+decision = "pending"
+notes = ""

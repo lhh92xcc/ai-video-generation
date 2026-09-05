@@ -1,0 +1,33 @@
+.venv/
+local-runtimes/
+.models/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+config/config.local.toml
+.env
+.env.*
+!.env.example
+
+.tmp/
+output/
+evaluation/results/
+evaluation/README.md
+
+# Private collaboration and learning notes are intentionally not part of the
+# public portfolio repository.
+docs/
+.ai/
+AGENTS.md
+
+frontend/node_modules/
+frontend/dist/
+*.mp4
+*.mp3
+*.wav
+*.srt
+
+.DS_Store

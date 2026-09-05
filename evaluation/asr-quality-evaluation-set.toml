@@ -1,0 +1,40 @@
+# 固定 ASR/字幕质量评估集。
+# 文本为项目自造的公开测试句，不包含真实用户小说或业务数据。
+# 只有显式设置 AI_VIDEO_RUN_EXTERNAL_ASR_QUALITY_EVAL=1 才会调用外部 Provider。
+
+dataset_version = "asr-quality-v1"
+language = "zh-CN"
+tts_voice = "zh-CN-XiaoxiaoNeural"
+tts_rate = "+0%"
+tts_volume = "+0%"
+max_character_error_rate = 0.05
+
+[[cases]]
+id = "short-01"
+title = "普通中文短句"
+reference_text = "这是一个固定字幕质量评估样本。"
+expected_focus = ["普通中文", "短句", "句号"]
+
+[[cases]]
+id = "paragraph-01"
+title = "多句中文旁白"
+reference_text = "我们正在验证语音转写和字幕时间轴。每条字幕都应该清晰、连续，并且落在音频时长范围内。"
+expected_focus = ["多句旁白", "句子切分", "时间轴结构"]
+
+[[cases]]
+id = "numbers-01"
+title = "数字和时间"
+reference_text = "本次测试安排在2026年8月23日上午8点30分，预计生成3条样片。"
+expected_focus = ["数字", "日期", "时间", "数量"]
+
+[[cases]]
+id = "mixed-01"
+title = "英文与品牌名混合"
+reference_text = "AI Video Generation 使用 SiliconFlow API 完成一次字幕评估。"
+expected_focus = ["英文", "品牌名", "中英文混合"]
+
+[[cases]]
+id = "long-01"
+title = "较长信息类旁白"
+reference_text = "在正式生成视频之前，我们会先检查脚本、音频、字幕和素材是否能够被独立追踪。只有每个阶段都留下明确的输入、输出和错误信息，批量生产才具备重试和恢复的基础。"
+expected_focus = ["较长旁白", "信息类内容", "可追踪流水线"]

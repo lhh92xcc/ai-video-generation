@@ -1,0 +1,285 @@
+# AI Video Generation 非敏感配置示例
+# 复制为 config/config.local.toml 后按本机环境修改。
+# 真实密钥优先使用环境变量，不要提交 config.local.toml。
+
+[app]
+name = "ai-video-generation"
+profile = "default"
+environment = "local"
+api_host = "0.0.0.0"
+api_port = 8000
+frontend_origin = "http://localhost:5173"
+log_level = "INFO"
+
+[auth]
+# local 仅用于本机开发；生产环境使用 signed_header，并由可信网关注入签名身份。
+mode = "local"
+identity_ttl_seconds = 60
+local_actor_id = "local-operator"
+local_actor_name = "本地操作员"
+# shared secret 只从 AI_VIDEO_AUTH_SHARED_SECRET 环境变量读取。
+
+[database]
+url = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_video"
+pool_size = 5
+max_overflow = 10
+
+[persistence]
+# memory 适合无需依赖的本地开发；postgres 用于第二阶段持久化运行。
+backend = "memory"
+
+[redis]
+url = "redis://localhost:6379/0"
+
+[queue]
+# in_process 适合测试；redis 会把信息短视频和小说内容任务交给 app.workers.generation_worker。
+backend = "in_process"
+name = "ai-video-generation"
+task_timeout_seconds = 1800
+max_retries = 3
+
+[storage]
+# local 适合本地开发；s3_compatible/minio/s3 使用 AWS Signature V4 上传对象。
+provider = "local"
+base_path = ".tmp/artifacts"
+uri_prefix = "local://"
+endpoint = "http://localhost:9000"
+# 宿主机直接运行 API/Worker 时使用 localhost；Docker Compose 通过环境变量覆盖为
+# AI_VIDEO_STORAGE_ENDPOINT=http://minio:9000。
+# 浏览器下载预签名 URL 使用 public_endpoint；Docker Compose 通常设置为
+# AI_VIDEO_STORAGE_PUBLIC_ENDPOINT=http://localhost:9000，生产环境应填写用户可访问的 HTTPS 地址。
+public_endpoint = ""
+bucket = "ai-video-artifacts"
+region = "us-east-1"
+timeout_seconds = 120
+signed_url_expire_seconds = 900
+# access_key 和 secret_key 只从 AI_VIDEO_STORAGE_ACCESS_KEY /
+# AI_VIDEO_STORAGE_SECRET_KEY 环境变量读取，不写入此文件。
+# 预签名下载 URL 也可用 AI_VIDEO_STORAGE_SIGNED_URL_EXPIRE_SECONDS 覆盖，范围 1～604800 秒。
+
+[llm]
+# mock 适合本地开发；配置 AI_VIDEO_LLM_PROVIDER=openai_compatible 后接入真实模型。
+# ollama 使用本机 Ollama 的 OpenAI-compatible 接口，不需要云端 Key；本机 16GB Mac 推荐
+# qwen2.5:7b（已量化）作为当前稳定基线。
+# 信息短视频和小说 StoryBible、分集、分场剧本、分镜均已支持 mock/openai_compatible；长文本调用通过异步 Worker 执行。
+# 当前没有 API Key 时请使用 mock；切换 openai_compatible 但缺少 Key 会返回 PROVIDER_AUTH_FAILED，不会发起外部请求。
+# SiliconFlow 兼容接口示例：base_url = "https://api.siliconflow.cn/v1"、model = "deepseek-ai/DeepSeek-V3"。
+provider = "mock"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+temperature = 0.7
+request_timeout_seconds = 90
+max_output_tokens = 4000
+# api_key 使用环境变量 AI_VIDEO_LLM_API_KEY
+
+[image_generation]
+# mock 用于本地确定性联调；openai_compatible 使用 /images/generations，需配置 API Key。
+# siliconflow 使用 SiliconFlow /v1/images/generations 和 images[0].url 响应，需配置 API Key。
+# comfyui 使用本机 ComfyUI HTTP API（默认 127.0.0.1:8188），提交 API 格式 workflow JSON，
+# 工作流中的 __AI_VIDEO_*__ 占位符由 Provider 替换；不需要 API Key。
+# MacBook Air M4/16GB 的目标实验档案使用 Flux Schnell GGUF；模型应放在
+# ComfyUI/models/unet/，不要提交模型文件。PuLID-Flux 身份工作流还需要
+# ComfyUI-PuLID-Flux-Enhanced、InsightFace 和 EVA-CLIP 资源。Wan2.1 I2V 需要
+# ComfyUI-WanVideoWrapper 与 VideoHelperSuite。setup 脚本见 docs/05-deployment.md。
+# 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Kwai-Kolors/Kolors"。
+# 当前没有真实 Key 时请保持 mock；OpenAI-compatible 适配器已用 HTTP MockTransport 验证。
+provider = "mock"
+base_url = ""
+model = "mock-reference-v1"
+request_timeout_seconds = 120
+width = 1024
+height = 1024
+workflow_path = "config/comfyui/flux-schnell-t2i-api.json"
+# ComfyUI 身份锁定工作流；只有 image_provider=comfyui 时使用。
+identity_workflow_path = "config/comfyui/flux-schnell-faceid-reference-api.json"
+poll_interval_seconds = 1.0
+max_poll_seconds = 600
+# api_key 使用环境变量 AI_VIDEO_IMAGE_API_KEY；ComfyUI 不读取此 Key。
+# 外部图像 smoke test 仅在显式设置 AI_VIDEO_RUN_EXTERNAL_IMAGE_INTEGRATION=1 时运行；
+# 测试尺寸可用 AI_VIDEO_IMAGE_TEST_WIDTH / AI_VIDEO_IMAGE_TEST_HEIGHT 覆盖。
+
+[video_generation]
+# mock 只返回可追踪的 mock:// 占位 URI，不创建可播放视频；local_fixture 使用本机 FFmpeg
+# 生成可播放的确定性颜色卡，只用于本地队列、Artifact 和 Assembly 联调，不代表模型画面质量。
+# comfyui_wan_i2v 使用 ComfyUI WanVideoWrapper 生成真实图生视频；workflow_path 指向
+# API 格式工作流，必须包含 __AI_VIDEO_PROMPT__ 和 __AI_VIDEO_INPUT_IMAGE__ 占位符。
+# Mac 16GB 本地目标档使用 320x576、8fps、4 步；通用示例仍可按设备调整 image_size/output_width/output_height/fps。
+# ffmpeg_motion 仅保留为历史/低资源回退，不属于目标本地 Demo。
+# openai_compatible 使用“提交任务 -> 轮询 -> 下载”HTTP 约定，需配置真实供应商的 URL 和 Key。
+# siliconflow 使用 /v1/video/submit -> /v1/video/status -> 下载 URL，需配置 API Key。
+# 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Wan-AI/Wan2.2-T2V-A14B"。
+# 不同厂商的特殊字段仍应通过独立 Provider 适配器实现，不要把厂商 SDK 放入业务层。
+provider = "mock"
+base_url = ""
+model = "mock-video-v1"
+image_size = "720x1280"
+workflow_path = "config/comfyui/wan2.1-i2v-api.json"
+request_timeout_seconds = 300
+create_path = "/videos/generations"
+status_path_template = "/videos/generations/{task_id}"
+poll_interval_seconds = 2
+max_poll_seconds = 900
+max_download_bytes = 524288000
+probe_timeout_seconds = 30
+output_width = 576
+output_height = 1024
+fps = 24
+motion_zoom = 1.12
+binary = "ffmpeg"
+# 每个包含角色资产的视频片段完成后，可使用独立 Python 环境中的 InsightFace
+# 抽样比对标准人设图；缺少依赖或无法检测人脸时必须人工审核。
+identity_audit_enabled = false
+identity_audit_python_path = ""
+identity_audit_script_path = "scripts/face_identity_audit.py"
+identity_audit_model_root = ""
+identity_audit_threshold = 0.4
+identity_audit_frame_count = 8
+identity_audit_timeout_seconds = 120
+# api_key 使用环境变量 AI_VIDEO_VIDEO_API_KEY；local_fixture 不需要 API Key。
+# 真实视频单镜头 smoke test 仅在显式设置 AI_VIDEO_RUN_EXTERNAL_VIDEO_INTEGRATION=1 时运行；
+# 测试时还需要 AI_VIDEO_VIDEO_BASE_URL / AI_VIDEO_VIDEO_MODEL / AI_VIDEO_VIDEO_API_KEY，
+# 可用 AI_VIDEO_VIDEO_TEST_DURATION_SECONDS、AI_VIDEO_VIDEO_TEST_PROMPT 和
+# AI_VIDEO_VIDEO_TEST_NEGATIVE_PROMPT 覆盖样片输入。
+# 多镜头样片 smoke 默认使用 2 个 30 秒镜头，总请求时长 60 秒；
+# 可用 AI_VIDEO_VIDEO_ASSEMBLY_CLIP_COUNT（2～12）和
+# AI_VIDEO_VIDEO_ASSEMBLY_SHOT_DURATION_SECONDS 调整，总请求时长需为 60～180 秒。
+
+[tts]
+# edge_tts 使用微软 Edge TTS 服务，不需要 API Key，适合把整集文本一次生成
+# 为连续旁白；chattts 使用 scripts/chattts_generate.py 在独立本地运行时生成语音；
+# mock 适合离线测试；macos_say
+# 调用 macOS 系统语音并离线输出 WAV，只适用于 Mac 宿主机，不适用于 Linux Docker Worker。
+provider = "edge_tts"
+# Yunyang's News profile is steadier for a single long Chinese narration.
+# Visual timing is extended or trimmed from measured boundaries instead of
+# changing voiced audio speed.
+voice = "zh-CN-YunyangNeural"
+rate = "-35%"
+volume = "+0%"
+request_timeout_seconds = 90
+probe_timeout_seconds = 30
+max_text_characters = 5000
+# Retained for backward-compatible configuration. The default runner does not
+# synthesize independent scene waveforms.
+segment_max_characters = 22
+# Kept for compatibility with older duration-fit experiments. The current
+# portfolio runner does not apply audio atempo; it extends video tails instead.
+max_tempo_factor = 1.08
+# Phrase pacing is disabled for the portfolio because changing voiced regions
+# and crossfading phrase slices creates audible seams.
+pacing_enabled = false
+pacing_target_characters_per_second = 3.8
+pacing_min_tempo_factor = 0.82
+pacing_crossfade_ms = 70
+# Pause surgery is disabled by default. Even trimming a low-energy gap and
+# concatenating the remaining waveform can be audible; the portfolio keeps the
+# provider's continuous prosody instead.
+pause_compaction_enabled = false
+pause_min_gap_seconds = 0.20
+pause_soft_keep_seconds = 0.18
+pause_strong_keep_seconds = 0.22
+pause_neutral_keep_seconds = 0.10
+pause_trailing_keep_seconds = 0.18
+pause_scene_boundary_keep_seconds = 0.18
+# ChatTTS-only control token for the optional local provider.
+speed_token = "[speed_1]"
+# Allow a longer continuous waveform for episode-level narration.
+max_new_token = 3600
+# Legacy compatibility values only; no independent waveform chunking or
+# crossfade is performed by the current continuous runner.
+chunk_max_characters = 120
+crossfade_ms = 120
+binary = "say"
+ffmpeg_binary = "ffmpeg"
+runtime_path = "local-runtimes/chattts/.venv/bin/python"
+script_path = "scripts/chattts_generate.py"
+device = "mps"
+# 发音替换只作用于 TTS Provider，字幕和剧本保留原文。
+pronunciation_dictionary_path = "config/pronunciation.toml"
+
+[bgm]
+# mock 生成确定性的 WAV，适合测试和离线开发；local_file 只读取你已经拥有授权的本地音频。
+# local_file 不下载、不抓取音乐，也不会自动判断版权状态。
+provider = "mock"
+# Docker Compose 会把宿主机的 ./.tmp/bgm 只读挂载到 /app/.tmp/bgm。
+source_root = ".tmp/bgm"
+# 相对于 source_root 的路径，例如 "licensed/ambient.wav"；留空时由 API 请求的 source_path 指定。
+source_path = ""
+# 写入 Artifact 前使用 FFmpeg loudnorm 转为 stereo 48 kHz WAV，提升不同来源的混音稳定性。
+normalize_audio = true
+normalization_timeout_seconds = 120
+
+[subtitle_alignment]
+# mock_sentence 按句子切分，并根据文本长度比例估算时间；它不读取音频，
+# 不能视为 ASR 或逐词 word-boundary 结果。真实 ASR 通过下方 [asr] Provider 接入，
+# 并保持 subtitle_align/subtitle_srt 的任务和 Artifact 边界。
+provider = "mock_sentence"
+
+[asr]
+# mock 只用于验证“音频 Artifact → ASR Provider → SRT Artifact”任务边界，
+# 不读取波形。openai_compatible 使用 /audio/transcriptions，要求返回
+# verbose_json 的 segments 或 words 时间戳；纯 text 响应会失败。
+# siliconflow 使用 SiliconFlow 的 file + model 请求，返回 text 后按识别文本
+# 做句子级时间估算，不能视为 segment 或 word-boundary 时间戳。
+# aliyun_dashscope 使用阿里云百炼 Paraformer-v2 的“上传临时 OSS → 异步提交
+# → 轮询 → 下载识别 JSON”协议，返回句子级或字级时间戳；base_url 可留空，
+# 默认使用 https://dashscope.aliyuncs.com。
+provider = "mock"
+base_url = ""
+model = "whisper-1"
+request_timeout_seconds = 180
+binary = "whisper-cli"
+# whisper_cpp 需要本机安装 whisper-cpp，并下载一个 GGML 模型文件；16GB Mac 建议 small。
+model_path = ""
+threads = 4
+# 环境变量覆盖：AI_VIDEO_ASR_PROVIDER、AI_VIDEO_ASR_BASE_URL、
+# AI_VIDEO_ASR_MODEL、AI_VIDEO_ASR_TIMEOUT_SECONDS
+# 阿里云百炼示例：AI_VIDEO_ASR_PROVIDER=aliyun_dashscope、
+# AI_VIDEO_ASR_MODEL=paraformer-v2、AI_VIDEO_ASR_BASE_URL=https://dashscope.aliyuncs.com
+# api_key 只使用环境变量 AI_VIDEO_ASR_API_KEY，不写入此文件。
+# evaluation/run_asr_quality_eval.py 在显式设置
+# AI_VIDEO_RUN_EXTERNAL_ASR_QUALITY_EVAL=1 时允许按 Compose 约定回退使用
+# AI_VIDEO_LLM_API_KEY；普通 API/Worker Provider 工厂仍不把 LLM Key 自动写回 ASR 配置。
+# Provider smoke：设置 AI_VIDEO_RUN_EXTERNAL_ASR_INTEGRATION=1 后运行
+# tests/test_external_asr_integration.py；任务级 MinIO 闭环 smoke：设置
+# AI_VIDEO_RUN_EXTERNAL_ASR_TASK_INTEGRATION=1 后运行
+# tests/test_external_asr_task_integration.py。测试音频可由
+# AI_VIDEO_ASR_TEST_AUDIO_PATH 指定，未指定时使用 .tmp/asr-smoke/real-zh-smoke.mp3。
+# 固定 ASR 质量评估集：evaluation/asr-quality-evaluation-set.toml；批量运行器默认不联网，
+# 只有 AI_VIDEO_RUN_EXTERNAL_ASR_QUALITY_EVAL=1 才调用 Edge TTS 和真实 ASR。
+# 批量运行器增加 --retain-audio 后，会在 evaluation/results/<run_id>/<case_id>/ 保存音频、
+# 脱敏转写文本和 human-review.toml；Provider 对比使用 evaluation/compare_asr_quality_runs.py，
+# 只读取已有结果，不会重复调用外部服务。
+
+# 后端还提供 GET /api/v1/provider-profiles?capability=asr，供前端下拉框读取可用档案。
+# POST /api/v1/episodes/{episode_id}/subtitles/asr 可选 provider_profile_id；任务会保存所选档案，
+# Worker 执行时按该 ID 创建 Provider，不再要求用户手动改配置文件。
+# 内置档案：asr.mock、asr.aliyun_dashscope、asr.siliconflow、asr.openai_compatible。
+# 每个真实供应商可以使用独立 Key：AI_VIDEO_ASR_ALIYUN_API_KEY、
+# AI_VIDEO_ASR_SILICONFLOW_API_KEY、AI_VIDEO_ASR_OPENAI_COMPATIBLE_API_KEY。
+# 现有 AI_VIDEO_ASR_API_KEY 仍作为当前 AI_VIDEO_ASR_PROVIDER 的兼容 fallback；所有 Key 只从环境变量读取。
+
+[materials]
+default_provider = "pexels"
+providers = ["pexels", "pixabay"]
+min_width = 1080
+download_timeout_seconds = 120
+max_file_size_mb = 200
+# Pexels: AI_VIDEO_PEXELS_API_KEY
+# Pixabay: AI_VIDEO_PIXABAY_API_KEY
+
+[render]
+width = 1080
+height = 1920
+fps = 30
+video_codec = "libx264"
+audio_codec = "aac"
+pixel_format = "yuv420p"
+output_format = "mp4"
+temp_dir = ".tmp/render"
+
+[limits]
+max_concurrent_tasks = 2
+max_project_duration_seconds = 180
+max_scenes = 24
+max_script_characters = 5000

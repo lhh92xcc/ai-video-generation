@@ -1,0 +1,15 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.py[cod]
+.DS_Store
+.tmp
+output
+config/config.local.toml
+.env
+.env.*
+!.env.example
+tests

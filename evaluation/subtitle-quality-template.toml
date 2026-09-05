@@ -1,0 +1,18 @@
+# 字幕质量评估记录模板（不放真实密钥或完整用户原文）。
+# 机器指标由 evaluation/run_subtitle_quality.py 生成；人工结论需要单独审核。
+
+[input]
+srt_path = ""
+audio_duration_seconds = 0
+alignment_precision = "transcript_sentence_estimate"
+reference_text_path = ""
+
+[thresholds]
+# 中文字符错误率阈值；只有提供参考文本时才计算。
+max_character_error_rate = 0.05
+
+[decision]
+# pass / needs_review / failed，由机器报告给出；人工复核后再填写备注。
+machine_recommendation = "needs_review"
+human_review_status = "pending"
+notes = ""
