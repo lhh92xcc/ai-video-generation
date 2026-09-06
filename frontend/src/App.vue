@@ -11,6 +11,7 @@ import RunLog from './components/RunLog.vue'
 import ScriptAssetWorkbench from './components/ScriptAssetWorkbench.vue'
 import CreatorHome from './components/CreatorHome.vue'
 import { useProviderProfiles } from './composables/useProviderProfiles'
+import type { ProviderCapability } from './api/providerProfiles'
 
 type AppView = 'overview' | 'provider' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench' | 'logs'
 type AppSurface = 'operator' | 'creator'
@@ -80,6 +81,59 @@ const {
   refresh: refreshProfiles,
   selectProfile,
 } = useProviderProfiles()
+const imageProviderProfiles = useProviderProfiles('image')
+const videoProviderProfiles = useProviderProfiles('video')
+
+const providerCapabilityTabs: Array<{
+  id: ProviderCapability
+  eyebrow: string
+  label: string
+  description: string
+  total: number
+}> = [
+  { id: 'asr', eyebrow: 'ASR', label: '字幕识别', description: '把旁白转成带时间轴的字幕', total: 4 },
+  { id: 'image', eyebrow: 'IMAGE', label: '参考图生成', description: '生成角色、场景和道具关键帧', total: 4 },
+  { id: 'video', eyebrow: 'VIDEO', label: '视频片段', description: '把参考图转换为可播放镜头', total: 6 },
+]
+const activeProviderCapability = ref<ProviderCapability>('asr')
+const providerStateByCapability = {
+  asr: {
+    profiles,
+    availableProfiles,
+    defaultProfileId,
+    selectedProfile,
+    selectedProfileId,
+    isLoading: profilesLoading,
+    hasLoaded: profilesLoaded,
+    errorMessage: profilesError,
+    errorCode: profilesErrorCode,
+    refresh: refreshProfiles,
+    selectProfile,
+  },
+  image: imageProviderProfiles,
+  video: videoProviderProfiles,
+} as const
+
+const activeProviderState = computed(() => providerStateByCapability[activeProviderCapability.value])
+const activeProviderMeta = computed(() => providerCapabilityTabs.find((tab) => tab.id === activeProviderCapability.value) ?? providerCapabilityTabs[0])
+const activeProfiles = computed(() => activeProviderState.value.profiles.value)
+const activeAvailableProfiles = computed(() => activeProviderState.value.availableProfiles.value)
+const activeDefaultProfileId = computed(() => activeProviderState.value.defaultProfileId.value)
+const activeSelectedProfile = computed(() => activeProviderState.value.selectedProfile.value)
+const activeSelectedProfileId = computed({
+  get: () => activeProviderState.value.selectedProfileId.value,
+  set: (value: string | null) => activeProviderState.value.selectProfile(value),
+})
+const activeProfilesLoading = computed(() => activeProviderState.value.isLoading.value)
+const activeProfilesLoaded = computed(() => activeProviderState.value.hasLoaded.value)
+const activeProfilesError = computed(() => activeProviderState.value.errorMessage.value)
+const activeProfilesErrorCode = computed(() => activeProviderState.value.errorCode.value)
+const anyProfilesError = computed(() => profilesError.value || imageProviderProfiles.errorMessage.value || videoProviderProfiles.errorMessage.value)
+const providerTabCounts = computed<Record<ProviderCapability, { configured: number; total: number }>>(() => ({
+  asr: { configured: availableProfiles.value.length, total: profiles.value.length || 4 },
+  image: { configured: imageProviderProfiles.availableProfiles.value.length, total: imageProviderProfiles.profiles.value.length || 4 },
+  video: { configured: videoProviderProfiles.availableProfiles.value.length, total: videoProviderProfiles.profiles.value.length || 6 },
+}))
 
 const health = ref<HealthResponse | null>(null)
 const healthLoading = ref(true)
@@ -87,9 +141,20 @@ const healthError = ref<string | null>(null)
 const showNotifications = ref(false)
 const showHelp = ref(false)
 
-const configuredCount = computed(() => availableProfiles.value.length)
-const selectedProfileName = computed(() => selectedProfile.value?.label ?? '尚未选择')
+const configuredCount = computed(() => activeAvailableProfiles.value.length)
+const selectedProfileName = computed(() => activeSelectedProfile.value?.label ?? '尚未选择')
 const activeViewLabel = computed(() => activeView.value === 'overview' ? '运行概览' : activeView.value === 'provider' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : activeView.value === 'workbench' ? '脚本与资产' : '运行日志')
+
+function providerMark(provider: string): string {
+  const normalized = provider.toLowerCase()
+  if (normalized === 'mock') return 'M'
+  if (normalized.includes('aliyun')) return '阿'
+  if (normalized.includes('siliconflow')) return 'S'
+  if (normalized.includes('comfyui')) return 'C'
+  if (normalized.includes('openai')) return 'O'
+  if (normalized.includes('ffmpeg')) return 'F'
+  return provider.trim().slice(0, 1).toUpperCase() || '?'
+}
 
 async function refreshHealth() {
   healthLoading.value = true
@@ -105,7 +170,16 @@ async function refreshHealth() {
 }
 
 async function refreshAll() {
-  await Promise.all([refreshProfiles(), refreshHealth()])
+  await Promise.all([
+    refreshProfiles(),
+    imageProviderProfiles.refresh(),
+    videoProviderProfiles.refresh(),
+    refreshHealth(),
+  ])
+}
+
+async function refreshActiveProvider() {
+  await activeProviderState.value.refresh()
 }
 
 onMounted(() => {
@@ -212,7 +286,7 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
           <section v-if="showNotifications" id="runtime-notifications" class="header-popover" role="status" aria-label="系统通知">
             <div class="header-popover-heading"><strong>系统通知</strong><button type="button" aria-label="关闭通知" @click="showNotifications = false">×</button></div>
             <div class="header-notification-item" :class="health ? 'good' : 'warning'"><span>{{ health ? '✓' : '!' }}</span><div><strong>{{ health ? 'API 服务在线' : 'API 暂不可用' }}</strong><small>{{ health ? `当前版本 v${health.version}` : '请检查 Docker API 服务后重试' }}</small></div></div>
-            <div v-if="profilesError" class="header-notification-item warning"><span>!</span><div><strong>Provider 配置读取失败</strong><small>{{ profilesError }}</small></div></div>
+            <div v-if="anyProfilesError" class="header-notification-item warning"><span>!</span><div><strong>Provider 配置读取失败</strong><small>{{ anyProfilesError }}</small></div></div>
             <p v-else class="header-popover-empty">暂无新的系统通知</p>
           </section>
           </div>
@@ -238,19 +312,36 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
           </button>
         </section>
 
-        <section v-if="profilesError" class="alert-card error-card">
+        <section v-if="activeProfilesError" class="alert-card error-card">
           <div>
             <strong>Provider 配置读取失败</strong>
-            <p>{{ profilesError }}<code v-if="profilesErrorCode"> · {{ profilesErrorCode }}</code></p>
+            <p>{{ activeProfilesError }}<code v-if="activeProfilesErrorCode"> · {{ activeProfilesErrorCode }}</code></p>
           </div>
-          <button class="secondary-button" type="button" @click="refreshProfiles">重试</button>
+          <button class="secondary-button" type="button" @click="refreshActiveProvider">重试</button>
         </section>
 
-        <section v-else-if="profilesLoaded && configuredCount === 0" class="alert-card warning-card">
+        <section v-else-if="activeProfilesLoaded && configuredCount === 0" class="alert-card warning-card">
           <div>
-            <strong>当前没有可提交的 ASR 配置</strong>
-            <p>可以先启用本地 Mock，或在 API / Worker 环境变量中补充真实供应商 Key。</p>
+            <strong>当前没有可用的{{ activeProviderMeta.label }}配置</strong>
+            <p>可以先启用本地配置，或在 API / Worker 环境变量中补充真实供应商 Key。</p>
           </div>
+        </section>
+
+        <section class="provider-capability-tabs" aria-label="Provider 能力">
+          <button
+            v-for="tab in providerCapabilityTabs"
+            :key="tab.id"
+            class="provider-capability-tab"
+            :class="{ active: activeProviderCapability === tab.id }"
+            type="button"
+            :aria-selected="activeProviderCapability === tab.id"
+            role="tab"
+            @click="activeProviderCapability = tab.id"
+          >
+            <span class="provider-capability-tab-icon">{{ tab.eyebrow.slice(0, 1) }}</span>
+            <span class="provider-capability-tab-copy"><strong>{{ tab.label }}</strong><small>{{ tab.description }}</small></span>
+            <span class="provider-capability-tab-count">{{ providerTabCounts[tab.id].configured }}/{{ providerTabCounts[tab.id].total }}</span>
+          </button>
         </section>
 
         <section class="summary-grid" aria-label="运行摘要">
@@ -261,38 +352,40 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
           </article>
           <article class="summary-card">
             <div class="summary-icon purple"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v3H4V5Zm0 5.5h16v3H4v-3ZM4 16h16v3H4v-3Z" /></svg></div>
-            <div><span>ASR 配置</span><strong>{{ configuredCount }} <em>/ {{ profiles.length || 4 }}</em></strong><small>可用于字幕任务</small></div>
-            <span class="summary-state good">已配置</span>
+            <div><span>{{ activeProviderMeta.label }}配置</span><strong>{{ configuredCount }} <em>/ {{ activeProfiles.length || activeProviderMeta.total }}</em></strong><small>{{ activeProviderMeta.description }}</small></div>
+            <span class="summary-state" :class="{ good: configuredCount > 0 }">{{ configuredCount > 0 ? '可用' : '待配置' }}</span>
           </article>
           <article class="summary-card">
             <div class="summary-icon green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Zm0 2a7 7 0 1 1-7 7 7 7 0 0 1 7-7Zm-1 2v5.4l4 2.3 1-1.7-3-1.7V7h-2Z" /></svg></div>
-            <div><span>当前默认</span><strong class="summary-provider">{{ selectedProfileName }}</strong><small>{{ defaultProfileId ?? '等待配置加载' }}</small></div>
-            <span class="summary-state good">运行中</span>
+            <div><span>当前默认</span><strong class="summary-provider">{{ selectedProfileName }}</strong><small>{{ activeDefaultProfileId ?? '等待配置加载' }}</small></div>
+            <span class="summary-state" :class="{ good: activeDefaultProfileId }">{{ activeDefaultProfileId ? '默认' : '待配置' }}</span>
           </article>
         </section>
 
         <section class="content-grid">
           <article class="card current-card">
             <div class="card-header">
-              <div><h2>当前运行配置</h2><p>选择后，下一次字幕任务会携带对应的 Profile ID。</p></div>
-              <span class="status-pill" :class="{ neutral: !selectedProfile }">{{ selectedProfile ? '已就绪' : '待选择' }}</span>
+              <div><h2>当前运行配置</h2><p>选择后，下一次{{ activeProviderMeta.label }}任务会携带对应的 Profile ID。</p></div>
+              <span class="status-pill" :class="{ neutral: !activeSelectedProfile }">{{ activeSelectedProfile ? '已就绪' : '待选择' }}</span>
             </div>
 
             <ProviderProfileSelect
-              v-model="selectedProfileId"
-              :profiles="profiles"
-              :default-profile-id="defaultProfileId"
-              :disabled="profilesLoading || profiles.length === 0"
+              v-model="activeSelectedProfileId"
+              :profiles="activeProfiles"
+              :default-profile-id="activeDefaultProfileId"
+              :disabled="activeProfilesLoading || activeProfiles.length === 0"
+              :label="`${activeProviderMeta.label} Provider`"
+              :select-id="`operator-${activeProviderCapability}-provider`"
             />
 
-            <div v-if="profilesLoading" class="loading-line"><span class="spinner" />正在读取服务端配置…</div>
-            <div v-else-if="selectedProfile" class="selected-profile">
-              <div class="selected-heading"><div><span>已选择的配置</span><strong>{{ selectedProfile.label }}</strong></div><span class="configured-tag">可用</span></div>
+            <div v-if="activeProfilesLoading" class="loading-line"><span class="spinner" />正在读取服务端配置…</div>
+            <div v-else-if="activeSelectedProfile" class="selected-profile">
+              <div class="selected-heading"><div><span>已选择的配置</span><strong>{{ activeSelectedProfile.label }}</strong></div><span class="configured-tag">可用</span></div>
               <dl class="profile-detail-grid">
-                <div><dt>Profile ID</dt><dd>{{ selectedProfile.profile_id }}</dd></div>
-                <div><dt>Provider</dt><dd>{{ selectedProfile.provider }}</dd></div>
-                <div><dt>模型</dt><dd>{{ selectedProfile.model }}</dd></div>
-                <div><dt>密钥来源</dt><dd>{{ selectedProfile.api_key_env || '无需密钥' }}</dd></div>
+                <div><dt>Profile ID</dt><dd>{{ activeSelectedProfile.profile_id }}</dd></div>
+                <div><dt>Provider</dt><dd>{{ activeSelectedProfile.provider }}</dd></div>
+                <div><dt>模型</dt><dd>{{ activeSelectedProfile.model }}</dd></div>
+                <div><dt>密钥来源</dt><dd>{{ activeSelectedProfile.api_key_env || '无需密钥' }}</dd></div>
               </dl>
               <div class="security-note"><span class="note-icon">✓</span><span>密钥仅由 API / Worker 从服务端环境变量读取，前端只接收安全元数据。</span></div>
             </div>
@@ -311,19 +404,19 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
         </section>
 
         <section class="card profiles-card">
-          <div class="card-header table-heading"><div><h2>Provider 配置档案</h2><p>共 {{ profiles.length }} 个内置档案，仅展示不含密钥的运行信息。</p></div><span class="table-count">{{ configuredCount }} 个可用</span></div>
+          <div class="card-header table-heading"><div><h2>{{ activeProviderMeta.label }} Provider 档案</h2><p>共 {{ activeProfiles.length }} 个内置档案，仅展示不含密钥的运行信息。</p></div><span class="table-count">{{ configuredCount }} 个可用</span></div>
           <div class="table-wrap">
             <table class="profile-table">
               <thead><tr><th>配置名称</th><th>Provider / 模型</th><th>密钥状态</th><th>默认</th><th class="action-column">操作</th></tr></thead>
               <tbody>
-                <tr v-for="profile in profiles" :key="profile.profile_id" :class="{ disabled: !profile.configured }">
-                  <td><div class="table-profile"><span class="provider-logo" :class="profile.provider">{{ profile.provider === 'mock' ? 'M' : profile.provider === 'aliyun_dashscope' ? '阿' : 'S' }}</span><div><strong>{{ profile.label }}</strong><small>{{ profile.profile_id }}</small></div></div></td>
+                <tr v-for="profile in activeProfiles" :key="profile.profile_id" :class="{ disabled: !profile.configured }">
+                  <td><div class="table-profile"><span class="provider-logo" :class="profile.provider">{{ providerMark(profile.provider) }}</span><div><strong>{{ profile.label }}</strong><small>{{ profile.profile_id }}</small></div></div></td>
                   <td><div class="provider-cell"><strong>{{ profile.provider }}</strong><small>{{ profile.model }}</small></div></td>
                   <td><span class="table-status" :class="profile.configured ? 'ready' : 'not-ready'"><i />{{ profile.configured ? '已配置' : '未配置' }}</span></td>
-                  <td><span v-if="profile.profile_id === defaultProfileId" class="default-label">默认配置</span><span v-else class="muted-label">—</span></td>
-                  <td class="action-column"><button v-if="profile.configured && profile.profile_id !== selectedProfileId" class="table-action" type="button" @click="selectProfile(profile.profile_id)">使用此配置</button><span v-else-if="profile.profile_id === selectedProfileId" class="selected-action">当前使用</span><span v-else class="muted-label">需配置 Key</span></td>
+                  <td><span v-if="profile.profile_id === activeDefaultProfileId" class="default-label">默认配置</span><span v-else class="muted-label">—</span></td>
+                  <td class="action-column"><button v-if="profile.configured && profile.profile_id !== activeSelectedProfileId" class="table-action" type="button" @click="activeSelectedProfileId = profile.profile_id">使用此配置</button><span v-else-if="profile.profile_id === activeSelectedProfileId" class="selected-action">当前使用</span><span v-else class="muted-label">需配置 Key</span></td>
                 </tr>
-                <tr v-if="!profilesLoading && profiles.length === 0 && !profilesError"><td colspan="5" class="empty-table">暂无 Provider Profile。</td></tr>
+                <tr v-if="!activeProfilesLoading && activeProfiles.length === 0 && !activeProfilesError"><td colspan="5" class="empty-table">暂无 Provider Profile。</td></tr>
               </tbody>
             </table>
           </div>

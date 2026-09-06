@@ -234,6 +234,24 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .alert-card p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
 .alert-card code { color: var(--red); }
 
+.provider-capability-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.provider-capability-tab { display: flex; align-items: center; gap: 10px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; color: var(--text-muted); background: rgba(255, 255, 255, 0.86); text-align: left; transition: 150ms ease; }
+.provider-capability-tab:hover { border-color: #c9cdf0; background: #fff; transform: translateY(-1px); }
+.provider-capability-tab.active { border-color: #aeb1ea; color: var(--primary); background: linear-gradient(135deg, #f4f4ff, #fff); box-shadow: 0 7px 18px rgba(77, 79, 184, 0.08); }
+.provider-capability-tab-icon { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 8px; color: #676ad7; background: #eeefff; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.provider-capability-tab:nth-child(2) .provider-capability-tab-icon { color: #b37a26; background: #fff3dc; }
+.provider-capability-tab:nth-child(3) .provider-capability-tab-icon { color: #328c7d; background: #e7f7f2; }
+.provider-capability-tab-copy { min-width: 0; flex: 1; }
+.provider-capability-tab-copy strong, .provider-capability-tab-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.provider-capability-tab-copy strong { color: var(--text); font-size: 11px; font-weight: 650; }
+.provider-capability-tab.active .provider-capability-tab-copy strong { color: #555bc2; }
+.provider-capability-tab-copy small { margin-top: 4px; color: #969eae; font-size: 9px; }
+.provider-capability-tab-count { flex: 0 0 auto; border-radius: 999px; padding: 4px 7px; color: #80889b; background: #f1f3f7; font-size: 9px; font-weight: 700; }
+.provider-capability-tab.active .provider-capability-tab-count { color: #5f63cc; background: #e9eaff; }
+@media (max-width: 720px) {
+  .provider-capability-tabs { grid-template-columns: 1fr; }
+}
+
 .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .summary-card { display: flex; align-items: center; gap: 12px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--surface); box-shadow: var(--shadow); }
 .summary-icon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 9px; }

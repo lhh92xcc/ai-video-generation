@@ -106,7 +106,7 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 
 ### 运行时选择 Provider
 
-创作者前台的完整生产配置支持分别选择参考图和视频 Provider。选择结果只写入新建任务的快照，不会修改已经运行的任务，也不需要手动编辑 TOML。未配置密钥的云端档案会显示为不可选；本地 Mock、ComfyUI、FFmpeg 和 Wan 档案不需要云端 API Key。
+创作者前台的完整生产配置支持分别选择参考图和视频 Provider；内部后台的 Provider 页面进一步按“字幕识别 / 参考图生成 / 视频片段”三个能力页签展示同一套安全档案，便于检查 API/Worker 的实际配置状态。选择结果只写入新建任务的快照，不会修改已经运行的任务，也不需要手动编辑 TOML。未配置密钥的云端档案会显示为不可选；本地 Mock、ComfyUI、FFmpeg 和 Wan 档案不需要云端 API Key。
 
 后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
