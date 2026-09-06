@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -652,7 +653,14 @@ _PORTFOLIO_MAX_NARRATION_TRANSITION_OVERLAP = 0.25
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/config.local.toml")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help=(
+            "显式指定 TOML 配置；省略时使用 AI_VIDEO_CONFIG/AI_VIDEO_PROFILE，"
+            "避免在 Windows 上误读取 Mac 私有配置。"
+        ),
+    )
     parser.add_argument("--output-dir", default=".tmp/portfolio-sample")
     parser.add_argument(
         "--shots",
@@ -698,6 +706,24 @@ def parse_args() -> argparse.Namespace:
         help="Pause after this shot; useful for validating checkpoint recovery.",
     )
     return parser.parse_args()
+
+
+def _resolve_sample_config(config: str | None) -> str | None:
+    """Resolve a sample config without assuming a machine-specific file.
+
+    The local Mac config is intentionally ignored by Git.  A hard-coded
+    default therefore makes a fresh Windows checkout fail before the runtime
+    profile can do its job.  Keep an explicit CLI path authoritative, then
+    let ``load_settings`` honor environment selection, and only fall back to
+    the public example when no profile/config has been selected.
+    """
+
+    if config:
+        return config
+    if os.getenv("AI_VIDEO_CONFIG") or os.getenv("AI_VIDEO_PROFILE"):
+        return None
+    local_config = Path("config/config.local.toml")
+    return str(local_config) if local_config.is_file() else "config/config.example.toml"
 
 
 CHECKPOINT_VERSION = 1
@@ -2452,7 +2478,8 @@ def _recent_reference_files(artifact_root: Path, count: int = 4) -> list[Path]:
 
 
 async def run_sample(args: argparse.Namespace) -> dict[str, object]:
-    settings = load_settings(args.config)
+    config_path = _resolve_sample_config(getattr(args, "config", None))
+    settings = load_settings(config_path)
     preview_only = bool(getattr(args, "preview_only", False))
     if args.mock_media and preview_only:
         raise RuntimeError("--mock-media and --preview-only cannot be used together")
@@ -2462,6 +2489,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             video_provider_name,
             mock_media=bool(args.mock_media),
         )
+    configured_environment_path = os.getenv("AI_VIDEO_CONFIG")
+    next_config_path = config_path or configured_environment_path
+    config_prefix = f"AI_VIDEO_CONFIG={next_config_path} " if next_config_path else ""
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = _load_or_create_checkpoint(
@@ -3011,7 +3041,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             },
             "portfolio_readiness": portfolio_readiness,
             "next_command": (
-                f"AI_VIDEO_PROFILE=local_mac_16gb AI_VIDEO_CONFIG={args.config} "
+                f"AI_VIDEO_PROFILE={settings.runtime_profile} "
+                f"{config_prefix}"
                 f"python scripts/run-local-portfolio-sample.py --shots {args.shots} "
                 f"--shot-duration {args.shot_duration} "
                 f"{'--preview-only ' if preview_only else ''}"

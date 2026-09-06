@@ -39,6 +39,7 @@ _fit_narration_artifact_to_shot = _MODULE._fit_narration_artifact_to_shot
 _portfolio_readiness_report = _MODULE._portfolio_readiness_report
 _ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
 _assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
+_resolve_sample_config = _MODULE._resolve_sample_config
 
 
 def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target() -> None:
@@ -48,6 +49,22 @@ def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target()
     # Keep the free, natural-rate Edge TTS demo within the 45–60 second target;
     # do not compensate for an overlong script by speeding up the waveform.
     assert len("".join(scene[1] for scene in scenes)) < 300
+
+
+def test_sample_config_follows_environment_instead_of_assuming_mac_private_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("AI_VIDEO_CONFIG", raising=False)
+    monkeypatch.delenv("AI_VIDEO_PROFILE", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    assert _resolve_sample_config(None) == "config/config.example.toml"
+
+    monkeypatch.setenv("AI_VIDEO_PROFILE", "windows_gpu")
+    assert _resolve_sample_config(None) is None
+
+    assert _resolve_sample_config("config/config.windows_gpu.toml") == "config/config.windows_gpu.toml"
 
 
 def test_portfolio_readiness_report_separates_machine_gates_from_human_review() -> None:
