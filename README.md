@@ -89,6 +89,8 @@ docker compose up -d --build api worker
 
 ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 主机应先在前台选择 `local_safe`，从单张 512×768 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据实际显存、耗时和画面质量调整分辨率、采样步数和时长。配置档案不要求某个固定显卡型号。
 
+Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
+
 ## 配置与安全
 
 - `config/config.example.toml`：不含密钥的配置示例。
@@ -125,7 +127,11 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 `app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色和连续性要求；运行时说明见
 [`prompts/video-motion-generation.txt`](prompts/video-motion-generation.txt)。每个镜头被限制为一个 3～5 秒连续镜头和一种可读的轻微动作（例如呼吸、一次眨眼、小幅转头或衣物轻动），并明确禁止新增人物、切镜、换场、大幅变形和同时发生多个复杂动作。
 
+服务层还会根据景别追加动作安全策略：近景/特写只允许眨眼、呼吸或眼神等微动作，并禁止未设定的说话动作；中景只允许小幅转头、呼吸或克制手势；远景只允许衣物、头发或光线的轻微变化；道具特写只允许焦点、反光或材质微变化。这样能把“画面描述”和“可执行的动作预算”分开，降低 Wan 在短镜头中变脸、手部变形和运动失控的概率。
+
 该组约束是 Provider 无关的输入基线，用于减少变脸、动作崩坏和镜头语义漂移；它不是画质保证。真实 ComfyUI/Wan 运行仍需要在目标 GPU 主机人工筛选镜头，并记录失败和重试结果。
+
+最终 Assembly 默认使用 `libx264`、`medium` preset、`CRF 18`、`animation` tune，并把音频统一输出为 48 kHz 双声道 AAC。编码参数会写入 `rendered_video` Artifact metadata，便于对比不同质量档案；它只能减少二次压缩损失，不能凭空提高模型生成细节。
 
 ## 验证
 
@@ -136,7 +142,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `320 passed、7 skipped、1 warning`；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `325 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

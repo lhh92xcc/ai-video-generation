@@ -9,6 +9,12 @@ PROMPT_VERSION: video-motion-generation-v1
 4. 保持稳定曝光、清晰轮廓和原始构图，避免复杂手部动作、大幅身体变形、快速镜头运动和同时发生的多个动作。
 5. 输出完整的 9:16 画面描述；不要写文字、Logo、水印、拼贴图或角色表。
 
+景别动作预算：
+- close_up / extreme_close_up：只允许眨眼、呼吸或眼神等一个微动作；禁止未设定的说话动作、嘴形漂移和脸部变形。
+- medium / over_the_shoulder：只允许小幅转头、呼吸或克制手势；保持手部、前景轮廓和脸部稳定。
+- wide：只允许衣物、头发、光线或呼吸中的一个轻微变化；保持主体轮廓和背景布局稳定。
+- insert：只允许焦点、反光或材质中的一个微变化；保持道具轮廓和位置稳定。
+
 输入字段：
 - source_prompt：原始分镜画面描述
 - shot_size：wide、medium、close_up、extreme_close_up、over_the_shoulder 或 insert

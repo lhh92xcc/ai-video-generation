@@ -62,7 +62,8 @@ request_timeout_seconds = 600
 [image_generation]
 provider = "comfyui"
 base_url = "http://host.docker.internal:8188"
-model = "flux-schnell"
+# 必须与 ComfyUI/models/unet/ 中的实际 GGUF 文件名一致；模型文件不提交到仓库。
+model = "flux1-schnell-Q4_K_S.gguf"
 request_timeout_seconds = 180
 width = 576
 height = 1024
@@ -79,7 +80,9 @@ max_poll_seconds = 1800
 [video_generation]
 provider = "comfyui_wan_i2v"
 base_url = "http://host.docker.internal:8188"
-model = "Wan2.1-I2V-14B-GGUF-Q4"
+# 必须与 ComfyUI/models/diffusion_models/ 中的实际 GGUF 文件名一致；
+# 如宿主机使用其他量化文件，可通过 AI_VIDEO_VIDEO_MODEL 覆盖。
+model = "wan2.1-i2v-14b-480p-Q4_K_S.gguf"
 image_size = "384x672"
 workflow_path = "config/comfyui/wan2.1-i2v-api.json"
 request_timeout_seconds = 3600

@@ -31,6 +31,8 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     assert settings.visual_quality_profile == "local_balanced"
     assert settings.queue_backend == "redis"
     assert settings.video_provider == "comfyui_wan_i2v"
+    assert settings.image_model == "flux1-schnell-Q4_K_S.gguf"
+    assert settings.video_model == "wan2.1-i2v-14b-480p-Q4_K_S.gguf"
     assert settings.image_width == 576
     assert settings.image_height == 1024
     assert settings.image_steps == 6
