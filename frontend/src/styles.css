@@ -659,6 +659,14 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-provider-status { margin: 11px 0 0; color: #858da1; font-size: 8px; line-height: 1.5; }
 .creator-provider-status.warning { color: #a8732d; }
 .creator-provider-grid .visual-quality-selector { grid-column: 1 / -1; }
+.creator-shot-keyframe-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid #ececf8; border-radius: 9px; padding: 10px 11px; background: #fcfcff; }
+.creator-shot-keyframe-control > div { min-width: 0; }
+.creator-shot-keyframe-control strong, .creator-shot-keyframe-control small { display: block; }
+.creator-shot-keyframe-control strong { color: #586080; font-size: 9px; }
+.creator-shot-keyframe-control small { margin-top: 4px; color: #929aae; font-size: 8px; line-height: 1.45; }
+.creator-shot-keyframe-control select { flex: 0 1 300px; min-width: 220px; height: 32px; border: 1px solid #dfe1ef; border-radius: 7px; padding: 0 8px; color: #555e78; background: #fff; font-size: 8px; outline: 0; }
+.creator-shot-keyframe-control select:focus { border-color: #8588d7; box-shadow: 0 0 0 3px rgba(91, 92, 226, .1); }
+.creator-shot-keyframe-control select:disabled { cursor: wait; opacity: .65; }
 .visual-quality-selector { min-width: 0; border: 1px solid #e0e2f4; border-radius: 11px; padding: 12px; background: linear-gradient(145deg, #fafaff 0%, #fff 62%); }
 .visual-quality-selector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .visual-quality-eyebrow { margin: 0 0 4px; color: #8589d3; font-size: 7px; font-weight: 800; letter-spacing: .14em; }
@@ -701,6 +709,8 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-video-provider-inline .field-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 720px) {
   .creator-provider-grid { grid-template-columns: 1fr; }
+  .creator-shot-keyframe-control { align-items: stretch; flex-direction: column; }
+  .creator-shot-keyframe-control select { flex-basis: auto; min-width: 0; width: 100%; }
   .visual-quality-options { grid-template-columns: 1fr; }
   .visual-quality-option-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .visual-quality-option-description { -webkit-line-clamp: 3; }

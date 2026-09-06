@@ -38,6 +38,7 @@ from app.domain.models import (
     VideoClipCreateRequest,
 )
 from app.providers.profiles import ASRProviderProfileError
+from app.media.visual_prompts import build_shot_keyframe_prompt
 from app.media.narration_text import build_episode_narration_text
 from app.repositories.protocol import NovelStore, ProjectTaskStore
 from app.services.bgm_service import BGMTaskService
@@ -197,6 +198,7 @@ class EpisodeTaskPlanService:
             project_id=project_id,
             label=request.label,
             visual_quality_profile_id=request.visual_quality_profile_id,
+            shot_keyframe_mode=request.shot_keyframe_mode,
             auto_advance=request.auto_advance,
             batch=batch,
             batches=batches,
@@ -360,21 +362,28 @@ class EpisodeTaskPlanService:
         completed_stage: str | None = None
 
         if request.include_reference_images:
-            reference_item, reference_task_ids, ready_references, blocked = await self._plan_reference_images(
+            (
+                reference_item,
+                reference_task_ids,
+                ready_references,
+                shot_keyframes,
+                blocked,
+            ) = await self._plan_reference_images(
                 episode,
                 shot_list.shots,
                 project_tasks,
                 idempotency_key,
                 request.image_provider_profile_id,
                 request.visual_quality_profile_id,
+                request.shot_keyframe_mode,
             )
             if reference_item is not None:
                 return reference_item, reference_task_ids
         else:
-            ready_references, blocked = {}, []
+            ready_references, shot_keyframes, blocked = {}, {}, []
         if blocked:
             return self._item(episode, GenerationTaskKind.ASSET_REFERENCE_IMAGE.value, EpisodeTaskPlanAction.BLOCKED, "参考图阶段被阻塞，请先处理资产或参考图 Artifact", [], blocked), []
-        if ready_references:
+        if ready_references or shot_keyframes:
             completed_stage = GenerationTaskKind.ASSET_REFERENCE_IMAGE.value
 
         if request.include_narration:
@@ -423,6 +432,7 @@ class EpisodeTaskPlanService:
                 shot_list.shots,
                 project_tasks,
                 ready_references,
+                shot_keyframes,
                 idempotency_key,
                 request.video_provider_profile_id,
                 request.visual_quality_profile_id,
@@ -478,6 +488,7 @@ class EpisodeTaskPlanService:
         idempotency_key,
         image_provider_profile_id=None,
         visual_quality_profile_id=None,
+        shot_keyframe_mode="auto",
     ):
         assets = await self._store.list_assets(episode.project_id)
         by_key = {(asset.asset_type, asset.asset_key): asset for asset in assets}
@@ -496,7 +507,7 @@ class EpisodeTaskPlanService:
                 else:
                     referenced[asset.asset_key] = asset
         if blocked:
-            return None, [], {}, sorted(set(blocked))
+            return None, [], {}, {}, sorted(set(blocked))
 
         ready: dict[UUID, ReferenceImageRecord] = {}
         pending: list[UUID] = []
@@ -507,7 +518,12 @@ class EpisodeTaskPlanService:
             if successful is not None:
                 ready[asset.asset_key] = successful
                 continue
-            task = self._latest_reference_task(project_tasks, asset.id, asset.version)
+            task = self._latest_reference_task(
+                project_tasks,
+                asset.id,
+                asset.version,
+                exclude_reference_role="shot_keyframe",
+            )
             if task is not None and task.status != TaskStatus.SUCCEEDED:
                 pending.append(task.id)
                 continue
@@ -527,8 +543,191 @@ class EpisodeTaskPlanService:
                 created += 1
         if pending:
             action = EpisodeTaskPlanAction.CREATED if created else EpisodeTaskPlanAction.REUSED
-            return self._item(episode, GenerationTaskKind.ASSET_REFERENCE_IMAGE.value, action, f"参考图阶段待处理 {len(pending)} 个资产", pending), pending, ready, []
-        return None, [], ready, blocked
+            return (
+                self._item(
+                    episode,
+                    GenerationTaskKind.ASSET_REFERENCE_IMAGE.value,
+                    action,
+                    f"标准参考图阶段待处理 {len(pending)} 个资产",
+                    pending,
+                ),
+                pending,
+                ready,
+                {},
+                [],
+            )
+        if blocked:
+            return None, [], ready, {}, sorted(set(blocked))
+
+        keyframe_item, keyframe_task_ids, shot_keyframes, keyframe_blocked = (
+            await self._plan_shot_keyframes(
+                episode,
+                shots,
+                referenced,
+                ready,
+                project_tasks,
+                idempotency_key,
+                image_provider_profile_id,
+                visual_quality_profile_id,
+                shot_keyframe_mode,
+            )
+        )
+        if keyframe_item is not None:
+            return (
+                keyframe_item,
+                keyframe_task_ids,
+                ready,
+                shot_keyframes,
+                keyframe_blocked,
+            )
+        return None, [], ready, shot_keyframes, keyframe_blocked
+
+    async def _plan_shot_keyframes(
+        self,
+        episode,
+        shots,
+        referenced,
+        standard_references,
+        project_tasks,
+        idempotency_key,
+        image_provider_profile_id=None,
+        visual_quality_profile_id=None,
+        shot_keyframe_mode="auto",
+    ):
+        """Create optional identity-locked stills after standard anchors exist.
+
+        One primary character keyframe is created per character-containing shot.
+        This keeps the low-VRAM path bounded while giving each video task a
+        shot-specific composition. Multi-character identity remains a manual
+        review concern until the Provider contract supports multiple anchors.
+        """
+
+        if shot_keyframe_mode == "off":
+            return None, [], {}, []
+
+        character_shots = [
+            shot
+            for shot in shots
+            if any(reference.asset_type == AssetType.CHARACTER for reference in shot.asset_refs)
+        ]
+        if not character_shots:
+            return None, [], {}, []
+
+        supports_identity = self._reference_image_task_service.supports_identity_variants(
+            image_provider_profile_id
+        )
+        if not supports_identity:
+            if shot_keyframe_mode == "always":
+                reasons = ["SHOT_KEYFRAME_PROVIDER_UNSUPPORTED"]
+                return (
+                    self._item(
+                        episode,
+                        GenerationTaskKind.ASSET_REFERENCE_IMAGE.value,
+                        EpisodeTaskPlanAction.BLOCKED,
+                        "当前图片 Provider 不支持身份锁定的逐镜头关键帧",
+                        [],
+                        reasons,
+                    ),
+                    [],
+                    {},
+                    reasons,
+                )
+            # ``auto`` intentionally falls back to the standard identity image.
+            return None, [], {}, []
+
+        pending: list[UUID] = []
+        ready: dict[tuple[UUID, int], ReferenceImageRecord] = {}
+        blocked: list[str] = []
+        created = 0
+        for shot in sorted(character_shots, key=lambda item: item.shot_index):
+            primary_ref = next(
+                reference
+                for reference in shot.asset_refs
+                if reference.asset_type == AssetType.CHARACTER
+            )
+            asset = referenced.get(primary_ref.asset_key)
+            standard = standard_references.get(primary_ref.asset_key)
+            if asset is None or standard is None:
+                blocked.append(
+                    f"shot_{shot.shot_index}:{primary_ref.name}:standard_identity_required"
+                )
+                continue
+
+            images = await self._store.list_reference_images(asset.id)
+            successful = self._find_shot_keyframe(
+                images,
+                episode.id,
+                shot.shot_index,
+            )
+            if successful is not None:
+                ready[(asset.asset_key, shot.shot_index)] = successful
+                continue
+
+            task = self._latest_reference_task(
+                project_tasks,
+                asset.id,
+                asset.version,
+                reference_role="shot_keyframe",
+                episode_id=episode.id,
+                shot_index=shot.shot_index,
+            )
+            if task is not None and task.status != TaskStatus.SUCCEEDED:
+                pending.append(task.id)
+                continue
+            if task is not None:
+                blocked.append(
+                    f"shot_{shot.shot_index}:{asset.name}:keyframe_artifact_missing"
+                )
+                continue
+
+            prompt = build_shot_keyframe_prompt(
+                source_prompt=shot.visual_prompt,
+                shot_size=shot.shot_size,
+                camera_movement=shot.camera_movement,
+                location=shot.location,
+                characters=shot.characters or [asset.name],
+                continuity_notes=shot.continuity_notes,
+                primary_character_facts=self._character_facts(asset),
+            )
+            created_task, reused = await self._reference_image_task_service.create_task(
+                asset.id,
+                ReferenceImageCreateRequest(
+                    prompt_override=prompt,
+                    provider_profile_id=image_provider_profile_id,
+                    visual_quality_profile_id=visual_quality_profile_id,
+                    reference_role="shot_keyframe",
+                    episode_id=episode.id,
+                    shot_index=shot.shot_index,
+                    identity_lock=True,
+                    identity_reference_image_id=standard.id,
+                ),
+                self._task_key(
+                    idempotency_key,
+                    "shot-keyframe",
+                    f"{episode.id}:{shot.shot_index}:{asset.asset_key}",
+                ),
+            )
+            pending.append(created_task.id)
+            if not reused:
+                created += 1
+
+        if blocked:
+            return None, [], ready, sorted(set(blocked))
+        if pending:
+            action = EpisodeTaskPlanAction.CREATED if created else EpisodeTaskPlanAction.REUSED
+            return (
+                self._item(
+                    episode,
+                    GenerationTaskKind.ASSET_REFERENCE_IMAGE.value,
+                    action,
+                    f"逐镜头身份关键帧阶段待处理 {len(pending)} 个镜头",
+                    pending,
+                ),
+                pending,
+                ready,
+                [],
+            )
+        return None, [], ready, []
 
     async def _plan_narration(self, episode, script, project_tasks, idempotency_key):
         text = self._script_text(script)
@@ -619,6 +818,7 @@ class EpisodeTaskPlanService:
         shots,
         project_tasks,
         references,
+        shot_keyframes,
         idempotency_key,
         video_provider_profile_id=None,
         visual_quality_profile_id=None,
@@ -641,7 +841,11 @@ class EpisodeTaskPlanService:
             if task is not None:
                 pending.append(task.id)
                 continue
-            reference_image_id = self._reference_image_id_for_shot(shot, references)
+            reference_image_id = self._reference_image_id_for_shot(
+                shot,
+                references,
+                shot_keyframes,
+            )
             created_task, reused = await self._video_clip_task_service.create_task(
                 episode.id,
                 shot.shot_index,
@@ -736,11 +940,15 @@ class EpisodeTaskPlanService:
         return GenerationTaskKind.SUBTITLE_ASR.value if request.subtitle_mode == "asr" else GenerationTaskKind.SUBTITLE_ALIGN.value
 
     @staticmethod
-    def _reference_image_id_for_shot(shot, references):
+    def _reference_image_id_for_shot(shot, references, shot_keyframes=None):
         ordered_refs = sorted(
             shot.asset_refs,
             key=lambda item: 0 if item.asset_type == AssetType.CHARACTER else 1,
         )
+        for asset in ordered_refs:
+            image = (shot_keyframes or {}).get((asset.asset_key, shot.shot_index))
+            if image is not None:
+                return image.id
         for asset in ordered_refs:
             image = references.get(asset.asset_key)
             if image is not None:
@@ -770,7 +978,8 @@ class EpisodeTaskPlanService:
                 (
                     image
                     for image in legacy
-                    if image.metadata.get("reference_role") != "identity_locked_variant"
+                    if image.metadata.get("reference_role")
+                    not in {"identity_locked_variant", "shot_keyframe"}
                 ),
                 None,
             )
@@ -838,15 +1047,92 @@ class EpisodeTaskPlanService:
 
     @staticmethod
     def _latest_video_clip_task(tasks, episode_id, shot_index):
-        matching = [task for task in tasks if task.kind == GenerationTaskKind.VIDEO_CLIP and str(task.input_data.get("episode_id")) == str(episode_id) and int(task.input_data.get("shot_index", 0)) == shot_index]
+        matching = [
+            task
+            for task in tasks
+            if task.kind == GenerationTaskKind.VIDEO_CLIP
+            and str(task.input_data.get("episode_id")) == str(episode_id)
+            and EpisodeTaskPlanService._metadata_int(task.input_data.get("shot_index"))
+            == shot_index
+        ]
         matching.sort(key=lambda task: task.updated_at, reverse=True)
         return matching[0] if matching else None
 
     @staticmethod
-    def _latest_reference_task(tasks, asset_id, asset_version):
-        matching = [task for task in tasks if task.kind == GenerationTaskKind.ASSET_REFERENCE_IMAGE and str(task.input_data.get("asset_id")) == str(asset_id) and int(task.input_data.get("asset_version", asset_version)) == asset_version]
+    def _latest_reference_task(
+        tasks,
+        asset_id,
+        asset_version,
+        *,
+        reference_role=None,
+        exclude_reference_role=None,
+        episode_id=None,
+        shot_index=None,
+    ):
+        matching = [
+            task
+            for task in tasks
+            if task.kind == GenerationTaskKind.ASSET_REFERENCE_IMAGE
+            and str(task.input_data.get("asset_id")) == str(asset_id)
+            and EpisodeTaskPlanService._metadata_int(
+                task.input_data.get("asset_version", asset_version)
+            )
+            == asset_version
+            and (
+                reference_role is None
+                or task.input_data.get("reference_role") == reference_role
+            )
+            and (
+                exclude_reference_role is None
+                or task.input_data.get("reference_role") != exclude_reference_role
+            )
+            and (episode_id is None or str(task.input_data.get("episode_id")) == str(episode_id))
+            and (
+                shot_index is None
+                or EpisodeTaskPlanService._metadata_int(task.input_data.get("shot_index"))
+                == shot_index
+            )
+        ]
         matching.sort(key=lambda task: task.updated_at, reverse=True)
         return matching[0] if matching else None
+
+    @staticmethod
+    def _find_shot_keyframe(images, episode_id, shot_index):
+        return next(
+            (
+                image
+                for image in images
+                if image.status == ReferenceImageStatus.SUCCEEDED
+                and image.metadata.get("reference_role") == "shot_keyframe"
+                and str(image.metadata.get("episode_id")) == str(episode_id)
+                and EpisodeTaskPlanService._metadata_int(image.metadata.get("shot_index"))
+                == shot_index
+                and isinstance(image.metadata.get("storage_key"), str)
+                and image.metadata.get("storage_key")
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _character_facts(asset: AssetRecord) -> str:
+        content = asset.content
+        values = [
+            f"name={asset.name}",
+            f"role={getattr(content, 'role', '')}",
+            f"appearance={getattr(content, 'appearance', '')}",
+            f"traits={', '.join(getattr(content, 'traits', []) or [])}",
+            f"voice_notes={getattr(content, 'voice_notes', '')}",
+        ]
+        return "; ".join(
+            value for value in values if value.split("=", 1)[1].strip()
+        )[:1000]
+
+    @staticmethod
+    def _metadata_int(value: object) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _latest_planned_task(tasks, episode_id, plan_key):

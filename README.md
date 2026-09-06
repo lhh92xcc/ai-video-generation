@@ -10,6 +10,7 @@
 - 可插拔 LLM、图片、视频、TTS、ASR、BGM 和对象存储 Provider。
 - 发音词典：只改写发送给 TTS 的 `tts_text`，剧本和字幕保留原文。
 - 标准人设图：角色首张合格参考图自动成为身份锚点。
+- 逐镜头身份关键帧：标准人设图完成后，含角色镜头可按 `auto`、`always` 或 `off` 策略生成身份锁定关键帧；视频任务优先使用当前镜头的关键帧。
 - 镜头身份初审：对含角色的视频抽样执行 InsightFace 相似度检查。
 - 身份阈值校准：只读比较候选阈值，不修改生产配置；身份失败镜头支持幂等批量重试。
 - 角色声音资产库：可按角色绑定 Edge TTS、ChatTTS、macOS say 或 Mock 声音档案，并按对白行生成多角色音频。
@@ -104,6 +105,8 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 
 视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 GPU 主机人工验收。
 
+逐镜头身份关键帧策略通过 `shot_keyframe_mode` 传入分集任务计划和完整生产 Run：`auto` 在当前图片 Provider 支持身份输入时为含角色镜头生成关键帧，否则回退标准人设图；`always` 在身份锁定能力不可用时返回 `SHOT_KEYFRAME_PROVIDER_UNSUPPORTED` 阻塞；`off` 完全关闭该阶段。计划器会先等待标准人设图成功，再按镜头生成关键帧，最后创建视频片段任务。关键帧任务保存分集、镜头编号和标准身份锚点，历史缺少这些字段的参考图仍按旧的标准图选择规则兼容处理。
+
 默认使用 `local_safe`；Windows GPU 配置档案默认使用 `local_balanced`。也可以通过 `AI_VIDEO_VISUAL_QUALITY_PROFILE` 或 TOML 的 `[visual_quality].default_profile` 设置默认档案，前台新建完整生产、分集计划或单镜头视频任务时可直接通过卡片选择。
 
 | 档案 | 参考图 | 视频片段 | 适用场景 |
@@ -123,7 +126,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `311 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `319 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

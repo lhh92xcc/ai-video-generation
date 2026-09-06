@@ -8,6 +8,8 @@ format without changing the business layer.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 DEFAULT_REFERENCE_STYLE = (
     "polished 2D manhwa animation production key art, clean single-frame vertical "
     "composition, crisp linework, clear facial planes, soft cel shading, controlled "
@@ -40,3 +42,65 @@ DEFAULT_VIDEO_PROMPT_SUFFIX = (
     "hairstyle, clothing, colors and silhouette, keep the original composition, no "
     "new characters, no cuts, no scene change, no large body transformation"
 )
+
+
+def build_shot_keyframe_prompt(
+    *,
+    source_prompt: str,
+    shot_size: str,
+    camera_movement: str,
+    location: str,
+    characters: Sequence[str],
+    continuity_notes: str = "",
+    primary_character_facts: str = "",
+    style: str = DEFAULT_REFERENCE_STYLE,
+) -> str:
+    """Build a composed, identity-aware still for a single video shot.
+
+    The standard asset image is an identity anchor; this prompt asks for a new
+    composition for the current shot while keeping the primary character's
+    stable design facts.  Provider adapters remain responsible for translating
+    the prompt into their own workflow inputs.
+    """
+
+    framing = {
+        "wide": "wide vertical composition with readable foreground, midground and background",
+        "medium": "medium vertical composition with the primary subject clearly readable",
+        "close_up": "close-up portrait composition with the primary face unobstructed",
+        "extreme_close_up": "tight facial or detail composition with the identity anchor still recognizable",
+        "over_the_shoulder": "over-the-shoulder vertical composition with a clear foreground shoulder and readable subject",
+        "insert": "single detail composition with one dominant readable object",
+    }.get(shot_size, "clear vertical composition")
+    movement = {
+        "fixed": "an instant suitable for a locked camera",
+        "pan": "an instant suitable for a gentle pan",
+        "tilt": "an instant suitable for a gentle tilt",
+        "dolly": "an instant suitable for a slow dolly",
+        "tracking": "an instant suitable for a restrained tracking move",
+        "handheld": "an instant suitable for restrained handheld motion",
+        "zoom": "an instant suitable for a very gentle push-in",
+    }.get(camera_movement, "a restrained camera move")
+    visible_characters = ", ".join(item.strip() for item in characters if item.strip())
+    character_clause = (
+        f"Visible characters already approved for this shot: {visible_characters}. "
+        "Do not add any other character. "
+        if visible_characters
+        else "No character is visible; keep the frame focused on the approved environment or prop. "
+    )
+    facts_clause = (
+        f"Primary character design facts to preserve: {primary_character_facts[:500]}. "
+        if primary_character_facts.strip()
+        else "Preserve the identity anchor's face geometry, hairstyle, clothing and palette. "
+    )
+    continuity_clause = (
+        f"Continuity note: {continuity_notes[:300]}. " if continuity_notes.strip() else ""
+    )
+    prompt = (
+        f"{style.strip()}. 9:16 vertical storyboard keyframe for one later 3 to 5 second video shot. "
+        f"{source_prompt.strip()[:700]}. Location: {location.strip()}. {framing}; {movement}. "
+        f"{character_clause}{facts_clause}{continuity_clause}"
+        "Create one coherent full-frame image, not a character sheet, not a collage, not multiple views. "
+        "Use a stable readable pose that can transition into subtle motion; preserve exact identity, "
+        "silhouette, costume colors, lighting direction and important prop placement."
+    )
+    return prompt[:1500]

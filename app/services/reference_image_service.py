@@ -71,6 +71,14 @@ class ReferenceImageTaskService:
         )
         self._provider_registry = provider_registry
 
+    def supports_identity_variants(self, provider_profile_id: str | None = None) -> bool:
+        """Return whether the selected image route can consume an identity anchor."""
+
+        if self._provider_registry is not None:
+            profile = self._provider_registry.resolve("image", provider_profile_id)
+            return profile.provider == "comfyui"
+        return self._identity_provider is not None
+
     async def create_task(
         self,
         asset_id: UUID,
@@ -82,6 +90,23 @@ class ReferenceImageTaskService:
             raise AssetNotReadyError(
                 f"Asset {asset.id} is {asset.status.value}; approve the asset before generation"
             )
+        if request.reference_role == "shot_keyframe":
+            if asset.asset_type.value != "character":
+                raise ImageProviderError(
+                    "IMAGE_SHOT_KEYFRAME_REQUIRES_CHARACTER",
+                    "A shot keyframe can only be generated for a character asset",
+                )
+            if request.episode_id is None or request.shot_index is None:
+                raise ImageProviderError(
+                    "IMAGE_SHOT_KEYFRAME_CONTEXT_REQUIRED",
+                    "A shot keyframe requires an episode and shot index",
+                )
+            episode = await self._store.get_episode(request.episode_id)
+            if episode is None or episode.project_id != asset.project_id:
+                raise ImageProviderError(
+                    "IMAGE_SHOT_KEYFRAME_CONTEXT_INVALID",
+                    "The shot keyframe episode must belong to the same project as the asset",
+                )
 
         provider_profile_id: str | None = None
         visual_quality_profile_id: str | None = None
@@ -109,11 +134,17 @@ class ReferenceImageTaskService:
         identity_reference_image_id, identity_anchor_reference_image_id = (
             await self._resolve_identity_reference(asset, request)
         )
-        if identity_reference_image_id is not None and self._identity_provider is None:
-            raise ImageProviderError(
-                "IMAGE_IDENTITY_PROVIDER_NOT_CONFIGURED",
-                "An identity-locked character image requires a configured identity image Provider",
+        if identity_reference_image_id is not None:
+            identity_route_available = (
+                self.supports_identity_variants(provider_profile_id)
+                if self._provider_registry is not None
+                else self._identity_provider is not None
             )
+            if not identity_route_available:
+                raise ImageProviderError(
+                    "IMAGE_IDENTITY_PROVIDER_NOT_CONFIGURED",
+                    "An identity-locked character image requires a configured identity image Provider",
+                )
         width = request.width or (
             int(visual_quality_snapshot["image_width"])
             if visual_quality_snapshot is not None
@@ -129,6 +160,13 @@ class ReferenceImageTaskService:
         prompt = request.prompt_override or self._build_prompt(asset, style)
         reference_image_id = uuid4()
         task_id = uuid4()
+        task_reference_role = (
+            "shot_keyframe"
+            if request.reference_role == "shot_keyframe"
+            else "identity_locked_variant"
+            if identity_reference_image_id is not None
+            else "candidate_reference"
+        )
         task = GenerationTaskRecord(
             id=task_id,
             project_id=asset.project_id,
@@ -162,10 +200,14 @@ class ReferenceImageTaskService:
                     if identity_anchor_reference_image_id is not None
                     else {}
                 ),
-                "reference_role": (
-                    "identity_locked_variant"
-                    if identity_reference_image_id is not None
-                    else "candidate_reference"
+                "reference_role": task_reference_role,
+                **(
+                    {
+                        "episode_id": str(request.episode_id),
+                        "shot_index": request.shot_index,
+                    }
+                    if request.reference_role == "shot_keyframe"
+                    else {}
                 ),
                 **(
                     {"provider_profile_id": provider_profile_id}
@@ -392,6 +434,9 @@ class ReferenceImageTaskService:
         if asset.asset_type.value != "character":
             return None, None
 
+        if not request.identity_lock:
+            return None, None
+
         candidate_id = request.identity_reference_image_id
         if candidate_id is None:
             anchor = await self._find_identity_anchor(asset.id)
@@ -447,7 +492,8 @@ class ReferenceImageTaskService:
             (
                 image
                 for image in sorted(successful, key=lambda item: item.created_at)
-                if image.metadata.get("reference_role") != "identity_locked_variant"
+                if image.metadata.get("reference_role")
+                not in {"identity_locked_variant", "shot_keyframe"}
             ),
             None,
         )
@@ -482,15 +528,38 @@ class ReferenceImageTaskService:
             and image.metadata.get("storage_key")
         ]
         is_character = reference_image.asset_type.value == "character"
-        is_anchor = is_character and not identity_reference_id and not prior_successes
+        requested_role = str(task.input_data.get("reference_role", "candidate_reference"))
+        is_shot_keyframe = requested_role == "shot_keyframe"
+        is_anchor = (
+            is_character
+            and not is_shot_keyframe
+            and not identity_reference_id
+            and not prior_successes
+        )
         anchor_id = self._metadata_uuid(task.input_data.get("identity_anchor_reference_image_id"))
         if is_anchor:
             anchor_id = reference_image.id
         metadata.update(
             {
                 "identity_anchor": is_anchor,
-                "reference_role": "standard_identity" if is_anchor else (
-                    "identity_locked_variant" if identity_reference_id else "candidate_reference"
+                "reference_role": (
+                    "shot_keyframe"
+                    if is_shot_keyframe
+                    else "standard_identity"
+                    if is_anchor
+                    else "identity_locked_variant"
+                    if identity_reference_id
+                    else "candidate_reference"
+                ),
+                **(
+                    {
+                        "episode_id": str(task.input_data["episode_id"]),
+                        "shot_index": int(task.input_data["shot_index"]),
+                    }
+                    if is_shot_keyframe
+                    and task.input_data.get("episode_id")
+                    and task.input_data.get("shot_index") is not None
+                    else {}
                 ),
                 **(
                     {"identity_anchor_reference_image_id": str(anchor_id)}

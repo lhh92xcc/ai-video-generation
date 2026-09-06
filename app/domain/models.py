@@ -897,6 +897,13 @@ class ReferenceImageCreateRequest(BaseModel):
     height: int | None = Field(default=None, ge=256, le=2048)
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    reference_role: Literal["asset_anchor", "shot_keyframe"] = "asset_anchor"
+    episode_id: UUID | None = Field(
+        default=None,
+        description="Episode context required when reference_role is shot_keyframe.",
+    )
+    shot_index: int | None = Field(default=None, ge=1, le=500)
+    identity_lock: bool = True
     identity_reference_image_id: UUID | None = Field(
         default=None,
         description="Optional succeeded reference image used by an identity adapter workflow.",
@@ -917,6 +924,26 @@ class ReferenceImageCreateRequest(BaseModel):
             return None
         value = value.strip()
         return value or None
+
+    @model_validator(mode="after")
+    def validate_reference_context(self) -> "ReferenceImageCreateRequest":
+        has_shot_context = self.episode_id is not None or self.shot_index is not None
+        if self.reference_role == "shot_keyframe":
+            if self.episode_id is None or self.shot_index is None:
+                raise ValueError(
+                    "shot_keyframe references require episode_id and shot_index"
+                )
+            if not self.identity_lock:
+                raise ValueError("shot_keyframe references require identity_lock=true")
+        elif has_shot_context:
+            raise ValueError(
+                "episode_id and shot_index are only valid for shot_keyframe references"
+            )
+        if not self.identity_lock and self.identity_reference_image_id is not None:
+            raise ValueError(
+                "identity_reference_image_id cannot be set when identity_lock is false"
+            )
+        return self
 
 
 class ReferenceImageGenerationRequest(BaseModel):
@@ -1662,6 +1689,7 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
     image_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     video_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    shot_keyframe_mode: Literal["auto", "always", "off"] = "auto"
     auto_advance: bool = True
     bgm_source_path: str | None = Field(default=None, max_length=500)
     bgm_label: str = Field(default="licensed-local-bgm", min_length=1, max_length=120)
@@ -1722,6 +1750,7 @@ class EpisodeTaskPlanResponse(BaseModel):
     project_id: UUID
     label: str
     visual_quality_profile_id: str | None = None
+    shot_keyframe_mode: Literal["auto", "always", "off"] = "auto"
     auto_run_id: UUID | None = None
     auto_advance: bool = False
     batch: TaskBatchRecord | None = None

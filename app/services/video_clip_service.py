@@ -128,7 +128,12 @@ class VideoClipTaskService:
         identity_anchor_reference_image_id: UUID | None = None
         if reference_image_id is None:
             reference_image_id, identity_anchor_reference_image_id = (
-                await self._select_default_reference_image(shot_list.project_id, shot.asset_refs)
+                await self._select_default_reference_image(
+                    shot_list.project_id,
+                    shot.asset_refs,
+                    episode_id=episode_id,
+                    shot_index=shot_index,
+                )
             )
 
         reference_image = None
@@ -457,6 +462,9 @@ class VideoClipTaskService:
         self,
         project_id: UUID,
         asset_refs: list[ShotAssetReference],
+        *,
+        episode_id: UUID | None = None,
+        shot_index: int | None = None,
     ) -> tuple[UUID | None, UUID | None]:
         assets = await self._store.list_assets(project_id)
         ordered_asset_refs = sorted(
@@ -486,6 +494,19 @@ class VideoClipTaskService:
             ]
             if not successful:
                 continue
+            if episode_id is not None and shot_index is not None and asset.asset_type == AssetType.CHARACTER:
+                shot_keyframe = next(
+                    (
+                        image
+                        for image in successful
+                        if image.metadata.get("reference_role") == "shot_keyframe"
+                        and str(image.metadata.get("episode_id")) == str(episode_id)
+                        and self._metadata_int(image.metadata.get("shot_index")) == shot_index
+                    ),
+                    None,
+                )
+                if shot_keyframe is not None:
+                    return shot_keyframe.id, self._identity_anchor_id(shot_keyframe)
             anchor = next(
                 (image for image in successful if image.metadata.get("identity_anchor") is True),
                 None,
@@ -494,7 +515,8 @@ class VideoClipTaskService:
                 legacy_candidates = [
                     image
                     for image in sorted(successful, key=lambda item: item.created_at)
-                    if image.metadata.get("reference_role") != "identity_locked_variant"
+                    if image.metadata.get("reference_role")
+                    not in {"identity_locked_variant", "shot_keyframe"}
                 ]
                 anchor = legacy_candidates[0] if legacy_candidates else None
             selected = anchor or successful[0]
@@ -511,6 +533,13 @@ class VideoClipTaskService:
         try:
             return UUID(str(value))
         except (ValueError, TypeError, AttributeError):
+            return None
+
+    @staticmethod
+    def _metadata_int(value: object) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
             return None
 
     async def _audit_identity(

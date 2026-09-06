@@ -125,6 +125,7 @@ export interface EpisodeTaskPlanResponse {
   project_id: string
   label: string
   visual_quality_profile_id: string | null
+  shot_keyframe_mode: 'auto' | 'always' | 'off'
   auto_run_id: string | null
   auto_advance: boolean
   batch: TaskBatchRecord | null

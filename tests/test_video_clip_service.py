@@ -266,6 +266,62 @@ def test_mock_video_clip_task_creates_traceable_artifact(tmp_path) -> None:
     asyncio.run(exercise())
 
 
+def test_video_clip_prefers_matching_shot_keyframe_over_standard_identity(tmp_path) -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        storage = LocalFileArtifactStorage(tmp_path)
+        service = VideoClipTaskService(
+            store,
+            queue,
+            MockVideoGenerationProvider(),
+            storage,
+        )
+        async def noop_handler(task_id) -> None:
+            del task_id
+
+        queue.set_handler(noop_handler)
+        episode, standard = await _video_identity_fixture(store, storage)
+        keyframe_artifact = await storage.put_bytes(
+            f"references/{episode.id}/shot-1-keyframe.png",
+            b"shot-keyframe",
+            "image/png",
+        )
+        keyframe = standard.model_copy(
+            update={
+                "id": uuid4(),
+                "task_id": uuid4(),
+                "output_uri": keyframe_artifact.uri,
+                "metadata": {
+                    "storage_key": keyframe_artifact.storage_key,
+                    "content_type": keyframe_artifact.content_type,
+                    "identity_anchor": False,
+                    "reference_role": "shot_keyframe",
+                    "episode_id": str(episode.id),
+                    "shot_index": 1,
+                    "identity_anchor_reference_image_id": str(standard.id),
+                },
+            },
+            deep=True,
+        )
+        await store.save_reference_image(keyframe)
+
+        task, reused = await service.create_task(
+            episode.id,
+            1,
+            VideoClipCreateRequest(),
+            idempotency_key="matching-keyframe",
+        )
+        await queue.close()
+
+        assert reused is False
+        assert task.input_data["reference_image_id"] == str(keyframe.id)
+        assert task.input_data["identity_anchor_reference_image_id"] == str(standard.id)
+        await storage.close()
+
+    asyncio.run(exercise())
+
+
 def test_video_clip_task_requires_ready_shot_assets(tmp_path) -> None:
     async def exercise() -> None:
         store = InMemoryStore()

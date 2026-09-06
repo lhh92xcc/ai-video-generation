@@ -43,6 +43,7 @@ import type {
 } from '../types/task'
 
 type SubtitleMode = 'asr' | 'align'
+type ShotKeyframeMode = 'auto' | 'always' | 'off'
 type ShotFilter = 'all' | 'ready' | 'failed' | 'succeeded' | 'blocked'
 
 type AssemblyClipSelection = {
@@ -104,6 +105,7 @@ const selectedShotList = ref<ShotListRecord | null>(null)
 const narrationText = ref('')
 const narrationTextDirty = ref(false)
 const subtitleMode = ref<SubtitleMode>('asr')
+const shotKeyframeMode = ref<ShotKeyframeMode>('auto')
 const subtitleText = ref('')
 const subtitleTextDirty = ref(false)
 const bgmLabel = ref('')
@@ -936,6 +938,7 @@ async function startEpisodeTaskPlan() {
         image_provider_profile_id: selectedImageProfileId.value ?? undefined,
         video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
         visual_quality_profile_id: selectedVisualQualityProfileId.value ?? undefined,
+        shot_keyframe_mode: shotKeyframeMode.value,
       },
       newIdempotencyKey('episode-task-plan'),
     )
@@ -961,6 +964,7 @@ async function startFullProduction() {
         image_provider_profile_id: selectedImageProfileId.value ?? undefined,
         video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
         visual_quality_profile_id: selectedVisualQualityProfileId.value ?? undefined,
+        shot_keyframe_mode: shotKeyframeMode.value,
         auto_advance: true,
       },
       `creator:${projectData.value.id}:production-run`,
@@ -1127,6 +1131,17 @@ onUnmounted(() => {
                 select-id="creator-video-provider"
                 hint="本地 Wan/FFmpeg 或已配置的云端档案可按任务选择，选择结果会随 DAG 保存。"
               />
+            </div>
+            <div class="creator-shot-keyframe-control">
+              <div>
+                <strong>逐镜头身份关键帧</strong>
+                <small>标准人设图完成后，为含角色的镜头生成更贴合构图的身份锁定参考图。</small>
+              </div>
+              <select v-model="shotKeyframeMode" :disabled="Boolean(action)" aria-label="逐镜头身份关键帧策略">
+                <option value="auto">自动：支持时生成，不支持时回退标准图</option>
+                <option value="always">强制：不支持身份锁定时阻塞</option>
+                <option value="off">关闭：所有镜头使用标准参考图</option>
+              </select>
             </div>
             <p v-if="visualQualityProfilesLoading || imageProfilesLoading || videoProfilesLoading" class="creator-provider-status">正在读取质量档案、图片和视频配置…</p>
             <p v-else-if="!imageProfiles.length || !videoProfiles.length" class="creator-provider-status warning">图片或视频 Provider 列表为空，请检查 API 配置。</p>

@@ -108,6 +108,7 @@ export function createEpisodeTaskPlan(
     image_provider_profile_id?: string
     video_provider_profile_id?: string
     visual_quality_profile_id?: string
+    shot_keyframe_mode?: 'auto' | 'always' | 'off'
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'
@@ -141,6 +142,7 @@ export function startProductionRun(
     image_provider_profile_id?: string
     video_provider_profile_id?: string
     visual_quality_profile_id?: string
+    shot_keyframe_mode?: 'auto' | 'always' | 'off'
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'
