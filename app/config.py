@@ -7,6 +7,13 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.media.visual_prompts import (
+    DEFAULT_REFERENCE_NEGATIVE_PROMPT,
+    DEFAULT_REFERENCE_STYLE,
+    DEFAULT_VIDEO_NEGATIVE_PROMPT,
+    DEFAULT_VIDEO_PROMPT_SUFFIX,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -53,6 +60,11 @@ class Settings:
     image_timeout_seconds: int
     image_width: int
     image_height: int
+    image_default_style: str
+    image_default_negative_prompt: str
+    image_steps: int
+    image_guidance: float
+    image_identity_weight: float
     image_workflow_path: str
     image_identity_workflow_path: str
     image_poll_interval_seconds: float
@@ -73,6 +85,11 @@ class Settings:
     video_output_width: int
     video_output_height: int
     video_fps: int
+    video_default_negative_prompt: str
+    video_prompt_suffix: str
+    video_steps: int
+    video_cfg: float
+    video_noise_aug_strength: float
     video_motion_zoom: float
     video_binary: str
     tts_provider: str
@@ -345,6 +362,34 @@ def load_settings(path: str | Path | None = None) -> Settings:
         ),
         image_width=int(setting(image_config, "width", "AI_VIDEO_IMAGE_WIDTH", 1024)),
         image_height=int(setting(image_config, "height", "AI_VIDEO_IMAGE_HEIGHT", 1024)),
+        image_default_style=str(
+            setting(
+                image_config,
+                "default_style",
+                "AI_VIDEO_IMAGE_DEFAULT_STYLE",
+                DEFAULT_REFERENCE_STYLE,
+            )
+        ),
+        image_default_negative_prompt=str(
+            setting(
+                image_config,
+                "default_negative_prompt",
+                "AI_VIDEO_IMAGE_DEFAULT_NEGATIVE_PROMPT",
+                DEFAULT_REFERENCE_NEGATIVE_PROMPT,
+            )
+        ),
+        image_steps=int(setting(image_config, "steps", "AI_VIDEO_IMAGE_STEPS", 4)),
+        image_guidance=float(
+            setting(image_config, "guidance", "AI_VIDEO_IMAGE_GUIDANCE", 3.5)
+        ),
+        image_identity_weight=float(
+            setting(
+                image_config,
+                "identity_weight",
+                "AI_VIDEO_IMAGE_IDENTITY_WEIGHT",
+                0.9,
+            )
+        ),
         image_workflow_path=str(
             setting(
                 image_config,
@@ -461,6 +506,32 @@ def load_settings(path: str | Path | None = None) -> Settings:
             setting(video_config, "output_height", "AI_VIDEO_VIDEO_OUTPUT_HEIGHT", 1024)
         ),
         video_fps=int(setting(video_config, "fps", "AI_VIDEO_VIDEO_FPS", 24)),
+        video_default_negative_prompt=str(
+            setting(
+                video_config,
+                "default_negative_prompt",
+                "AI_VIDEO_VIDEO_DEFAULT_NEGATIVE_PROMPT",
+                DEFAULT_VIDEO_NEGATIVE_PROMPT,
+            )
+        ),
+        video_prompt_suffix=str(
+            setting(
+                video_config,
+                "prompt_suffix",
+                "AI_VIDEO_VIDEO_PROMPT_SUFFIX",
+                DEFAULT_VIDEO_PROMPT_SUFFIX,
+            )
+        ),
+        video_steps=int(setting(video_config, "steps", "AI_VIDEO_VIDEO_STEPS", 4)),
+        video_cfg=float(setting(video_config, "cfg", "AI_VIDEO_VIDEO_CFG", 5.0)),
+        video_noise_aug_strength=float(
+            setting(
+                video_config,
+                "noise_aug_strength",
+                "AI_VIDEO_VIDEO_NOISE_AUG_STRENGTH",
+                0.02,
+            )
+        ),
         video_motion_zoom=float(
             setting(video_config, "motion_zoom", "AI_VIDEO_VIDEO_MOTION_ZOOM", 1.12)
         ),

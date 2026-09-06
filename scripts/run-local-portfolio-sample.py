@@ -74,6 +74,11 @@ from app.media.identity_audit import IdentityConsistencyAuditor
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.video_duration import FFmpegVideoTailExtender, FFmpegVideoTrimmer
 from app.media.video_validation import FFprobeVideoValidator
+from app.media.visual_prompts import (
+    DEFAULT_REFERENCE_NEGATIVE_PROMPT,
+    DEFAULT_REFERENCE_STYLE,
+    DEFAULT_VIDEO_NEGATIVE_PROMPT,
+)
 from app.providers.factory import (
     create_image_generation_provider,
     create_identity_image_generation_provider,
@@ -372,7 +377,7 @@ async def _register_checkpointed_clip_task(
             "shot_index": shot.shot_index,
             "duration_seconds": shot.duration_seconds,
             "prompt": shot.visual_prompt,
-            "negative_prompt": "blurry, flicker, distorted anatomy, text, watermark",
+            "negative_prompt": DEFAULT_VIDEO_NEGATIVE_PROMPT,
             "asset_refs": [reference.model_dump(mode="json") for reference in shot.asset_refs],
         },
         status=TaskStatus.SUCCEEDED,
@@ -1881,7 +1886,7 @@ def _reference_prompt(asset_name: str) -> str:
             "dramatic cinematic light, centered object, product photograph, " + single_frame
         ),
     }
-    return prompts[asset_name]
+    return f"{DEFAULT_REFERENCE_STYLE}. {prompts[asset_name]}"
 
 
 async def _wait_for_task(
@@ -2230,11 +2235,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                     asset_type=by_name[asset_name].asset_type,
                     asset_version=by_name[asset_name].version,
                     prompt=_reference_prompt(asset_name),
-                    negative_prompt=(
-                        "blurry, low quality, distorted anatomy, duplicate objects, duplicate person, "
-                        "split screen, split frame, diptych, triptych, collage, comic panels, "
-                        "character sheet, multiple views, inset image, repeated face, text, watermark"
-                    ),
+                    negative_prompt=DEFAULT_REFERENCE_NEGATIVE_PROMPT,
                     provider="comfyui",
                     model=settings.image_model,
                     status=ReferenceImageStatus.SUCCEEDED,

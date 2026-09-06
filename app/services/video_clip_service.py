@@ -27,6 +27,10 @@ from app.domain.models import (
 )
 from app.media.video_validation import FFprobeVideoValidator, VideoArtifactValidator
 from app.media.identity_audit import IdentityAuditProvider
+from app.media.visual_prompts import (
+    DEFAULT_VIDEO_NEGATIVE_PROMPT,
+    DEFAULT_VIDEO_PROMPT_SUFFIX,
+)
 from app.providers.errors_video import VideoProviderError
 from app.providers.video_generation import VideoGenerationProvider
 from app.queue import TaskQueue
@@ -55,6 +59,8 @@ class VideoClipTaskService:
         artifact_storage: ArtifactStorage,
         video_validator: VideoArtifactValidator | None = None,
         identity_auditor: IdentityAuditProvider | None = None,
+        default_negative_prompt: str = DEFAULT_VIDEO_NEGATIVE_PROMPT,
+        prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -62,6 +68,10 @@ class VideoClipTaskService:
         self._artifact_storage = artifact_storage
         self._video_validator = video_validator or FFprobeVideoValidator()
         self._identity_auditor = identity_auditor
+        self._default_negative_prompt = (
+            default_negative_prompt.strip() or DEFAULT_VIDEO_NEGATIVE_PROMPT
+        )
+        self._prompt_suffix = prompt_suffix.strip()
 
     async def create_task(
         self,
@@ -120,7 +130,9 @@ class VideoClipTaskService:
             if identity_anchor_reference_image_id is None:
                 identity_anchor_reference_image_id = self._identity_anchor_id(reference_image)
 
-        prompt = request.prompt_override or shot.visual_prompt
+        source_prompt = request.prompt_override or shot.visual_prompt
+        prompt = self._compose_prompt(source_prompt)
+        negative_prompt = request.negative_prompt or self._default_negative_prompt
         task = GenerationTaskRecord(
             id=uuid4(),
             project_id=shot_list.project_id,
@@ -131,7 +143,8 @@ class VideoClipTaskService:
                 "shot_index": shot_index,
                 "duration_seconds": shot.duration_seconds,
                 "prompt": prompt,
-                "negative_prompt": request.negative_prompt,
+                "source_prompt": source_prompt,
+                "negative_prompt": negative_prompt,
                 **(
                     {"reference_image_id": str(reference_image_id)}
                     if reference_image_id is not None
@@ -167,6 +180,15 @@ class VideoClipTaskService:
 
         await self._task_queue.enqueue(stored_task.id)
         return stored_task, False
+
+    def _compose_prompt(self, source_prompt: str) -> str:
+        """Add a short motion/continuity guardrail without changing source text."""
+
+        source_prompt = source_prompt.strip()
+        if not self._prompt_suffix:
+            return source_prompt[:2000]
+        separator = " " if source_prompt.endswith((".", "。", "！", "？")) else ". "
+        return f"{source_prompt}{separator}{self._prompt_suffix}"[:2000]
 
     async def run_task(self, task_id: UUID) -> None:
         task = await self._get_task(task_id)

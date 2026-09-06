@@ -106,6 +106,8 @@ async def run_worker() -> None:
         identity_provider=identity_image_provider,
         default_width=settings.image_width,
         default_height=settings.image_height,
+        default_style=settings.image_default_style,
+        default_negative_prompt=settings.image_default_negative_prompt,
     )
     video_clip_task_service = VideoClipTaskService(
         store,
@@ -127,6 +129,8 @@ async def run_worker() -> None:
             if settings.identity_audit_enabled
             else None
         ),
+        default_negative_prompt=settings.video_default_negative_prompt,
+        prompt_suffix=settings.video_prompt_suffix,
     )
     video_assembly_task_service = VideoAssemblyTaskService(
         store,

@@ -26,6 +26,10 @@ from app.domain.models import (
 )
 from app.providers.errors import ImageProviderError
 from app.providers.image_generation import ImageGenerationProvider
+from app.media.visual_prompts import (
+    DEFAULT_REFERENCE_NEGATIVE_PROMPT,
+    DEFAULT_REFERENCE_STYLE,
+)
 from app.queue import TaskQueue
 from app.repositories.protocol import NovelStore
 from app.storage.protocol import ArtifactStorage, StorageError, StoredArtifact
@@ -49,6 +53,8 @@ class ReferenceImageTaskService:
         default_width: int = 1024,
         default_height: int = 1024,
         identity_provider: ImageGenerationProvider | None = None,
+        default_style: str = DEFAULT_REFERENCE_STYLE,
+        default_negative_prompt: str = DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -57,6 +63,10 @@ class ReferenceImageTaskService:
         self._default_width = default_width
         self._default_height = default_height
         self._identity_provider = identity_provider
+        self._default_style = default_style.strip() or DEFAULT_REFERENCE_STYLE
+        self._default_negative_prompt = (
+            default_negative_prompt.strip() or DEFAULT_REFERENCE_NEGATIVE_PROMPT
+        )
 
     async def create_task(
         self,
@@ -80,7 +90,9 @@ class ReferenceImageTaskService:
             )
         width = request.width or self._default_width
         height = request.height or self._default_height
-        prompt = request.prompt_override or self._build_prompt(asset, request.style)
+        style = request.style or self._default_style
+        negative_prompt = request.negative_prompt or self._default_negative_prompt
+        prompt = request.prompt_override or self._build_prompt(asset, style)
         reference_image_id = uuid4()
         task_id = uuid4()
         task = GenerationTaskRecord(
@@ -138,7 +150,7 @@ class ReferenceImageTaskService:
                 asset_type=asset.asset_type,
                 asset_version=asset.version,
                 prompt=prompt,
-                negative_prompt=request.negative_prompt,
+                negative_prompt=negative_prompt,
                 status=ReferenceImageStatus.QUEUED,
                 width=width,
                 height=height,
@@ -466,15 +478,29 @@ class ReferenceImageTaskService:
     def _build_prompt(asset: AssetRecord, style: str) -> str:
         content = json.dumps(asset.content.model_dump(mode="json"), ensure_ascii=False)
         composition = {
-            "character": "single continuous portrait frame, exactly one person, head and shoulders centered",
-            "location": "single continuous establishing frame, one coherent interior or exterior space, no people",
-            "prop": "single continuous product frame, exactly one main object, centered and fully visible",
-        }.get(asset.asset_type.value, "single continuous frame, one coherent composition")
-        return (
-            f"{style} reference image for a {asset.asset_type.value}: {asset.name}. "
-            f"{composition}. Keep the design consistent across shots. "
-            f"No split screen or collage. Asset description: {content}"
+            "character": (
+                "one identity-anchor portrait, exactly one person, head and shoulders, "
+                "eye-level camera, neutral pose, unobstructed face, simple background"
+            ),
+            "location": (
+                "one coherent vertical establishing plate, stable architectural layout, "
+                "clear foreground/midground/background separation, no people"
+            ),
+            "prop": (
+                "one product-style object plate, exactly one main object, fully visible, "
+                "clear silhouette, readable material and distinctive markings"
+            ),
+        }.get(asset.asset_type.value, "one coherent vertical composition")
+        prompt = (
+            f"{style.strip()}. Production reference asset for {asset.asset_type.value} "
+            f'"{asset.name}". {composition}. '
+            "This image is the canonical design anchor for every later shot: preserve "
+            "the same face geometry, hairstyle, clothing, colors, proportions, materials "
+            "and layout. Use a clean intentional composition, no action sequence, no "
+            "alternate views, no story text. Structured asset facts: "
+            f"{content[:1200]}"
         )
+        return prompt[:2000]
 
     async def _store_generated_image(
         self,

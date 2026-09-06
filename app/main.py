@@ -110,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         identity_provider=identity_image_provider,
         default_width=app_settings.image_width,
         default_height=app_settings.image_height,
+        default_style=app_settings.image_default_style,
+        default_negative_prompt=app_settings.image_default_negative_prompt,
     )
     video_clip_task_service = VideoClipTaskService(
         store,
@@ -131,6 +133,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if app_settings.identity_audit_enabled
             else None
         ),
+        default_negative_prompt=app_settings.video_default_negative_prompt,
+        prompt_suffix=app_settings.video_prompt_suffix,
     )
     video_assembly_task_service = VideoAssemblyTaskService(
         store,

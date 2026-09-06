@@ -112,6 +112,17 @@ docker compose config --quiet
 
 这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、Windows GPU 运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在 Windows 主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
+## 作品集 Demo 验收清单
+
+目标是交付一条 45～60 秒、9:16 的动态漫短剧样片，并让面试官能沿着任务、Artifact 和日志复盘整个过程。
+
+- 已具备：小说上传、StoryBible/剧本/分镜 JSON、资产审核门禁、参考图与视频 Provider 抽象、异步 Worker、失败重试、音频/字幕/成片 Artifact、远程队列和创作者前台。
+- 本地质量基线：Mac 16GB 使用竖屏 `512×768` 参考图、Wan2.1 I2V `320×576`/`8fps`/`6 steps`/串行生成；参考图和视频 Prompt 默认包含单主体、身份连续性和防变脸约束。模型仍在宿主机，不进入仓库。
+- 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
+- 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
+
+这条清单把“工程闭环已完成”和“媒体质量尚未验收”分开，避免把通过单测或 FFprobe 误写成成片质量结论。
+
 ## Windows GPU 工作站
 
 Mac 端只维护代码、Prompt、配置和前端，不下载 Windows/CUDA 模型。将仓库同步到 Windows 后，在 Windows 主机安装 Docker Desktop、Ollama、ComfyUI、Wan/Flux 模型和真实 MuseTalk runtime；Docker 内的 API/Worker 通过 `host.docker.internal` 访问这些宿主机服务。

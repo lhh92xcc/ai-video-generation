@@ -890,16 +890,9 @@ class ReferenceImageStatus(StrEnum):
 
 
 class ReferenceImageCreateRequest(BaseModel):
-    style: str = Field(default="cinematic", min_length=1, max_length=80)
+    style: str | None = Field(default=None, max_length=200)
     prompt_override: str | None = Field(default=None, max_length=1500)
-    negative_prompt: str = Field(
-        default=(
-            "blurry, low quality, distorted anatomy, duplicate objects, duplicate person, "
-            "split screen, split frame, diptych, triptych, collage, comic panels, "
-            "character sheet, multiple views, inset image, repeated face, text, watermark"
-        ),
-        max_length=1000,
-    )
+    negative_prompt: str | None = Field(default=None, max_length=1000)
     width: int | None = Field(default=None, ge=256, le=2048)
     height: int | None = Field(default=None, ge=256, le=2048)
     identity_reference_image_id: UUID | None = Field(
@@ -909,11 +902,11 @@ class ReferenceImageCreateRequest(BaseModel):
 
     @field_validator("style", "negative_prompt")
     @classmethod
-    def strip_reference_image_text(cls, value: str) -> str:
+    def strip_reference_image_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
-        if not value:
-            raise ValueError("must not be blank")
-        return value
+        return value or None
 
     @field_validator("prompt_override")
     @classmethod
@@ -952,10 +945,7 @@ class ReferenceImageGenerationResult(BaseModel):
 class VideoClipCreateRequest(BaseModel):
     prompt_override: str | None = Field(default=None, max_length=1500)
     reference_image_id: UUID | None = None
-    negative_prompt: str = Field(
-        default="blurry, flicker, distorted anatomy, text, watermark",
-        max_length=1000,
-    )
+    negative_prompt: str | None = Field(default=None, max_length=1000)
 
     @field_validator("prompt_override", "negative_prompt")
     @classmethod

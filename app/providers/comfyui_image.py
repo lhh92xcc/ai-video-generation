@@ -31,6 +31,9 @@ class ComfyUIImageGenerationProvider:
         workflow_path: str = "config/comfyui/flux-schnell-t2i-api.json",
         model: str = "flux1-schnell-Q4_K_S.gguf",
         timeout_seconds: int = 600,
+        steps: int = 4,
+        guidance: float = 3.5,
+        identity_weight: float = 0.9,
         poll_interval_seconds: float = 1.0,
         max_poll_seconds: int = 600,
         client: httpx.AsyncClient | None = None,
@@ -39,6 +42,9 @@ class ComfyUIImageGenerationProvider:
         self.workflow_path = Path(workflow_path)
         self.model = model
         self.timeout_seconds = max(1, timeout_seconds)
+        self.steps = max(1, min(30, steps))
+        self.guidance = max(0.0, min(20.0, guidance))
+        self.identity_weight = max(0.0, min(1.5, identity_weight))
         self.poll_interval_seconds = max(0.1, poll_interval_seconds)
         self.max_poll_seconds = max(1, max_poll_seconds)
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
@@ -67,6 +73,9 @@ class ComfyUIImageGenerationProvider:
                 "__AI_VIDEO_WIDTH__": request.width,
                 "__AI_VIDEO_HEIGHT__": request.height,
                 "__AI_VIDEO_SEED__": seed,
+                "__AI_VIDEO_IMAGE_STEPS__": self.steps,
+                "__AI_VIDEO_IMAGE_GUIDANCE__": self.guidance,
+                "__AI_VIDEO_IMAGE_IDENTITY_WEIGHT__": self.identity_weight,
                 "__AI_VIDEO_CHECKPOINT__": self.model,
                 "__AI_VIDEO_IDENTITY_IMAGE__": identity_image_info["name"]
                 if identity_image_info
@@ -142,6 +151,9 @@ class ComfyUIImageGenerationProvider:
                 "filename": image_info["filename"],
                 "subfolder": image_info["subfolder"],
                 "seed": seed,
+                "steps": self.steps,
+                "guidance": self.guidance,
+                "identity_weight": self.identity_weight,
                 "identity_image": identity_image_info,
                 "local": True,
             },

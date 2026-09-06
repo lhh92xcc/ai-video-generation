@@ -111,6 +111,9 @@ def create_image_generation_provider(settings: Settings) -> ImageGenerationProvi
             workflow_path=settings.image_workflow_path,
             model=settings.image_model,
             timeout_seconds=settings.image_timeout_seconds,
+            steps=settings.image_steps,
+            guidance=settings.image_guidance,
+            identity_weight=settings.image_identity_weight,
             poll_interval_seconds=settings.image_poll_interval_seconds,
             max_poll_seconds=settings.image_max_poll_seconds,
         )
@@ -134,6 +137,9 @@ def create_identity_image_generation_provider(
         workflow_path=settings.image_identity_workflow_path,
         model=settings.image_model,
         timeout_seconds=settings.image_timeout_seconds,
+        steps=settings.image_steps,
+        guidance=settings.image_guidance,
+        identity_weight=settings.image_identity_weight,
         poll_interval_seconds=settings.image_poll_interval_seconds,
         max_poll_seconds=settings.image_max_poll_seconds,
     )
@@ -198,6 +204,9 @@ def create_video_generation_provider(settings: Settings) -> VideoGenerationProvi
             output_width=int(width),
             output_height=int(height),
             fps=settings.video_fps,
+            steps=settings.video_steps,
+            cfg=settings.video_cfg,
+            noise_aug_strength=settings.video_noise_aug_strength,
         )
     raise ValueError(
         f"Unsupported video provider: {settings.video_provider}. "

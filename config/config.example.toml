@@ -83,12 +83,19 @@ max_output_tokens = 4000
 # ComfyUI-WanVideoWrapper 与 VideoHelperSuite。setup 脚本见 docs/05-deployment.md。
 # 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Kwai-Kolors/Kolors"。
 # 当前没有真实 Key 时请保持 mock；OpenAI-compatible 适配器已用 HTTP MockTransport 验证。
+# default_style/default_negative_prompt 是业务层默认视觉基线；空的 API 请求会使用它们，
+# 显式 prompt_override/negative_prompt 仍可覆盖。image_* 参数会被传入 ComfyUI workflow。
 provider = "mock"
 base_url = ""
 model = "mock-reference-v1"
 request_timeout_seconds = 120
 width = 1024
 height = 1024
+default_style = "polished 2D manhwa animation key art, cinematic vertical composition, clean linework, soft cel shading, controlled color palette, detailed but readable background, professional webtoon production design"
+default_negative_prompt = "blurry, low quality, malformed face, asymmetrical eyes, distorted anatomy, deformed hands, extra fingers, duplicate person, duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, character sheet, multiple views, inset image, repeated face, text, logo, watermark"
+steps = 4
+guidance = 3.5
+identity_weight = 0.9
 workflow_path = "config/comfyui/flux-schnell-t2i-api.json"
 # ComfyUI 身份锁定工作流；只有 image_provider=comfyui 时使用。
 identity_workflow_path = "config/comfyui/flux-schnell-faceid-reference-api.json"
@@ -103,12 +110,15 @@ max_poll_seconds = 600
 # 生成可播放的确定性颜色卡，只用于本地队列、Artifact 和 Assembly 联调，不代表模型画面质量。
 # comfyui_wan_i2v 使用 ComfyUI WanVideoWrapper 生成真实图生视频；workflow_path 指向
 # API 格式工作流，必须包含 __AI_VIDEO_PROMPT__ 和 __AI_VIDEO_INPUT_IMAGE__ 占位符。
-# Mac 16GB 本地目标档使用 320x576、8fps、4 步；通用示例仍可按设备调整 image_size/output_width/output_height/fps。
+# Mac 16GB 本地目标档使用 320x576、8fps、6 步；通用示例仍可按设备调整
+# image_size/output_width/output_height/fps/steps。较高 steps 会提高耗时和显存压力，必须实测。
 # ffmpeg_motion 仅保留为历史/低资源回退，不属于目标本地 Demo。
 # openai_compatible 使用“提交任务 -> 轮询 -> 下载”HTTP 约定，需配置真实供应商的 URL 和 Key。
 # siliconflow 使用 /v1/video/submit -> /v1/video/status -> 下载 URL，需配置 API Key。
 # 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Wan-AI/Wan2.2-T2V-A14B"。
 # 不同厂商的特殊字段仍应通过独立 Provider 适配器实现，不要把厂商 SDK 放入业务层。
+# default_negative_prompt/prompt_suffix 会在视频任务创建时组成最终 Prompt，确保每个镜头
+# 都带有单镜头、轻动作和身份连续性约束；它们也适用于未来的云端视频 Provider。
 provider = "mock"
 base_url = ""
 model = "mock-video-v1"
@@ -124,6 +134,11 @@ probe_timeout_seconds = 30
 output_width = 576
 output_height = 1024
 fps = 24
+default_negative_prompt = "blurry, low quality, flicker, jitter, temporal inconsistency, identity drift, face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate person, new person, scene change, camera cut, hard zoom, text, logo, watermark"
+prompt_suffix = "single continuous shot, 3 to 5 seconds, one coherent camera take, subtle natural motion, preserve the exact reference identity, face shape, hairstyle, clothing, colors and composition, no new characters, no cuts, no scene change"
+steps = 4
+cfg = 5.0
+noise_aug_strength = 0.02
 motion_zoom = 1.12
 binary = "ffmpeg"
 # 每个包含角色资产的视频片段完成后，可使用独立 Python 环境中的 InsightFace

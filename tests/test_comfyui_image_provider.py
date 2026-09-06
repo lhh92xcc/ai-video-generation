@@ -133,6 +133,33 @@ def test_comfyui_provider_accepts_flux_workflow_without_negative_prompt() -> Non
     assert rendered["1"]["inputs"]["text"] == "one subject"
 
 
+def test_comfyui_provider_replaces_quality_parameters_as_numbers() -> None:
+    workflow = {
+        "1": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "__AI_VIDEO_PROMPT__",
+                "steps": "__AI_VIDEO_IMAGE_STEPS__",
+                "guidance": "__AI_VIDEO_IMAGE_GUIDANCE__",
+                "identity_weight": "__AI_VIDEO_IMAGE_IDENTITY_WEIGHT__",
+            },
+        }
+    }
+    rendered = ComfyUIImageGenerationProvider._replace_placeholders(
+        workflow,
+        {
+            "__AI_VIDEO_PROMPT__": "one subject",
+            "__AI_VIDEO_IMAGE_STEPS__": 4,
+            "__AI_VIDEO_IMAGE_GUIDANCE__": 3.5,
+            "__AI_VIDEO_IMAGE_IDENTITY_WEIGHT__": 0.9,
+        },
+    )
+    inputs = rendered["1"]["inputs"]
+    assert inputs["steps"] == 4
+    assert inputs["guidance"] == 3.5
+    assert inputs["identity_weight"] == 0.9
+
+
 def test_comfyui_provider_rejects_non_object_prompt_response(tmp_path: Path) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/prompt"

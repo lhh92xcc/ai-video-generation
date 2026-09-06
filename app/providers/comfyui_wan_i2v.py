@@ -37,6 +37,9 @@ class ComfyUIWanI2VVideoGenerationProvider:
         output_width: int = 480,
         output_height: int = 832,
         fps: int = 16,
+        steps: int = 4,
+        cfg: float = 5.0,
+        noise_aug_strength: float = 0.02,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -48,6 +51,9 @@ class ComfyUIWanI2VVideoGenerationProvider:
         self.output_width = max(64, output_width // 8 * 8)
         self.output_height = max(64, output_height // 8 * 8)
         self.fps = max(1, fps)
+        self.steps = max(1, min(50, steps))
+        self.cfg = max(0.0, min(20.0, cfg))
+        self.noise_aug_strength = max(0.0, min(1.0, noise_aug_strength))
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
         self._owns_client = client is None
 
@@ -73,6 +79,9 @@ class ComfyUIWanI2VVideoGenerationProvider:
             "__AI_VIDEO_HEIGHT__": self.output_height,
             "__AI_VIDEO_FRAMES__": frames,
             "__AI_VIDEO_FPS__": self.fps,
+            "__AI_VIDEO_STEPS__": self.steps,
+            "__AI_VIDEO_CFG__": self.cfg,
+            "__AI_VIDEO_NOISE_AUG_STRENGTH__": self.noise_aug_strength,
             "__AI_VIDEO_SEED__": seed,
             "__AI_VIDEO_MODEL__": self.model,
             "__AI_VIDEO_INPUT_IMAGE__": image_info["name"],
@@ -97,6 +106,9 @@ class ComfyUIWanI2VVideoGenerationProvider:
                 "input_image": image_info,
                 "frames": frames,
                 "fps": self.fps,
+                "steps": self.steps,
+                "cfg": self.cfg,
+                "noise_aug_strength": self.noise_aug_strength,
                 "width": self.output_width,
                 "height": self.output_height,
                 "motion": "wan2.1_i2v",

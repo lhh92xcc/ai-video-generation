@@ -25,7 +25,7 @@
   },
   "6": {
     "class_type": "FluxGuidance",
-    "inputs": {"conditioning": ["5", 0], "guidance": 3.5}
+    "inputs": {"conditioning": ["5", 0], "guidance": "__AI_VIDEO_IMAGE_GUIDANCE__"}
   },
   "7": {
     "class_type": "EmptySD3LatentImage",
@@ -37,7 +37,7 @@
   },
   "9": {
     "class_type": "BasicScheduler",
-    "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": 4, "denoise": 1.0}
+    "inputs": {"model": ["1", 0], "scheduler": "simple", "steps": "__AI_VIDEO_IMAGE_STEPS__", "denoise": 1.0}
   },
   "10": {
     "class_type": "BasicGuider",
