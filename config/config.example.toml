@@ -96,8 +96,8 @@ model = "mock-reference-v1"
 request_timeout_seconds = 120
 width = 432
 height = 768
-default_style = "polished 2D manhwa animation illustration, clean single-frame 9:16 vertical composition, crisp consistent linework, clear facial planes, soft cel shading, controlled cinematic lighting, restrained color palette, clean silhouette, uncluttered readable background, professional webtoon production design, consistent design language for later image-to-video shots"
-default_negative_prompt = "blurry, low quality, soft focus, low contrast, overexposed, underexposed, messy background, malformed face, asymmetrical eyes, distorted anatomy, deformed hands, extra fingers, cropped head, cut-off subject, duplicate person, duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, character sheet, multiple views, inset image, repeated face, extra limbs, photorealistic, 3d render, style drift, text, logo, watermark"
+default_style = "polished 2D manhwa animation key art, clean single-frame 9:16 vertical composition, crisp consistent ink linework, clear facial planes, soft cel shading, controlled cinematic lighting, restrained harmonious color palette, clean silhouette and readable focal hierarchy, uncluttered background, professional webtoon production design, consistent design language for later image-to-video shots"
+default_negative_prompt = "blurry, low quality, soft focus, low contrast, muddy colors, overexposed, underexposed, messy background, bad composition, malformed face, asymmetrical eyes, distorted anatomy, deformed hands, extra fingers, cropped head, cut-off subject, duplicate person, duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, character sheet, multiple views, inset image, repeated face, extra limbs, photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
 steps = 4
 guidance = 3.5
 identity_weight = 0.9
@@ -115,7 +115,8 @@ max_poll_seconds = 600
 # 生成可播放的确定性颜色卡，只用于本地队列、Artifact 和 Assembly 联调，不代表模型画面质量。
 # comfyui_wan_i2v 使用 ComfyUI WanVideoWrapper 生成真实图生视频；workflow_path 指向
 # API 格式工作流，必须包含 __AI_VIDEO_PROMPT__ 和 __AI_VIDEO_INPUT_IMAGE__ 占位符。
-# 本地低压目标档使用严格 9:16 的 288x512、8fps、6 步；通用示例仍可按设备调整
+# 本地低压目标档使用严格 9:16 的 288x512、12fps、6 步；通用示例仍可按设备调整。
+# 低压档只用于单镜头 smoke，正式作品集优先在前台选择 local_balanced。
 # image_size/output_width/output_height/fps/steps。较高 steps 会提高耗时和显存压力，必须实测。
 # ffmpeg_motion 仅保留为历史/低资源回退，不属于目标本地 Demo，也不能用于正式作品集样片。
 # 没有模型运行时但需要联调旁白/字幕/Assembly 时，显式给脚本增加 --preview-only；报告会标记为预览，
@@ -140,13 +141,13 @@ max_download_bytes = 524288000
 probe_timeout_seconds = 30
 output_width = 288
 output_height = 512
-fps = 8
-default_negative_prompt = "blurry, low quality, motion smear, flicker, jitter, unstable exposure, temporal inconsistency, identity drift, face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate person, new person, crowded frame, scene change, camera cut, hard zoom, photorealistic, 3d render, style drift, text, logo, watermark"
-prompt_suffix = "single continuous shot, 3 to 5 seconds, one coherent camera take, choose only one restrained micro-motion such as breathing, one blink, a small head turn or gentle cloth movement, preserve the 2D manhwa illustration style, clean linework and cel-shaded surfaces, stable exposure, preserve the exact reference identity, face shape, hairstyle, clothing, colors and silhouette, keep the original composition, no new characters, no cuts, no scene change, no large body transformation"
+fps = 12
+default_negative_prompt = "blurry, low quality, motion smear, ghosting, flicker, strobing, jitter, camera shake, unstable exposure, temporal inconsistency, frame-to-frame detail changes, identity drift, face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate person, new person, crowded frame, scene change, camera cut, hard zoom, overshoot, photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
+prompt_suffix = "start from the exact reference frame, single continuous shot, 3 to 5 seconds, one coherent camera take, choose only one restrained micro-motion such as breathing, one blink, a small head turn or gentle cloth movement, preserve the 2D manhwa illustration style, clean linework and crisp cel-shaded surfaces, stable exposure, preserve the exact reference identity, face shape, hairstyle, clothing, colors and silhouette, keep the original composition, no new characters, no cuts, no scene change, no large body transformation, no simultaneous complex actions, no frozen still frame or slideshow, make the chosen micro-motion visibly continuous across the full clip, no unscripted mouth movement when a later lip-sync pass is planned"
 steps = 4
 cfg = 5.0
-noise_aug_strength = 0.02
-motion_zoom = 1.12
+noise_aug_strength = 0.012
+motion_zoom = 1.04
 binary = "ffmpeg"
 # 2D 漫剧成片默认使用 libx264 的 animation tune、CRF 18 和 medium preset，
 # 减少 Assembly 对低分辨率 I2V 片段的二次压缩；它不会凭空增加模型细节。

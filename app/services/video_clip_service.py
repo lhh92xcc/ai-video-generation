@@ -175,6 +175,7 @@ class VideoClipTaskService:
             camera_movement=shot.camera_movement,
             location=shot.location,
             characters=shot.characters,
+            primary_character=self._primary_character_name(shot),
             continuity_notes=shot.continuity_notes,
             approved_asset_facts=approved_asset_facts,
         )
@@ -249,6 +250,7 @@ class VideoClipTaskService:
         camera_movement: str,
         location: str,
         characters: list[str],
+        primary_character: str,
         continuity_notes: str,
         approved_asset_facts: list[str],
     ) -> str:
@@ -260,10 +262,20 @@ class VideoClipTaskService:
             camera_movement=camera_movement,
             location=location,
             characters=characters,
+            primary_character=primary_character,
             continuity_notes=continuity_notes,
             approved_asset_facts=approved_asset_facts,
             prompt_suffix=self._prompt_suffix,
         )
+
+    @staticmethod
+    def _primary_character_name(shot) -> str:
+        """Return the first canonical character asset used by the shot."""
+
+        for reference in shot.asset_refs:
+            if reference.asset_type == AssetType.CHARACTER:
+                return reference.name
+        return ""
 
     async def _load_approved_assets(
         self,

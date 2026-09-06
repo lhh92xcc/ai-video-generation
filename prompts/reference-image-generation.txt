@@ -8,7 +8,8 @@ PROMPT_VERSION: reference-image-generation-v2
 3. 优先使用具体、可视化、可检查的名词和形容词；避免抽象口号、品牌 Logo、水印和文字。
 4. 参考图需要服务于后续镜头一致性，明确颜色、轮廓、材质、服装或空间布局中最重要的稳定特征。
 5. 角色必须明确“exactly one person”；场景必须明确“no people”和固定空间锚点；道具必须明确主物体数量、轮廓和材质。
-6. 输出 JSON，不要输出 Markdown 围栏或解释文字。
+6. 参考图必须保持单一主体、清晰轮廓、明确视觉焦点、干净背景、稳定比例和受控光线；这些正向护栏即使 Provider 没有独立 negative-conditioning 分支也必须保留。
+7. 输出 JSON，不要输出 Markdown 围栏或解释文字。
 
 输入字段：
 - asset_type：character、location 或 prop

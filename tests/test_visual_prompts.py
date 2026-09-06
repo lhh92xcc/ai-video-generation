@@ -5,6 +5,7 @@ from app.media.visual_prompts import (
     DEFAULT_VIDEO_PROMPT_SUFFIX,
     build_approved_asset_facts,
     build_video_motion_prompt,
+    strengthen_reference_prompt,
 )
 from app.domain.models import (
     AssetRecord,
@@ -22,6 +23,17 @@ def test_reference_baseline_contains_single_subject_and_clean_composition_guards
     assert "clean silhouette" in DEFAULT_REFERENCE_STYLE
     assert "duplicate person" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
     assert "multiple views" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
+    assert "harmonious color palette" in DEFAULT_REFERENCE_STYLE
+    assert "subtitles" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
+
+
+def test_reference_prompt_adds_positive_guardrails_for_flux_workflows() -> None:
+    prompt = strengthen_reference_prompt("one canonical character portrait")
+
+    assert prompt.startswith("one canonical character portrait")
+    assert "Reference quality guardrails:" in prompt
+    assert "one coherent full-frame composition" in prompt
+    assert len(prompt) <= 2000
 
 
 def test_video_baseline_contains_short_shot_and_temporal_consistency_guards() -> None:
@@ -31,6 +43,7 @@ def test_video_baseline_contains_short_shot_and_temporal_consistency_guards() ->
     assert "clean linework" in DEFAULT_VIDEO_PROMPT_SUFFIX
     assert "temporal inconsistency" in DEFAULT_VIDEO_NEGATIVE_PROMPT
     assert "motion smear" in DEFAULT_VIDEO_NEGATIVE_PROMPT
+    assert "no frozen still frame or slideshow" in DEFAULT_VIDEO_PROMPT_SUFFIX
 
 
 def test_video_prompt_adds_shot_framing_camera_and_identity_constraints() -> None:
@@ -51,6 +64,20 @@ def test_video_prompt_adds_shot_framing_camera_and_identity_constraints() -> Non
     assert "no unscripted speaking" in prompt
     assert "choose only one restrained micro-motion" in prompt
     assert "Do not add any other character" in prompt
+
+
+def test_video_prompt_prioritizes_primary_identity_when_multiple_characters_are_visible() -> None:
+    prompt = build_video_motion_prompt(
+        source_prompt="两人站在走廊对话",
+        shot_size="medium",
+        camera_movement="fixed",
+        location="旧公寓走廊",
+        characters=["林默", "顾遥"],
+        primary_character="林默",
+    )
+
+    assert "Primary identity to preserve is 林默" in prompt
+    assert "visually secondary" in prompt
 
 
 def test_approved_asset_facts_select_visual_fields_and_ignore_unapproved_assets() -> None:

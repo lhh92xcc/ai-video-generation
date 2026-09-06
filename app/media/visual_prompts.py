@@ -19,38 +19,46 @@ from app.domain.models import (
 )
 
 DEFAULT_REFERENCE_STYLE = (
-    "polished 2D manhwa animation illustration, clean single-frame 9:16 vertical "
-    "composition, crisp consistent linework, clear facial planes, soft cel shading, "
-    "controlled cinematic lighting, restrained color palette, clean silhouette, uncluttered "
-    "readable background, professional webtoon production design, consistent design "
-    "language for later image-to-video shots"
+    "polished 2D manhwa animation key art, clean single-frame 9:16 vertical composition, "
+    "crisp consistent ink linework, clear facial planes, soft cel shading, controlled "
+    "cinematic lighting, restrained harmonious color palette, clean silhouette and readable "
+    "intentional focal hierarchy, uncluttered background, professional webtoon production "
+    "design, consistent design language for later image-to-video shots"
 )
 
 DEFAULT_REFERENCE_NEGATIVE_PROMPT = (
-    "blurry, low quality, soft focus, low contrast, overexposed, underexposed, "
-    "messy background, malformed face, asymmetrical eyes, distorted anatomy, "
+    "blurry, low quality, soft focus, low contrast, muddy colors, overexposed, underexposed, "
+    "messy background, bad composition, malformed face, asymmetrical eyes, distorted anatomy, "
     "deformed hands, extra fingers, cropped head, cut-off subject, duplicate person, "
-    "duplicate object, split screen, split frame, diptych, triptych, collage, comic "
-    "panels, character sheet, multiple views, inset image, repeated face, extra limbs, "
-    "photorealistic, 3d render, style drift, text, logo, watermark"
+    "duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, "
+    "character sheet, multiple views, inset image, repeated face, extra limbs, "
+    "photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
 )
 
 DEFAULT_VIDEO_NEGATIVE_PROMPT = (
-    "blurry, low quality, motion smear, flicker, jitter, unstable exposure, "
-    "temporal inconsistency, identity drift, face morphing, changing hairstyle, "
-    "changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate "
-    "person, new person, crowded frame, scene change, camera cut, hard zoom, "
-    "photorealistic, 3d render, style drift, text, logo, watermark"
+    "blurry, low quality, motion smear, ghosting, flicker, strobing, jitter, camera shake, "
+    "unstable exposure, temporal inconsistency, frame-to-frame detail changes, identity drift, "
+    "face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, "
+    "extra limbs, duplicate person, new person, crowded frame, scene change, camera cut, "
+    "hard zoom, overshoot, photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
 )
 
 DEFAULT_VIDEO_PROMPT_SUFFIX = (
-    "single continuous shot, 3 to 5 seconds, one coherent camera take, choose only "
-    "one restrained micro-motion such as breathing, one blink, a small head turn or "
-    "gentle cloth movement, preserve the 2D manhwa illustration style, clean linework "
-    "and cel-shaded surfaces, stable exposure, preserve the exact reference identity, "
-    "face shape, hairstyle, clothing, colors and silhouette, keep the original "
-    "composition, no new characters, no cuts, no scene change, no large body "
-    "transformation, no simultaneous complex actions"
+    "start from the exact reference frame, single continuous shot, 3 to 5 seconds, "
+    "one coherent camera take, choose only one restrained micro-motion such as breathing, "
+    "one blink, a small head turn or gentle cloth movement, preserve the 2D manhwa "
+    "illustration style, clean linework and crisp cel-shaded surfaces, stable exposure, preserve "
+    "the exact reference identity, face shape, hairstyle, clothing, colors and silhouette, "
+    "keep the original composition, no new characters, no cuts, no scene change, no large "
+    "body transformation, no simultaneous complex actions, no frozen still frame or slideshow, "
+    "make the chosen micro-motion visibly continuous across the full clip, no unscripted mouth "
+    "movement when a later lip-sync pass is planned"
+)
+
+DEFAULT_REFERENCE_QUALITY_GUARDRAIL = (
+    "Reference quality guardrails: one coherent full-frame composition, one dominant readable "
+    "subject or environment, clear focal point, stable proportions, clean silhouette, "
+    "controlled lighting and palette, no text or interface elements."
 )
 
 
@@ -61,6 +69,26 @@ def _compact(value: str, limit: int) -> str:
     if len(compacted) <= limit:
         return compacted
     return f"{compacted[: max(1, limit - 1)].rstrip()}…"
+
+
+def strengthen_reference_prompt(prompt: str, *, max_chars: int = 2000) -> str:
+    """Append positive quality constraints that also work with Flux Schnell.
+
+    Flux workflows do not necessarily expose a negative-conditioning branch.  Keeping
+    these constraints in the positive prompt makes the reference-image contract useful
+    even when a ComfyUI graph ignores ``negative_prompt``; cloud adapters still receive
+    the separate negative prompt as before.
+    """
+
+    source = " ".join(prompt.strip().split())
+    if not source:
+        return DEFAULT_REFERENCE_QUALITY_GUARDRAIL[:max_chars]
+    if "Reference quality guardrails:" in source:
+        return source[:max_chars]
+    available = max_chars - len(DEFAULT_REFERENCE_QUALITY_GUARDRAIL) - 1
+    if available <= 0:
+        return DEFAULT_REFERENCE_QUALITY_GUARDRAIL[:max_chars]
+    return f"{source[:available].rstrip(' .')}. {DEFAULT_REFERENCE_QUALITY_GUARDRAIL}"
 
 
 def build_approved_asset_facts(
@@ -165,6 +193,7 @@ def build_video_motion_prompt(
     camera_movement: str,
     location: str,
     characters: Sequence[str],
+    primary_character: str = "",
     continuity_notes: str = "",
     approved_asset_facts: Sequence[str] = (),
     prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
@@ -195,8 +224,18 @@ def build_video_motion_prompt(
         "zoom": "very gentle optical-style push-in with no hard zoom",
     }.get(camera_movement, "restrained stabilized camera movement")
     visible_characters = ", ".join(item.strip() for item in characters if item.strip())
+    primary_name = primary_character.strip() or next(
+        (item.strip() for item in characters if item.strip()), ""
+    )
     character_clause = (
         f"Approved visible characters: {visible_characters}. Do not add any other character. "
+        + (
+            f"Primary identity to preserve is {primary_name}; keep other approved characters "
+            "partially turned, in silhouette or visually secondary unless their identity is "
+            "explicitly anchored. "
+            if len([item for item in characters if item.strip()]) > 1 and primary_name
+            else ""
+        )
         if visible_characters
         else "No character is visible; keep the frame focused on the approved environment or prop. "
     )
@@ -235,6 +274,7 @@ def build_shot_keyframe_prompt(
     camera_movement: str,
     location: str,
     characters: Sequence[str],
+    primary_character: str = "",
     continuity_notes: str = "",
     primary_character_facts: str = "",
     style: str = DEFAULT_REFERENCE_STYLE,
@@ -265,9 +305,19 @@ def build_shot_keyframe_prompt(
         "zoom": "an instant suitable for a very gentle push-in",
     }.get(camera_movement, "a restrained camera move")
     visible_characters = ", ".join(item.strip() for item in characters if item.strip())
+    primary_name = primary_character.strip() or next(
+        (item.strip() for item in characters if item.strip()), ""
+    )
     character_clause = (
         f"Visible characters already approved for this shot: {visible_characters}. "
         "Do not add any other character. "
+        + (
+            f"Primary identity is {primary_name}; keep all other approved characters "
+            "partially turned, silhouetted or visually secondary without inventing a new "
+            "detailed face. "
+            if len([item for item in characters if item.strip()]) > 1 and primary_name
+            else ""
+        )
         if visible_characters
         else "No character is visible; keep the frame focused on the approved environment or prop. "
     )
@@ -287,4 +337,4 @@ def build_shot_keyframe_prompt(
         "Use a stable readable pose that can transition into subtle motion; preserve exact identity, "
         "silhouette, costume colors, lighting direction and important prop placement."
     )
-    return prompt[:1500]
+    return strengthen_reference_prompt(prompt, max_chars=1500)

@@ -45,10 +45,10 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     assert settings.image_identity_weight == 0.92
     assert settings.video_output_width == 432
     assert settings.video_output_height == 768
-    assert settings.video_fps == 12
+    assert settings.video_fps == 16
     assert settings.video_steps == 8
-    assert settings.video_cfg == 5.5
-    assert settings.video_noise_aug_strength == 0.015
+    assert settings.video_cfg == 5.0
+    assert settings.video_noise_aug_strength == 0.01
     assert "identity" in settings.video_prompt_suffix
     assert settings.worker_gpu_lock_enabled is True
     assert settings.worker_scheduler_enabled is True

@@ -91,7 +91,7 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
-ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。目标 GPU 主机应先在前台选择 `local_safe`，从单张严格 9:16 参考图和一个 3 秒、288×512、8fps 的低压 Wan I2V 镜头开始，并保持串行生成；确认稳定后再切换 `local_balanced`。配置档案不要求某个固定显卡型号。
+ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。目标 GPU 主机应先在前台选择 `local_safe`，从单张严格 9:16 参考图和一个 3 秒、288×512、12fps 的低压 Wan I2V 镜头开始，并保持串行生成；确认稳定后再切换 `local_balanced`。低压档用于缩小失败范围，不建议直接作为最终成片档案。配置档案不要求某个固定显卡型号。
 
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
 
@@ -119,17 +119,20 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 
 | 档案 | 参考图 | 视频片段 | 适用场景 |
 | --- | --- | --- | --- |
-| `local_safe` | 432×768，4 steps | 288×512，8fps，6 steps | 首次联调、低显存和失败范围控制 |
-| `local_balanced` | 576×1024，6 steps | 432×768，12fps，8 steps | 目标 GPU 主机的首轮作品集样片 |
+| `local_safe` | 432×768，4 steps | 288×512，12fps，6 steps | 首次联调、低显存和失败范围控制 |
+| `local_balanced` | 576×1024，6 steps | 432×768，16fps，8 steps | Windows 运行主机的首轮作品集样片 |
 | `high_quality` | 720×1280，8 steps | 576×1024，16fps，12 steps | 单任务高质量候选，必须先实测 |
 
 档案只提供可复现的起始参数；显存、耗时、身份一致性和动作质量必须以目标机器的真实 smoke 与人工看片为准。
+当前视频档案的 `noise_aug_strength` / `motion_zoom` 分别为 `local_safe=0.012/1.04`、`local_balanced=0.010/1.03`、`high_quality=0.008/1.02`；这些参数用于降低参考帧漂移和过强运镜，不是画质保证。
 
 ### 视频运动 Prompt 约束
 
 视频任务不会只把模型生成的原始画面描述直接交给 I2V Provider。服务层通过
 `app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色、当前镜头精确绑定的 `ready` 资产视觉事实和连续性要求；运行时说明见
 [`prompts/video-motion-generation.txt`](prompts/video-motion-generation.txt)。每个镜头被限制为一个 3～5 秒连续镜头和一种可读的轻微动作（例如呼吸、一次眨眼、小幅转头或衣物轻动），并明确禁止新增人物、切镜、换场、大幅变形和同时发生多个复杂动作。
+
+参考图 Prompt 还会把“单一主体、清晰轮廓、明确视觉焦点、干净背景和稳定比例”等正向质量护栏直接写入最终 Prompt，以兼容没有独立 negative-conditioning 分支的 Flux workflow。多角色镜头会明确标记主角色身份，其他角色降为侧脸、剪影或视觉次要对象，减少关键帧阶段的换脸风险。
 
 角色、场景和道具事实按 `asset_key` + `version` 从仓储读取，并把外观、氛围、材质与连续性字段写入 `approved_asset_facts` 任务快照和 `video_clip` Artifact metadata；未审核或找不到的资产不会被猜测补全。这样每个视频任务都能复盘“哪一版资产 → 哪段 Prompt → 哪个 Artifact”，减少同一角色跨镜头换脸和道具漂移。
 
@@ -148,7 +151,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `338 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `341 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
@@ -163,7 +166,7 @@ docker compose config --quiet
 目标是交付一条 45～60 秒、9:16 的动态漫短剧样片，并让面试官能沿着任务、Artifact 和日志复盘整个过程。
 
 - 已具备：小说上传、StoryBible/剧本/分镜 JSON、资产审核门禁、参考图与视频 Provider 抽象、异步 Worker、失败重试、音频/字幕/成片 Artifact、远程队列和创作者前台。
-- 本地低压基线：使用严格 9:16 的 `432×768` 参考图、Wan2.1 I2V `288×512`/`8fps`/`6 steps`/串行生成；参考图锚点采用正面中性人设、2D 漫画线稿和无道具背景，视频 Prompt 默认包含身份连续性、防变脸和风格锁定约束。模型仍在宿主机，不进入仓库。
+- 本地低压基线：使用严格 9:16 的 `432×768` 参考图、Wan2.1 I2V `288×512`/`12fps`/`6 steps`/串行生成；参考图锚点采用正面中性人设、2D 漫画线稿和无道具背景，视频 Prompt 默认包含身份连续性、防变脸和风格锁定约束。模型仍在宿主机，不进入仓库。
 - 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
 - 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
 - 作品集 runner 的配置不会绑定某一台机器：优先使用显式 `--config`，其次使用 `AI_VIDEO_CONFIG`/`AI_VIDEO_PROFILE`，只有未选择运行档案时才在本机自动采用存在的 `config/config.local.toml`，否则回退公开的 `config/config.example.toml`。Windows 拉取公开仓库后应设置 `AI_VIDEO_PROFILE=windows_gpu`，不需要也不会依赖 Mac 私有配置。

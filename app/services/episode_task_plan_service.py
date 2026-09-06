@@ -686,6 +686,7 @@ class EpisodeTaskPlanService:
                 camera_movement=shot.camera_movement,
                 location=shot.location,
                 characters=shot.characters or [asset.name],
+                primary_character=asset.name,
                 continuity_notes=shot.continuity_notes,
                 primary_character_facts=self._character_facts(asset),
             )

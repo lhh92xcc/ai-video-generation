@@ -30,6 +30,7 @@ from app.providers.profiles import VisualProviderProfileError, VisualProviderPro
 from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     DEFAULT_REFERENCE_STYLE,
+    strengthen_reference_prompt,
 )
 from app.queue import TaskQueue
 from app.repositories.protocol import NovelStore
@@ -157,7 +158,10 @@ class ReferenceImageTaskService:
         )
         style = request.style or self._default_style
         negative_prompt = request.negative_prompt or self._default_negative_prompt
-        prompt = request.prompt_override or self._build_prompt(asset, style)
+        prompt = strengthen_reference_prompt(
+            request.prompt_override or self._build_prompt(asset, style),
+            max_chars=2000,
+        )
         reference_image_id = uuid4()
         task_id = uuid4()
         task_reference_role = (
