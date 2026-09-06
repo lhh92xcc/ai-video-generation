@@ -4,6 +4,15 @@ import type { EpisodeRecord, NovelProjectRecord, ArtifactSummary, GenerationTask
 
 type GateState = 'passed' | 'pending' | 'blocked' | 'not_applicable'
 
+const PORTFOLIO_REPORT_SCHEMA_VERSION = 2
+const IDENTITY_FAILURE_STATUSES = new Set([
+  'failed',
+  'no_face',
+  'reference_no_face',
+  'unavailable',
+  'error',
+])
+
 interface ReadinessGate {
   id: string
   label: string
@@ -132,19 +141,25 @@ const identityAuditSummary = computed(() => {
   let audited = 0
   let passed = 0
   let failed = 0
+  let notApplicable = 0
   for (const task of latestTaskByShot.values()) {
     if (task.status !== 'succeeded') continue
     for (const artifact of task.artifacts) {
+      if (artifact.type !== 'video_clip') continue
       const report = artifact.metadata.identity_audit
       if (!report || typeof report !== 'object' || Array.isArray(report)) continue
       const status = String((report as Record<string, unknown>).status ?? '')
       if (!status) continue
+      if (status === 'not_applicable') {
+        notApplicable += 1
+        continue
+      }
       audited += 1
       if (status === 'passed') passed += 1
-      if (['failed', 'no_face', 'reference_no_face', 'error'].includes(status)) failed += 1
+      if (IDENTITY_FAILURE_STATUSES.has(status) || status !== 'passed') failed += 1
     }
   }
-  return { audited, passed, failed }
+  return { audited, passed, failed, notApplicable }
 })
 
 const outputProbe = computed(() => {
@@ -249,13 +264,17 @@ const machineGates = computed<ReadinessGate[]>(() => [
     id: 'identity',
     label: '身份初审',
     description: '视频镜头已经有自动身份审核结果，可定位疑似变脸镜头。',
-    evidence: identityAuditSummary.value.audited ? `${identityAuditSummary.value.passed}/${identityAuditSummary.value.audited} 个审核通过` : '尚未登记身份审核结果',
+    evidence: identityAuditSummary.value.audited
+      ? `${identityAuditSummary.value.passed}/${identityAuditSummary.value.audited} 个需要审核的镜头通过${identityAuditSummary.value.notApplicable ? ` · ${identityAuditSummary.value.notApplicable} 个无需审核` : ''}`
+      : identityAuditSummary.value.notApplicable
+        ? `${identityAuditSummary.value.notApplicable} 个镜头无需身份审核`
+        : '尚未登记身份审核结果',
     state: !props.episode
       ? 'not_applicable'
       : identityAuditSummary.value.audited === 0
-        ? 'pending'
+        ? identityAuditSummary.value.notApplicable > 0 ? 'not_applicable' : 'pending'
         : stateFor(
-          identityAuditSummary.value.failed === 0,
+          identityAuditSummary.value.failed === 0 && identityAuditSummary.value.passed === identityAuditSummary.value.audited,
           true,
           identityAuditSummary.value.failed > 0,
         ),
@@ -339,7 +358,7 @@ const readinessPercent = computed(() => {
 const unresolvedMachineGates = computed(() => machineGates.value.filter((gate) => gate.blocking && gate.state !== 'passed' && gate.state !== 'not_applicable'))
 
 const portfolioReport = computed(() => ({
-  report_schema_version: 1,
+  report_schema_version: PORTFOLIO_REPORT_SCHEMA_VERSION,
   generated_at: new Date().toISOString(),
   project: {
     id: props.project.id,

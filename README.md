@@ -148,7 +148,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `336 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `338 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
@@ -166,6 +166,7 @@ docker compose config --quiet
 - 本地低压基线：使用严格 9:16 的 `432×768` 参考图、Wan2.1 I2V `288×512`/`8fps`/`6 steps`/串行生成；参考图锚点采用正面中性人设、2D 漫画线稿和无道具背景，视频 Prompt 默认包含身份连续性、防变脸和风格锁定约束。模型仍在宿主机，不进入仓库。
 - 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
 - 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
+- 作品集报告版本：本地 runner 与创作者前台导出的 JSON 报告当前使用 schema version `2`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。
 - 正式样片门禁：非 Mock 且非预览模式只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。需要在 Mac 上只验证流程时可使用 `--preview-only`，但报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。
 - 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
 

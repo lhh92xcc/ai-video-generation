@@ -232,6 +232,88 @@ def test_real_portfolio_readiness_blocks_until_identity_audit_exists() -> None:
     assert report["readiness"]["status"] == "incomplete"
 
 
+def test_real_portfolio_readiness_blocks_unavailable_identity_audit() -> None:
+    from app.domain.models import ArtifactSummary, GenerationTaskKind, GenerationTaskRecord, TaskStatus
+
+    clip_task = GenerationTaskRecord(
+        project_id=uuid4(),
+        kind=GenerationTaskKind.VIDEO_CLIP,
+        status=TaskStatus.SUCCEEDED,
+        input_data={"episode_id": str(uuid4()), "shot_index": 1},
+        artifacts=[
+            ArtifactSummary(
+                type="video_clip",
+                provider="comfyui_wan_i2v",
+                metadata={"identity_audit": {"status": "unavailable"}},
+            )
+        ],
+    )
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False),
+        shot_count=8,
+        reference_image_count=1,
+        clip_count=8,
+        narration_artifact=None,
+        subtitle_artifact=None,
+        subtitle_metadata={},
+        rendered_artifact=None,
+        clip_task_snapshots=[clip_task],
+        video_provider="comfyui_wan_i2v",
+    )
+
+    identity_check = next(item for item in report["machine_checks"] if item["id"] == "identity_audit")
+    assert identity_check["status"] == "failed"
+    assert identity_check["blocking"] is True
+    assert report["readiness"]["status"] == "incomplete"
+
+
+def test_real_portfolio_readiness_ignores_not_applicable_identity_audits() -> None:
+    from app.domain.models import ArtifactSummary, GenerationTaskKind, GenerationTaskRecord, TaskStatus
+
+    clip_task = GenerationTaskRecord(
+        project_id=uuid4(),
+        kind=GenerationTaskKind.VIDEO_CLIP,
+        status=TaskStatus.SUCCEEDED,
+        input_data={"episode_id": str(uuid4()), "shot_index": 1},
+        artifacts=[
+            ArtifactSummary(
+                type="video_clip",
+                provider="comfyui_wan_i2v",
+                metadata={"identity_audit": {"status": "not_applicable"}},
+            )
+        ],
+    )
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False),
+        shot_count=8,
+        reference_image_count=1,
+        clip_count=8,
+        narration_artifact=ArtifactSummary(
+            type="audio_narration",
+            provider="edge_tts",
+            metadata={"duration_seconds": 50.0},
+        ),
+        subtitle_artifact=ArtifactSummary(
+            type="subtitle_srt",
+            provider="provided_cues",
+            metadata={"cue_count": 8},
+        ),
+        subtitle_metadata={"cue_count": 8},
+        rendered_artifact=ArtifactSummary(
+            type="rendered_video",
+            provider="ffmpeg",
+            metadata={"width": 576, "height": 1024, "duration_seconds": 50.0},
+        ),
+        clip_task_snapshots=[clip_task],
+        video_provider="comfyui_wan_i2v",
+    )
+
+    identity_check = next(item for item in report["machine_checks"] if item["id"] == "identity_audit")
+    assert identity_check["status"] == "not_applicable"
+    assert identity_check["blocking"] is False
+    assert report["readiness"]["status"] == "ready_for_human_review"
+
+
 def test_partial_portfolio_readiness_report_marks_unfinished_stages_pending() -> None:
     report = _portfolio_readiness_report(
         args=argparse.Namespace(mock_media=False),

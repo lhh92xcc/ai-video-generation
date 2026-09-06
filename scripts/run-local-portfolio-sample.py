@@ -113,6 +113,10 @@ _PORTFOLIO_NON_REAL_MOTION_PROVIDERS = frozenset(
 _PORTFOLIO_REAL_MOTION_PROVIDERS = frozenset(
     {"comfyui_wan_i2v", "openai_compatible", "siliconflow"}
 )
+_IDENTITY_FAILURE_STATUSES = frozenset(
+    {"failed", "no_face", "reference_no_face", "unavailable", "error"}
+)
+_IDENTITY_NOT_APPLICABLE_STATUS = "not_applicable"
 PORTFOLIO_TARGET = {
     "profile_id": "portfolio-demo-v1",
     "duration_seconds": {"min": 45, "max": 60},
@@ -464,9 +468,17 @@ def _portfolio_readiness_report(
     elif not identity_statuses:
         identity_status = "pending"
         identity_evidence = "尚未登记身份审核结果；必须人工抽查参考图和视频"
-    elif any(status in {"failed", "no_face", "reference_no_face", "error"} for status in identity_statuses):
+    elif all(status == _IDENTITY_NOT_APPLICABLE_STATUS for status in identity_statuses):
+        identity_status = _IDENTITY_NOT_APPLICABLE_STATUS
+        identity_evidence = f"{len(identity_statuses)} 个镜头不含角色资产，无需身份审核"
+    elif any(status != "passed" for status in identity_statuses):
         identity_status = "failed"
-        identity_evidence = f"{sum(status in {'failed', 'no_face', 'reference_no_face', 'error'} for status in identity_statuses)}/{len(identity_statuses)} 个身份审核结果异常"
+        failure_count = sum(status in _IDENTITY_FAILURE_STATUSES for status in identity_statuses)
+        unknown_count = len(identity_statuses) - failure_count - identity_statuses.count(_IDENTITY_NOT_APPLICABLE_STATUS) - identity_statuses.count("passed")
+        detail = f"{failure_count} 个结果异常"
+        if unknown_count:
+            detail += f"，{unknown_count} 个结果状态未知"
+        identity_evidence = f"{sum(status == 'passed' for status in identity_statuses)}/{len(identity_statuses)} 个身份审核通过，{detail}"
     else:
         identity_status = "passed"
         identity_evidence = f"{sum(status == 'passed' for status in identity_statuses)}/{len(identity_statuses)} 个身份审核通过"
@@ -475,7 +487,7 @@ def _portfolio_readiness_report(
             "id": "identity_audit",
             "label": "身份自动初审",
             "status": identity_status,
-            "blocking": not args.mock_media,
+            "blocking": not args.mock_media and identity_status != _IDENTITY_NOT_APPLICABLE_STATUS,
             "evidence": identity_evidence,
         }
     )
