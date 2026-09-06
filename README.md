@@ -1,5 +1,7 @@
 # AI Video Generation
 
+[![CI](https://github.com/lhh92xcc/ai-video-generation/actions/workflows/ci.yml/badge.svg)](https://github.com/lhh92xcc/ai-video-generation/actions/workflows/ci.yml)
+
 一个面向 AI 漫剧和短视频生产的端到端工程 Demo。项目把小说或主题拆分为可编辑、可追踪、可恢复的异步步骤：内容结构化、剧本、分镜、角色资产、参考图、视频片段、配音、字幕和最终成片。
 
 ## 核心能力
