@@ -658,6 +658,12 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-provider-grid .field-hint, .creator-video-provider-inline .field-hint { margin-top: 5px; font-size: 8px; line-height: 1.45; }
 .creator-provider-status { margin: 11px 0 0; color: #858da1; font-size: 8px; line-height: 1.5; }
 .creator-provider-status.warning { color: #a8732d; }
+.creator-visual-quality-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; border-top: 1px solid #eeeff8; padding-top: 11px; }
+.creator-visual-quality-mark { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; color: #6365d5; background: #eeefff; font-size: 10px; }
+.creator-visual-quality-note strong, .creator-visual-quality-note p, .creator-visual-quality-note small { display: block; }
+.creator-visual-quality-note strong { color: #4d5574; font-size: 9px; }
+.creator-visual-quality-note p { margin: 4px 0 0; color: #747e94; font-size: 8px; line-height: 1.55; }
+.creator-visual-quality-note small { margin-top: 4px; color: #a0a8b8; font-size: 8px; line-height: 1.5; }
 .creator-video-provider-inline { margin-top: 14px; border: 1px solid #ececf8; border-radius: 8px; padding: 10px 11px; background: #fcfcff; }
 .creator-video-provider-inline .provider-selector { display: grid; grid-template-columns: minmax(130px, 0.55fr) minmax(0, 1.45fr); align-items: center; gap: 7px 12px; }
 .creator-video-provider-inline .field-label { margin: 0; }

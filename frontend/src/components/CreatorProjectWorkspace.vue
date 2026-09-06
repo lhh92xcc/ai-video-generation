@@ -1074,6 +1074,10 @@ onUnmounted(() => {
             <p v-if="imageProfilesLoading || videoProfilesLoading" class="creator-provider-status">正在读取图片和视频配置…</p>
             <p v-else-if="!imageProfiles.length || !videoProfiles.length" class="creator-provider-status warning">图片或视频 Provider 列表为空，请检查 API 配置。</p>
             <p v-else class="creator-provider-status">未配置的云端档案会保留在列表中但不可选；当前选择会同时用于“一键启动完整生产”和高级分集计划。</p>
+            <div class="creator-visual-quality-note">
+              <span class="creator-visual-quality-mark">✦</span>
+              <div><strong>当前视觉质量基线</strong><p>单主体、清晰轮廓、干净背景、稳定曝光；视频限制为 3～5 秒连续轻动作，优先保持角色身份和构图稳定。</p><small>这是可复现的输入约束，不等同于画质保证。分辨率、采样步数和超时由运行档案决定，完成后仍需人工看片并筛掉失败镜头。</small></div>
+            </div>
           </div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
             <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
