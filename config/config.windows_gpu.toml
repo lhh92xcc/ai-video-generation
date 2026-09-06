@@ -1,4 +1,4 @@
-# Windows GPU 工作站运行档案
+# Windows GPU 主机运行档案
 #
 # 此文件只描述连接方式和保守的低显存基线，不绑定具体显卡型号，
 # 不包含任何模型、用户名或密钥。请根据目标 GPU 的显存和实测结果调整参数。
@@ -18,7 +18,7 @@ log_level = "INFO"
 mode = "local"
 identity_ttl_seconds = 60
 local_actor_id = "windows-operator"
-local_actor_name = "Windows GPU 工作站"
+local_actor_name = "Windows GPU 主机操作员"
 
 [database]
 url = "postgresql+asyncpg://postgres:postgres@postgres:5432/ai_video"
@@ -60,8 +60,8 @@ model = "flux-schnell"
 request_timeout_seconds = 180
 width = 768
 height = 1024
-default_style = "polished 2D manhwa animation key art, cinematic vertical composition, clean linework, soft cel shading, controlled color palette, detailed but readable background, professional webtoon production design"
-default_negative_prompt = "blurry, low quality, malformed face, asymmetrical eyes, distorted anatomy, deformed hands, extra fingers, duplicate person, duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, character sheet, multiple views, inset image, repeated face, text, logo, watermark"
+default_style = "polished 2D manhwa animation production key art, clean single-frame vertical composition, crisp linework, clear facial planes, soft cel shading, controlled cinematic lighting, restrained color palette, clean silhouette, uncluttered readable background, professional webtoon production design, consistent design language for later image-to-video shots"
+default_negative_prompt = "blurry, low quality, soft focus, low contrast, overexposed, underexposed, messy background, malformed face, asymmetrical eyes, distorted anatomy, deformed hands, extra fingers, cropped head, cut-off subject, duplicate person, duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, character sheet, multiple views, inset image, repeated face, text, logo, watermark"
 steps = 4
 guidance = 3.5
 identity_weight = 0.9
@@ -84,8 +84,8 @@ probe_timeout_seconds = 60
 output_width = 320
 output_height = 576
 fps = 8
-default_negative_prompt = "blurry, low quality, flicker, jitter, temporal inconsistency, identity drift, face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate person, new person, scene change, camera cut, hard zoom, text, logo, watermark"
-prompt_suffix = "single continuous shot, 3 to 5 seconds, one coherent camera take, subtle natural motion, preserve the exact reference identity, face shape, hairstyle, clothing, colors and composition, no new characters, no cuts, no scene change"
+default_negative_prompt = "blurry, low quality, motion smear, flicker, jitter, unstable exposure, temporal inconsistency, identity drift, face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, extra limbs, duplicate person, new person, crowded frame, scene change, camera cut, hard zoom, text, logo, watermark"
+prompt_suffix = "single continuous shot, 3 to 5 seconds, one coherent camera take, subtle readable motion such as breathing, blinking, a small head turn or gentle cloth movement, stable exposure, preserve the exact reference identity, face shape, hairstyle, clothing, colors and silhouette, keep the original composition, no new characters, no cuts, no scene change, no large body transformation"
 steps = 6
 cfg = 5.0
 noise_aug_strength = 0.02

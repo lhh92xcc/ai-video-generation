@@ -893,12 +893,12 @@ async function startEpisodeTaskPlan() {
 
 async function startFullProduction() {
   if (!productionRunCanSubmit.value) return
-  await runAction('production-run', '完整生产 Run 已启动，后续会由 Windows Worker 自动推进。', async () => {
+  await runAction('production-run', '完整生产 Run 已启动，后续会由后台 Worker 自动推进。', async () => {
     productionRun.value = await startProductionRun(
       projectData.value.id,
       {
         target_episode_count: projectData.value.target_episode_count,
-        label: 'Windows GPU 完整生产',
+        label: '本地 GPU 完整生产',
         production_mode: true,
         include_reference_images: true,
         include_narration: true,
@@ -1029,7 +1029,7 @@ onUnmounted(() => {
           <div v-if="!sourceReady" class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!selectedFile || Boolean(action)" @click="uploadSource">{{ action === 'upload' ? '上传中…' : '上传并切分章节' }} <span>→</span></button></div>
           <div v-else class="creator-chapter-preview"><div class="creator-subheading"><strong>章节预览</strong><small>{{ chapters.length }} 个章节</small></div><div v-if="chapters.length" class="creator-chapter-list"><div v-for="chapter in chapters.slice(0, 3)" :key="chapter.id"><span>第 {{ chapter.chapter_number }} 章</span><strong>{{ chapter.title }}</strong></div></div><small v-if="chapters.length > 3" class="creator-more-note">还有 {{ chapters.length - 3 }} 个章节，完整内容将在制作后台中查看。</small></div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
-            <div><span class="creator-auto-run-icon">▶</span><div><strong>Windows GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
+            <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
             <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
           </div>
           <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRun.status === 'completed' ? '✓' : productionRun.status === 'failed' ? '!' : productionRun.status === 'blocked' ? '!' : '↻' }}</span><div><strong>Run {{ productionRun.status === 'active' ? '运行中' : productionRun.status === 'blocked' ? '等待人工处理' : productionRun.status === 'completed' ? '已完成' : '失败' }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>

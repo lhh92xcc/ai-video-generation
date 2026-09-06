@@ -14,7 +14,7 @@
 - 身份阈值校准：只读比较候选阈值，不修改生产配置；身份失败镜头支持幂等批量重试。
 - 角色声音资产库：可按角色绑定 Edge TTS、ChatTTS、macOS say 或 Mock 声音档案，并按对白行生成多角色音频。
 - MuseTalk 接口：支持从视频/音频 Artifact 创建唇形同步任务，完成后可在成片编排中选择 `lip_synced_video`，原始片段可回退。
-- Windows GPU 工作站运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查。
+- Windows GPU 主机运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查；参数按显存和实测结果调整，不绑定具体显卡型号。
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。
 - Redis Worker 异步任务、幂等、失败重试、批次编排和 Artifact Registry。
 - FFmpeg 多镜头拼接、旁白/BGM 混音、中文字幕烧录和临时下载。
@@ -83,7 +83,7 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
-ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 工作站应先从单张 512×512 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据显存和画面质量实测结果调整分辨率、采样步数和时长。
+ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 主机应先从单张 512×512 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据实际显存、耗时和画面质量调整分辨率、采样步数和时长。配置档案不要求某个固定显卡型号。
 
 ## 配置与安全
 
@@ -104,13 +104,13 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `298 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `302 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
 ## 当前边界
 
-这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、Windows GPU 运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在 Windows 主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
+这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
 ## 作品集 Demo 验收清单
 
@@ -123,7 +123,36 @@ docker compose config --quiet
 
 这条清单把“工程闭环已完成”和“媒体质量尚未验收”分开，避免把通过单测或 FFprobe 误写成成片质量结论。
 
-## Windows GPU 工作站
+## 距离合格作品集 Demo 还差什么
+
+“合格”在这里指：面试官能看到真实的端到端工程闭环，同时样片达到可观看、可解释、可复盘，而不是宣称已经具备商用量产画质。
+
+| 门槛 | 当前状态 | 还需要的证据 |
+| --- | --- | --- |
+| 小说到结构化剧本/分镜 | 工程链路已具备 | 用一段自有或已授权短文本跑通，并人工检查改编是否忠实、对白是否自然 |
+| 角色/场景/道具一致性 | 资产版本、标准人设图、Prompt 和自动初审已具备 | 实际生成 2～3 个角色镜头，筛掉变脸、重复人物、手部和构图失败结果 |
+| 真实视频片段 | Wan I2V Provider、断点恢复和 FFprobe 门禁已具备 | 在目标主机完成 3 秒 smoke，再完成 45～60 秒成片并记录耗时、失败和重试 |
+| 声音与字幕 | 连续旁白、ASR/对齐、字幕 Artifact 和渲染已具备 | 人工听审自然度、发音、音画同步和字幕可读性；保留评分表和样片 |
+| 成片与可复盘性 | Assembly、Artifact、任务、日志和远程队列已具备 | 将最终视频、关键截图、运行报告和一段架构说明放入作品集展示材料 |
+| 商用扩展认知 | Provider/Adapter 边界已具备 | 补一页本地方案与云端方案的成本、质量、延迟、版权和失败重试对比 |
+
+当前最关键的缺口不是继续堆功能，而是完成一次真实目标设备验收，并把“通过/失败/人工返工”记录下来。单元测试、HTTP 200、Artifact 成功和 FFprobe 通过，都不能替代画面与声音审核。
+
+## 即梦 API 接入计划
+
+即梦适合作为后续的高质量对照样片 Provider，但在没有官方接口文档、模型名、鉴权方式、请求示例和异步响应示例前，本项目不会猜测 endpoint 或协议，也不会把供应商字段散落到业务层。
+
+接入时保持以下边界：
+
+1. 新增独立 `JimengVideoGenerationProvider`，实现现有 `VideoGenerationProvider` 契约。
+2. 适配器负责请求体映射、鉴权、提交任务、轮询/回调、下载、超时、限流、余额和供应商错误码映射。
+3. 业务层继续只传镜头 Prompt、negative Prompt、参考图、时长、尺寸和生成尝试号；供应商原始响应写入脱敏 metadata。
+4. 先做单镜头 smoke，再做 2～3 镜头对照；确认画面、费用和稳定性后，才接入前台 Provider 选择和批量 Run。
+5. API Key 只放 `.env` 或部署环境变量，绝不提交 GitHub；即梦样片与本地 Demo 使用独立配置和预算门禁。
+
+因此，后续你只需要提供即梦官方开发文档中的接口资料和测试 Key（不要把 Key 发到聊天或提交到仓库），我就能在不改动小说、资产、任务和成片契约的前提下接入它。
+
+## Windows GPU 主机
 
 Mac 端只维护代码、Prompt、配置和前端，不下载 Windows/CUDA 模型。将仓库同步到 Windows 后，在 Windows 主机安装 Docker Desktop、Ollama、ComfyUI、Wan/Flux 模型和真实 MuseTalk runtime；Docker 内的 API/Worker 通过 `host.docker.internal` 访问这些宿主机服务。
 

@@ -57,7 +57,7 @@ function Start-BackgroundProcess {
         -WorkingDirectory $WorkingDirectory -WindowStyle Minimized -PassThru
 }
 
-Write-Host "AI Video Generation / Windows GPU 工作站启动器" -ForegroundColor Cyan
+Write-Host "AI Video Generation / Windows GPU 主机启动器" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

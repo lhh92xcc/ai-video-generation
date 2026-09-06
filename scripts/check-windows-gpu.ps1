@@ -59,7 +59,7 @@ function Test-Command {
     return $ok
 }
 
-Write-Host "AI Video Generation / Windows GPU 工作站健康检查" -ForegroundColor Cyan
+Write-Host "AI Video Generation / Windows GPU 主机健康检查" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 Write-Host ""
 

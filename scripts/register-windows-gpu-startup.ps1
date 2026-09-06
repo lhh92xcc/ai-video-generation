@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [string]$TaskName = "AI Video Generation - Windows GPU"
+    [string]$TaskName = "AI Video Generation - Windows GPU Host"
 )
 
 $ErrorActionPreference = "Stop"

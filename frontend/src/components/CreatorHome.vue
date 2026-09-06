@@ -32,6 +32,50 @@ const activeTasks = computed(() => tasks.value.filter((task) => ['created', 'que
 const previewableVideoCount = computed(() => videos.value.length)
 const currentProject = computed(() => projects.value[0] ?? null)
 const activeProject = computed(() => projects.value.find((project) => project.id === activeProjectId.value) ?? null)
+const latestActiveTask = computed(() => [...tasks.value]
+  .filter((task) => ['created', 'queued', 'running'].includes(task.status))
+  .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null)
+const latestScriptTask = computed(() => [...tasks.value]
+  .filter((task) => task.kind === 'novel_episode_script' && (!currentProject.value || task.project_id === currentProject.value.id))
+  .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null)
+const heroScriptTitle = computed(() => {
+  const task = latestScriptTask.value
+  if (task?.status === 'succeeded') return '分场剧本已就绪'
+  if (task && ['created', 'queued', 'running'].includes(task.status)) return '分场剧本处理中'
+  if (task?.status === 'failed') return '分场剧本需要处理'
+  if (currentProject.value) return '等待分场剧本'
+  return '等待小说输入'
+})
+const heroScriptMark = computed(() => {
+  const status = latestScriptTask.value?.status
+  if (status === 'succeeded') return '✓'
+  if (status === 'failed') return '!'
+  if (status && ['created', 'queued', 'running'].includes(status)) return '↻'
+  return '—'
+})
+const heroTaskProgress = computed(() => {
+  const progress = Number(latestActiveTask.value?.progress)
+  return Number.isFinite(progress) && progress > 0 ? Math.max(0, Math.min(100, Math.round(progress))) : null
+})
+const heroPreviewCaption = computed(() => {
+  if (latestActiveTask.value) return formatTaskKind(latestActiveTask.value.kind)
+  if (videos.value.length > 0) return '最近成片已就绪'
+  if (projects.value.length > 0) return '工作区已就绪'
+  return '等待你的第一个项目'
+})
+const heroRenderTitle = computed(() => {
+  if (latestActiveTask.value) return `${formatStatus(latestActiveTask.value.status)} · ${formatTaskKind(latestActiveTask.value.kind)}`
+  if (videos.value.length > 0) return '成片可以开始复核'
+  if (projects.value.length > 0) return '可以继续制作'
+  return '从一个小说项目开始'
+})
+const heroRenderDetail = computed(() => {
+  const task = latestActiveTask.value
+  if (task) return task.current_stage ? `当前阶段：${task.current_stage}` : '任务已进入可观察的生产队列'
+  if (videos.value.length > 0) return '最近结果已进入媒体资产库，可播放、下载并继续审核。'
+  if (projects.value.length > 0) return '选择一个项目，继续推进剧本、资产、媒体和成片。'
+  return '创建项目后，这里会显示真实的生产状态。'
+})
 const recentTaskGroups = computed(() => {
   const groups = new Map<string, { task: GenerationTaskRecord; count: number }>()
   for (const task of [...tasks.value].sort((left, right) => right.updated_at.localeCompare(left.updated_at))) {
@@ -183,11 +227,11 @@ onMounted(refreshDashboard)
           <div class="creator-visual-glow" />
           <div class="creator-preview-window">
             <div class="creator-preview-topbar"><span /><span /><span /><small>VIDEO FORGE / PREVIEW</small></div>
-            <div class="creator-preview-scene"><div class="creator-preview-sun" /><div class="creator-preview-mountain mountain-one" /><div class="creator-preview-mountain mountain-two" /><div class="creator-preview-ground" /><div class="creator-preview-caption">故事正在生成中</div></div>
-            <div class="creator-preview-timeline"><span /><span /><span /><span /></div>
+            <div class="creator-preview-scene"><div class="creator-preview-sun" /><div class="creator-preview-mountain mountain-one" /><div class="creator-preview-mountain mountain-two" /><div class="creator-preview-ground" /><div class="creator-preview-caption">{{ heroPreviewCaption }}</div></div>
+            <div class="creator-preview-timeline"><span v-for="segment in 4" :key="segment" :class="{ complete: heroTaskProgress !== null && heroTaskProgress >= segment * 25 }" /></div>
           </div>
-          <div class="creator-floating-card creator-floating-script"><span class="creator-floating-icon">✦</span><div><small>AI SCRIPT</small><strong>分场剧本已就绪</strong></div><b>✓</b></div>
-          <div class="creator-floating-card creator-floating-render"><span class="creator-floating-icon">◉</span><div><small>RENDER QUEUE</small><strong>正在合成第 03 集</strong></div><b>72%</b></div>
+          <div class="creator-floating-card creator-floating-script"><span class="creator-floating-icon">✦</span><div><small>AI SCRIPT</small><strong>{{ heroScriptTitle }}</strong></div><b>{{ heroScriptMark }}</b></div>
+          <div class="creator-floating-card creator-floating-render"><span class="creator-floating-icon">◉</span><div><small>LIVE PIPELINE</small><strong>{{ heroRenderTitle }}</strong><small>{{ heroRenderDetail }}</small></div><b>{{ heroTaskProgress === null ? (latestActiveTask ? 'RUN' : 'READY') : `${heroTaskProgress}%` }}</b></div>
         </div>
       </section>
 

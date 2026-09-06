@@ -127,7 +127,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
     <div>
       <p class="page-kicker">OPERATIONS / REMOTE PRODUCTION QUEUE</p>
       <h1>远程生产队列</h1>
-      <p>Windows GPU 工作站的状态、GPU 锁、自动 DAG 和失败恢复都在这里集中查看。</p>
+      <p>GPU 主机的状态、GPU 锁、自动 DAG 和失败恢复都在这里集中查看。</p>
     </div>
     <div class="queue-header-actions">
       <button class="secondary-button" type="button" :disabled="cleaning" @click="cleanup">{{ cleaning ? '清理中…' : '清理临时文件' }}</button>
@@ -158,7 +158,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
       </article>
 
       <article class="card queue-worker-card">
-        <div class="card-header"><div><h2>Worker 与 GPU 锁</h2><p>单 GPU 任务串行执行，避免 8GB 显存同时加载多个模型。</p></div><span class="status-pill" :class="{ neutral: health?.worker?.status !== 'online' }">{{ health?.worker?.status === 'online' ? 'Worker 在线' : (health?.worker?.status === 'in_process' ? '进程内' : '待检查') }}</span></div>
+        <div class="card-header"><div><h2>Worker 与 GPU 锁</h2><p>单 GPU 任务串行执行，避免多个模型同时占用显存。</p></div><span class="status-pill" :class="{ neutral: health?.worker?.status !== 'online' }">{{ health?.worker?.status === 'online' ? 'Worker 在线' : (health?.worker?.status === 'in_process' ? '进程内' : '待检查') }}</span></div>
         <div class="worker-lock-panel"><div class="worker-lock-icon" :class="{ busy: snapshot?.gpu_lock_busy }">{{ snapshot?.gpu_lock_busy ? '锁' : '闲' }}</div><div><strong>{{ snapshot?.gpu_lock_busy ? 'GPU 正在执行任务' : 'GPU 当前空闲' }}</strong><small>{{ snapshot?.gpu_lock_enabled ? 'Redis Lease Lock 已启用' : '当前未启用 GPU 锁' }}</small></div></div>
         <dl class="queue-meta-grid"><div><dt>当前任务</dt><dd>{{ String(health?.worker?.current_task_id || '—') }}</dd></div><div><dt>队列长度</dt><dd>{{ String(health?.worker?.pending_count ?? counts.queued ?? 0) }}</dd></div><div><dt>处理中</dt><dd>{{ String(health?.worker?.processing_count ?? counts.running ?? 0) }}</dd></div><div><dt>自动重试</dt><dd>最多 2 次</dd></div></dl>
       </article>
