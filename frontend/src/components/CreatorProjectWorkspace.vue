@@ -1100,7 +1100,7 @@ onUnmounted(() => {
           <div class="creator-episode-picker"><button v-for="episode in episodes" :key="episode.id" type="button" :class="{ selected: episode.id === selectedEpisodeId }" @click="selectEpisode(episode.id)"><span>第 {{ episode.episode_number }} 集</span><strong>{{ episode.outline.title }}</strong><small>{{ episode.outline.target_duration_seconds }} 秒 · {{ episodeScriptStatusLabel(episode) }}</small></button></div>
         </section>
 
-        <details v-if="episodesReady" class="creator-advanced-section">
+        <details v-if="episodesReady" id="creator-batch-production" class="creator-advanced-section">
           <summary><span>高级：分集生产计划</span><small>批量推进与断点调试</small></summary>
           <section class="creator-workspace-card creator-plan-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">BATCH PRODUCTION PLAN</p><h3>推进分集生产计划</h3><p>这是面向批量和断点调试的手动入口；系统按依赖推进任务，不会跳过剧本和资产审核。</p></div><span class="creator-card-state" :class="{ ready: planResponse?.batch || planResponse?.skipped_count }">{{ planResponse ? `${planResponse.created_count + planResponse.reused_count} 个任务` : '可推进' }}</span></div>

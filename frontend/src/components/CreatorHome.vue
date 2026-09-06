@@ -148,6 +148,14 @@ function openProject(projectId: string) {
   window.setTimeout(() => document.getElementById('creator-project-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
 }
 
+function openBatchProduction() {
+  if (currentProject.value) {
+    openProject(currentProject.value.id)
+    return
+  }
+  openCreatePanel()
+}
+
 function closeProjectWorkspace() {
   activeProjectId.value = null
   void refreshDashboard()
@@ -257,7 +265,7 @@ onMounted(refreshDashboard)
         <div class="creator-workflow-cards">
           <button class="creator-workflow-card selected" type="button" @click="openCreatePanel"><span class="creator-card-number">01</span><span class="creator-workflow-icon novel">▤</span><strong>小说短剧</strong><p>导入小说，生成 StoryBible、分集剧本、分镜和视频片段。</p><span class="creator-card-link">立即开始 <b>→</b></span></button>
           <article class="creator-workflow-card disabled"><span class="creator-card-number">02</span><span class="creator-workflow-icon topic">✦</span><strong>主题短视频</strong><p>输入一个主题，生成信息型短视频脚本和成片。</p><span class="creator-coming-soon">即将接入</span></article>
-          <article class="creator-workflow-card disabled"><span class="creator-card-number">03</span><span class="creator-workflow-icon series">▦</span><strong>批量生产</strong><p>一次配置多个选题，自动排队生成并统一查看结果。</p><span class="creator-coming-soon">规划中</span></article>
+          <button class="creator-workflow-card" type="button" @click="openBatchProduction"><span class="creator-card-number">03</span><span class="creator-workflow-icon series">▦</span><strong>分集批量生产</strong><p>在项目内选择多集，按依赖自动排队生成，并支持失败任务恢复。</p><span class="creator-card-link">{{ currentProject ? '打开项目计划' : '先创建项目' }} <b>→</b></span></button>
         </div>
       </section>
 
