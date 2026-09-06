@@ -169,6 +169,50 @@ const outputIsVertical = computed(() => {
 
 const outputDurationReady = computed(() => outputProbe.value.duration >= 45 && outputProbe.value.duration <= 60)
 
+const nonRealMotionProviders = new Set(['mock', 'local_fixture', 'ffmpeg_motion'])
+const realMotionProviders = new Set(['comfyui_wan_i2v', 'openai_compatible', 'siliconflow'])
+
+const motionProviderSummary = computed(() => {
+  if (!props.episode) return { state: 'not_applicable' as GateState, providers: [] as string[], evidence: '等待选择分集' }
+  const latestSuccessfulTaskByShot = new Map<number, GenerationTaskRecord>()
+  for (const task of props.tasks) {
+    if (
+      task.kind !== 'video_clip'
+      || task.status !== 'succeeded'
+      || String(task.input_data.episode_id ?? '') !== props.episode.id
+    ) continue
+    const shotIndex = numberFrom(task.input_data.shot_index)
+    if (!Number.isInteger(shotIndex) || shotIndex < 1) continue
+    if (!task.artifacts.some((artifact) => artifact.type === 'video_clip')) continue
+    const existing = latestSuccessfulTaskByShot.get(shotIndex)
+    if (!existing || existing.updated_at.localeCompare(task.updated_at) < 0) {
+      latestSuccessfulTaskByShot.set(shotIndex, task)
+    }
+  }
+  const artifacts = [...latestSuccessfulTaskByShot.values()]
+    .flatMap((task) => task.artifacts.filter((artifact) => artifact.type === 'video_clip'))
+  const providers = [...new Set(artifacts.map((artifact) => String(artifact.provider ?? '').trim().toLowerCase()).filter(Boolean))]
+  if (!providers.length) {
+    return { state: 'pending' as GateState, providers, evidence: '尚无成功视频片段，等待真实视频 Provider 产物' }
+  }
+  const staticArtifact = artifacts.find((artifact) => {
+    const motion = String(artifact.metadata.motion ?? '').trim().toLowerCase()
+    const source = String(artifact.metadata.source ?? '').trim().toLowerCase()
+    return motion === 'ken_burns' || motion === 'fixture-color-card' || source === 'deterministic_color_fallback'
+  })
+  if (staticArtifact || providers.some((provider) => nonRealMotionProviders.has(provider) || !realMotionProviders.has(provider))) {
+    return {
+      state: 'blocked' as GateState,
+      providers,
+      evidence: `片段来源 ${providers.join('、')} 不属于真实运动模型，不能作为正式作品集证据`,
+    }
+  }
+  if (providers.length > 1) {
+    return { state: 'blocked' as GateState, providers, evidence: `检测到多个视频 Provider：${providers.join('、')}，请勿混用` }
+  }
+  return { state: 'passed' as GateState, providers, evidence: `${providers[0]} · ${artifacts.length} 个片段来自真实视频 Provider` }
+})
+
 const machineGates = computed<ReadinessGate[]>(() => [
   {
     id: 'content',
@@ -220,19 +264,25 @@ const machineGates = computed<ReadinessGate[]>(() => [
   },
   {
     id: 'media',
-    label: '声音、字幕与片段',
-    description: '旁白、字幕和当前分集的全部可生成镜头都有成功 Artifact。',
+    label: '声音、字幕与真实片段',
+    description: '旁白、字幕和全部可生成镜头都有成功 Artifact，片段来自真实运动模型。',
     evidence: !props.episode || props.shotTotalCount === 0
       ? '等待当前分集分镜清单'
       : props.audioArtifact && props.subtitleArtifact
-      ? `${props.videoClipSucceededCount}/${props.videoClipReadyCount || props.shotTotalCount} 个视频片段已完成`
-      : '旁白或字幕 Artifact 尚未完成',
+      ? `${props.videoClipSucceededCount}/${props.videoClipReadyCount || props.shotTotalCount} 个视频片段已完成 · ${motionProviderSummary.value.evidence}`
+      : `旁白或字幕 Artifact 尚未完成 · ${motionProviderSummary.value.evidence}`,
     state: stateFor(Boolean(
       props.audioArtifact
       && props.subtitleArtifact
       && props.videoClipReadyCount > 0
-      && props.videoClipSucceededCount >= props.videoClipReadyCount,
-    ), Boolean(props.episode), Boolean(props.audioArtifact || props.subtitleArtifact || props.videoClipSucceededCount > 0)),
+      && props.videoClipSucceededCount >= props.videoClipReadyCount
+      && motionProviderSummary.value.state === 'passed',
+    ), Boolean(props.episode), Boolean(
+      props.audioArtifact
+      || props.subtitleArtifact
+      || props.videoClipSucceededCount > 0
+      || motionProviderSummary.value.state === 'blocked',
+    )),
     blocking: true,
     target: 'creator-step-audio',
   },
