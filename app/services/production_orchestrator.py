@@ -33,6 +33,10 @@ AUTO_RUN_ENABLED = "auto_advance"
 AUTO_RUN_STATUS = "auto_run_status"
 
 
+class ProductionRunNotFoundError(Exception):
+    """Raised when a requested auto-production Run has no task marker."""
+
+
 class ProductionOrchestrator:
     def __init__(
         self,
@@ -147,10 +151,17 @@ class ProductionOrchestrator:
             response,
             idempotency_key=idempotency_key,
         )
+        public_status = (
+            "blocked"
+            if started.blocked_count
+            else "active"
+            if started.auto_advance
+            else "completed"
+        )
         return ProductionRunResponse(
             project_id=project_id,
             run_id=run_id,
-            status="blocked" if started.blocked_count else "active",
+            status=public_status,
             stage=(started.items[0].stage or "production") if started.items else "production",
             task_ids=self._task_ids(started),
             auto_advance=started.auto_advance,
@@ -167,6 +178,28 @@ class ProductionOrchestrator:
             return None
         return await self._tick_run(str(run_id), task)
 
+    async def on_task_failed(self, task_id: UUID) -> None:
+        """Reflect a failed automatic task in its durable Run marker.
+
+        The Worker may later schedule a retry. In that case the Run is
+        ``blocked`` until the retry is requeued; a terminal failure is marked
+        ``failed`` immediately instead of being left looking active.
+        """
+
+        task = await self._store.get_task(task_id)
+        if task is None:
+            return
+        if task.status != TaskStatus.FAILED:
+            return
+        run_id = task.input_data.get(AUTO_RUN_ID)
+        if not run_id or task.input_data.get(AUTO_RUN_ENABLED) is not True:
+            return
+        run_tasks = await self._run_tasks(task.project_id, str(run_id))
+        await self._set_run_status(
+            run_tasks,
+            "blocked" if task.input_data.get("auto_retry_pending") is True else "failed",
+        )
+
     async def tick_all(self) -> list[EpisodeTaskPlanResponse]:
         tasks = await self._store.list_tasks(limit=5000)
         by_run: dict[str, GenerationTaskRecord] = {}
@@ -180,6 +213,48 @@ class ProductionOrchestrator:
             if result is not None:
                 results.append(result)
         return results
+
+    async def tick_project(self, project_id: UUID) -> list[EpisodeTaskPlanResponse]:
+        """Reconcile only the automatic Runs belonging to one project.
+
+        This is used after an asset review so a blocked Run can resume in the
+        same request cycle, without making the asset endpoint scan unrelated
+        projects.
+        """
+
+        tasks = await self._store.list_tasks(project_id=project_id, limit=5000)
+        by_run: dict[str, GenerationTaskRecord] = {}
+        for task in tasks:
+            run_id = task.input_data.get(AUTO_RUN_ID)
+            if run_id and task.input_data.get(AUTO_RUN_ENABLED) is True:
+                by_run.setdefault(str(run_id), task)
+        results: list[EpisodeTaskPlanResponse] = []
+        for run_id, task in by_run.items():
+            result = await self._tick_run(run_id, task)
+            if result is not None:
+                results.append(result)
+        return results
+
+    async def get_latest_run(self, project_id: UUID) -> ProductionRunResponse:
+        """Return the most recently updated automatic Run for a project."""
+
+        tasks = await self._store.list_tasks(project_id=project_id, limit=5000)
+        groups = self._group_run_tasks(tasks)
+        if not groups:
+            raise ProductionRunNotFoundError
+        run_id, run_tasks = max(
+            groups.items(),
+            key=lambda item: max(task.updated_at for task in item[1]),
+        )
+        return await self._run_response(project_id, UUID(run_id), run_tasks)
+
+    async def get_run(self, project_id: UUID, run_id: UUID) -> ProductionRunResponse:
+        """Return one persisted Run reconstructed from task markers."""
+
+        tasks = await self._run_tasks(project_id, str(run_id))
+        if not tasks:
+            raise ProductionRunNotFoundError
+        return await self._run_response(project_id, run_id, tasks)
 
     async def _tick_run(
         self,
@@ -301,6 +376,22 @@ class ProductionOrchestrator:
             if str(item.input_data.get(AUTO_RUN_ID)) == run_id
         ]
 
+    @staticmethod
+    def _group_run_tasks(
+        tasks: list[GenerationTaskRecord],
+    ) -> dict[str, list[GenerationTaskRecord]]:
+        groups: dict[str, list[GenerationTaskRecord]] = defaultdict(list)
+        for task in tasks:
+            raw_run_id = task.input_data.get(AUTO_RUN_ID)
+            if not raw_run_id:
+                continue
+            try:
+                UUID(str(raw_run_id))
+            except (TypeError, ValueError):
+                continue
+            groups[str(raw_run_id)].append(task)
+        return dict(groups)
+
     async def _reconcile_completed_tasks(self, task_ids: list[UUID]) -> None:
         for task_id in task_ids:
             task = await self._store.get_task(task_id)
@@ -351,15 +442,22 @@ class ProductionOrchestrator:
         run_id: UUID,
         tasks: list[GenerationTaskRecord],
     ) -> ProductionRunResponse:
+        statuses = {
+            str(task.input_data.get(AUTO_RUN_STATUS))
+            for task in tasks
+            if task.input_data.get(AUTO_RUN_STATUS)
+        }
         status = next(
-            (
-                str(task.input_data.get(AUTO_RUN_STATUS))
-                for task in tasks
-                if task.input_data.get(AUTO_RUN_STATUS)
-            ),
+            (candidate for candidate in ("failed", "blocked", "completed", "active") if candidate in statuses),
             "active",
         )
         latest = max(tasks, key=lambda item: item.updated_at)
+        message = {
+            "active": "Run 正在由 Worker 按依赖推进。",
+            "blocked": "Run 等待资产审核、配置修复或失败任务恢复；条件满足后会继续推进。",
+            "completed": "Run 已完成当前配置启用的全部阶段。",
+            "failed": "Run 存在不可自动恢复的失败任务，请在任务中心处理后重新启动。",
+        }[status]
         return ProductionRunResponse(
             project_id=project_id,
             run_id=run_id,
@@ -375,7 +473,7 @@ class ProductionOrchestrator:
             stage=latest.kind.value,
             task_ids=[task.id for task in tasks],
             auto_advance=status not in {"completed", "failed"},
-            message="已复用同一幂等键对应的生产 Run。",
+            message=message,
         )
 
     async def _latest_task(

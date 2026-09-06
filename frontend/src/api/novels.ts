@@ -156,3 +156,15 @@ export function startProductionRun(
     body: JSON.stringify(payload),
   })
 }
+
+export function getLatestProductionRun(projectId: string): Promise<ProductionRunResponse> {
+  return apiRequest<ProductionRunResponse>(
+    `/api/v1/novel-projects/${projectId}/production-runs/latest`,
+  )
+}
+
+export function getProductionRun(projectId: string, runId: string): Promise<ProductionRunResponse> {
+  return apiRequest<ProductionRunResponse>(
+    `/api/v1/novel-projects/${projectId}/production-runs/${runId}`,
+  )
+}

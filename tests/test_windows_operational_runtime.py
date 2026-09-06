@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import time
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.config import load_settings
+from app.domain.models import (
+    GenerationTaskKind,
+    GenerationTaskRecord,
+    TaskError,
+    TaskStatus,
+)
 
 
 def wait_for_task(client: TestClient, task_id: str) -> dict:
@@ -87,6 +95,16 @@ def test_one_click_production_run_starts_and_reuses_same_idempotency_key(client:
     assert first_body["status"] in {"active", "blocked", "completed"}
     assert first_body["run_id"]
     assert first_body["task_ids"]
+    seed_task = client.get(f"/api/v1/tasks/{first_body['task_ids'][0]}")
+    assert seed_task.status_code == 200, seed_task.text
+    assert seed_task.json()["input_data"]["auto_run_plan"]["production_mode"] is True
+
+    content_only = client.post(
+        f"/api/v1/novel-projects/{project_id}/production-runs",
+        json={"target_episode_count": 1, "production_mode": False},
+        headers={"Idempotency-Key": "windows-production-run-content-only"},
+    )
+    assert content_only.status_code == 422, content_only.text
 
     second = client.post(
         f"/api/v1/novel-projects/{project_id}/production-runs",
@@ -96,3 +114,49 @@ def test_one_click_production_run_starts_and_reuses_same_idempotency_key(client:
     assert second.status_code == 202, second.text
     second_body = second.json()
     assert second_body["run_id"] == first_body["run_id"]
+
+    latest = client.get(
+        f"/api/v1/novel-projects/{project_id}/production-runs/latest"
+    )
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["run_id"] == first_body["run_id"]
+    assert latest.json()["project_id"] == project_id
+
+    by_id = client.get(
+        f"/api/v1/novel-projects/{project_id}/production-runs/{first_body['run_id']}"
+    )
+    assert by_id.status_code == 200, by_id.text
+    assert by_id.json()["run_id"] == first_body["run_id"]
+
+    missing = client.get(
+        f"/api/v1/novel-projects/{project_id}/production-runs/00000000-0000-0000-0000-000000000000"
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "PRODUCTION_RUN_NOT_FOUND"
+
+
+def test_terminal_auto_run_failure_is_not_reported_as_active(client: TestClient) -> None:
+    project_id = uuid4()
+    run_id = uuid4()
+
+    async def exercise() -> tuple[str, bool, str]:
+        task = GenerationTaskRecord(
+            project_id=project_id,
+            kind=GenerationTaskKind.NOVEL_STORY_BIBLE,
+            input_data={
+                "auto_run_id": str(run_id),
+                "auto_advance": True,
+                "auto_run_status": "active",
+            },
+            status=TaskStatus.FAILED,
+            error=TaskError(code="PROVIDER_AUTH_FAILED", message="test failure"),
+        )
+        await client.app.state.store.create_task(task)
+        await client.app.state.production_orchestrator.on_task_failed(task.id)
+        response = await client.app.state.production_orchestrator.get_run(project_id, run_id)
+        return response.status, response.auto_advance, response.message
+
+    status, auto_advance, message = asyncio.run(exercise())
+    assert status == "failed"
+    assert auto_advance is False
+    assert "不可自动恢复" in message

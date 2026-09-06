@@ -15,6 +15,7 @@ import {
   getNovelChapters,
   getNovelProject,
   startProductionRun,
+  getLatestProductionRun,
   uploadNovelSource,
 } from '../api/novels'
 import { getEpisodeScript, getEpisodeShots } from '../api/novelWorkbench'
@@ -809,6 +810,22 @@ async function loadRenderedVideoArtifact() {
   }
 }
 
+async function loadLatestProductionRun(projectId: string, hasSource: boolean) {
+  if (!hasSource) {
+    productionRun.value = null
+    return
+  }
+  try {
+    productionRun.value = await getLatestProductionRun(projectId)
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      productionRun.value = null
+      return
+    }
+    throw error
+  }
+}
+
 function resetBgmForm(episode: EpisodeRecord | null) {
   bgmLabel.value = episode ? `第 ${episode.episode_number} 集 BGM` : ''
   bgmSourcePath.value = ''
@@ -835,6 +852,7 @@ async function refreshWorkspace() {
     planEpisodeIds.value = retainedPlanIds.length ? retainedPlanIds : episodeItems.map((episode) => episode.id)
     tasks.value = taskResponse.items
     chapters.value = chapterItems
+    await loadLatestProductionRun(currentProject.id, Boolean(currentProject.source_id))
 
     const selectedStillExists = selectedEpisodeId.value && episodeItems.some((episode) => episode.id === selectedEpisodeId.value)
     const nextSelectedEpisodeId = selectedStillExists ? selectedEpisodeId.value : episodeItems[0]?.id ?? null
@@ -997,7 +1015,7 @@ watch(() => props.project, (project) => {
 onMounted(() => {
   void refreshWorkspace()
   pollTimer = window.setInterval(() => {
-    if (activeTaskCount.value > 0) void refreshWorkspace()
+    if (activeTaskCount.value > 0 || productionRun.value?.auto_advance) void refreshWorkspace()
   }, 2500)
 })
 

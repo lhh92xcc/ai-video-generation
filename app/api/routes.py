@@ -170,7 +170,10 @@ from app.services.episode_task_plan_service import (
     EpisodeTaskPlanEpisodeMismatchError,
     EpisodeTaskPlanService,
 )
-from app.services.production_orchestrator import ProductionOrchestrator
+from app.services.production_orchestrator import (
+    ProductionOrchestrator,
+    ProductionRunNotFoundError,
+)
 from app.storage.protocol import StorageError
 
 router = APIRouter()
@@ -335,6 +338,25 @@ def _runtime_health_service(request: Request):
 
 def _cleanup_service(request: Request):
     return request.app.state.cleanup_service
+
+
+async def _refresh_production_after_asset_change(
+    request: Request,
+    project_id: UUID,
+) -> None:
+    """Refresh shot bindings and wake a blocked automatic Run.
+
+    Asset review is a successful user mutation even when a downstream Provider
+    is temporarily unavailable. The Run remains durably blocked and the Worker
+    scheduler can retry it later, so a Provider error must not turn a completed
+    review into an HTTP 500.
+    """
+
+    await _novel_service(request).refresh_project_shot_asset_bindings(project_id)
+    try:
+        await _production_orchestrator(request).tick_project(project_id)
+    except Exception:
+        return None
 
 
 def _identity(request: Request) -> ActorIdentity:
@@ -1195,7 +1217,9 @@ async def get_story_bible(request: Request, project_id: UUID) -> StoryBibleRecor
 async def sync_story_bible_assets(request: Request, project_id: UUID) -> list[AssetRecord]:
     try:
         await _require_project_permission(request, project_id, ProjectPermission.EDIT_ASSET)
-        return await _asset_service(request).sync_story_bible_assets(project_id)
+        assets = await _asset_service(request).sync_story_bible_assets(project_id)
+        await _refresh_production_after_asset_change(request, project_id)
+        return assets
     except NovelProjectNotFoundError as exc:
         raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
     except StoryBibleNotFoundError as exc:
@@ -1215,7 +1239,9 @@ async def create_asset(
 ) -> AssetRecord:
     try:
         await _require_project_permission(request, project_id, ProjectPermission.EDIT_ASSET)
-        return await _asset_service(request).create_asset(project_id, payload)
+        asset = await _asset_service(request).create_asset(project_id, payload)
+        await _refresh_production_after_asset_change(request, project_id)
+        return asset
     except NovelProjectNotFoundError as exc:
         raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
     except StoryBibleNotFoundError as exc:
@@ -1333,6 +1359,7 @@ async def review_project_assets(
                     },
                 )
             )
+        await _refresh_production_after_asset_change(request, project_id)
         return results
     except NovelProjectNotFoundError as exc:
         raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
@@ -1385,6 +1412,7 @@ async def create_asset_version(
                 },
             )
         )
+        await _refresh_production_after_asset_change(request, saved.project_id)
         return saved
     except AssetNotFoundError as exc:
         raise ApiError(404, "ASSET_NOT_FOUND", "Asset was not found") from exc
@@ -1427,6 +1455,7 @@ async def review_asset(
                 },
             )
         )
+        await _refresh_production_after_asset_change(request, result.asset.project_id)
         return result
     except AssetNotFoundError as exc:
         raise ApiError(404, "ASSET_NOT_FOUND", "Asset was not found") from exc
@@ -1640,6 +1669,43 @@ async def start_production_run(
         raise ApiError(409, "NOVEL_SOURCE_REQUIRED", "Upload a novel source before starting production") from exc
     except ProviderProfileError as exc:
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
+
+
+@router.get(
+    "/api/v1/novel-projects/{project_id}/production-runs/latest",
+    response_model=ProductionRunResponse,
+    tags=["novel-tasks"],
+)
+async def get_latest_production_run(
+    request: Request,
+    project_id: UUID,
+) -> ProductionRunResponse:
+    """Restore the latest automatic Run after a page or API restart."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.READ)
+        return await _production_orchestrator(request).get_latest_run(project_id)
+    except ProductionRunNotFoundError as exc:
+        raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "No production Run exists for this project") from exc
+
+
+@router.get(
+    "/api/v1/novel-projects/{project_id}/production-runs/{run_id}",
+    response_model=ProductionRunResponse,
+    tags=["novel-tasks"],
+)
+async def get_production_run(
+    request: Request,
+    project_id: UUID,
+    run_id: UUID,
+) -> ProductionRunResponse:
+    """Return one automatic Run reconstructed from durable task markers."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.READ)
+        return await _production_orchestrator(request).get_run(project_id, run_id)
+    except ProductionRunNotFoundError as exc:
+        raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "Production Run was not found") from exc
 
 
 @router.get(

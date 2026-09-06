@@ -252,6 +252,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             finished = await store.get_task(task_id)
             if finished is not None and finished.status == TaskStatus.SUCCEEDED:
                 await production_orchestrator.on_task_finished(task_id)
+            elif finished is not None and finished.status == TaskStatus.FAILED:
+                await production_orchestrator.on_task_failed(task_id)
 
         task_queue.set_handler(run_in_process_task)
 

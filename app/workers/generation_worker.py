@@ -311,6 +311,12 @@ async def run_worker() -> None:
                 continue
             if finished.status == TaskStatus.FAILED:
                 await _maybe_auto_retry(finished, service, settings)
+                latest = await store.get_task(task_id)
+                if latest is not None and latest.status == TaskStatus.FAILED:
+                    try:
+                        await production_orchestrator.on_task_failed(task_id)
+                    except Exception:
+                        logger.exception("automatic DAG failure state update failed task_id=%s", task_id)
             elif finished.status == TaskStatus.SUCCEEDED and settings.worker_scheduler_enabled:
                 try:
                     await production_orchestrator.on_task_finished(task_id)

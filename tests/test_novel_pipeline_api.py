@@ -448,6 +448,43 @@ def test_episode_shots_keep_unresolved_asset_requirements(client: TestClient) ->
     assert all(shot["unresolved_asset_requirements"] for shot in shots.json()["shots"])
 
 
+def test_asset_review_rebinds_an_existing_shot_list(client: TestClient) -> None:
+    project = client.post(
+        "/api/v1/novel-projects",
+        json={"title": "审核后重新绑定", "target_episode_count": 1},
+    ).json()
+    project_id = project["id"]
+    client.post(
+        f"/api/v1/novel-projects/{project_id}/sources",
+        files={"file": ("novel.txt", "第一章\n主角在雨夜发现线索。".encode("utf-8"), "text/plain")},
+    ).raise_for_status()
+    client.post(f"/api/v1/novel-projects/{project_id}/story-bible/generate").raise_for_status()
+    episode_id = client.post(
+        f"/api/v1/novel-projects/{project_id}/episodes/plan"
+    ).json()[0]["id"]
+    client.post(f"/api/v1/episodes/{episode_id}/script/generate").raise_for_status()
+
+    before = client.post(f"/api/v1/episodes/{episode_id}/shots/generate")
+    assert before.status_code == 201, before.text
+    assert before.json()["version"] == 1
+    assert all(shot["unresolved_asset_requirements"] for shot in before.json()["shots"])
+
+    synced = client.post(f"/api/v1/novel-projects/{project_id}/assets/sync")
+    assert synced.status_code == 201, synced.text
+    review = client.post(
+        f"/api/v1/novel-projects/{project_id}/assets/review-batch",
+        json={"reviewer": "rebind-test", "comment": "资产已核对"},
+    )
+    assert review.status_code == 201, review.text
+
+    after = client.get(f"/api/v1/episodes/{episode_id}/shots")
+    assert after.status_code == 200, after.text
+    assert after.json()["version"] > before.json()["version"]
+    assert all(shot["asset_refs"] for shot in after.json()["shots"])
+    assert all(shot["unresolved_asset_requirements"] == [] for shot in after.json()["shots"])
+    assert all(shot["asset_binding_warnings"] == [] for shot in after.json()["shots"])
+
+
 def test_episode_shots_require_script(client: TestClient) -> None:
     project = client.post(
         "/api/v1/novel-projects", json={"title": "前置条件", "target_episode_count": 1}

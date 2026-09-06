@@ -1742,6 +1742,11 @@ class ProductionRunCreateRequest(EpisodeTaskPlanCreateRequest):
     advances into the episode production planner.
     """
 
+    # This endpoint is deliberately different from the backwards-compatible
+    # episode planner above: a production Run must continue beyond script and
+    # shot generation. A literal rejects an accidental ``false`` from a stale
+    # client instead of silently creating a content-only Run.
+    production_mode: Literal[True] = True
     target_episode_count: int | None = Field(default=None, ge=1, le=100)
 
 

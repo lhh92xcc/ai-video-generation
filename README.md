@@ -122,9 +122,11 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `305 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `307 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
+
+`POST /api/v1/novel-projects/{project_id}/production-runs` 是完整小说到成片的专用入口，默认且强制开启 `production_mode`；如果旧客户端显式传入 `false`，接口会拒绝请求，避免误创建只生成剧本/分镜的内容层计划。需要保持内容层兼容行为时，请使用 `POST /api/v1/novel-projects/{project_id}/episode-task-plans`，该接口仍默认 `production_mode=false`。
 
 ## 当前边界
 

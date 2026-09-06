@@ -665,6 +665,30 @@ class NovelService:
             raise ShotListNotFoundError
         return shot_list
 
+    async def refresh_project_shot_asset_bindings(
+        self,
+        project_id: UUID,
+    ) -> list[ShotListRecord]:
+        """Rebind existing shot lists against the latest reviewed asset versions.
+
+        Assets can be created or approved after a shot list has already been
+        generated. Persist a new shot-list version only when the binding
+        result changes, so a scheduler tick remains idempotent.
+        """
+
+        await self.get_project(project_id)
+        refreshed: list[ShotListRecord] = []
+        for episode in await self._store.list_episodes(project_id):
+            current = await self._store.get_latest_shot_list(episode.id)
+            if current is None:
+                continue
+            rebound = await self._bind_shot_assets(current)
+            if rebound.shots == current.shots:
+                refreshed.append(current)
+                continue
+            refreshed.append(await self._store.save_shot_list(rebound))
+        return refreshed
+
     async def _bind_shot_assets(self, shot_list: ShotListRecord) -> ShotListRecord:
         """Resolve provider asset names to the latest stable asset identities."""
 
