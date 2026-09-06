@@ -64,8 +64,8 @@ signed_url_expire_seconds = 900
 
 [llm]
 # mock 适合本地开发；配置 AI_VIDEO_LLM_PROVIDER=openai_compatible 后接入真实模型。
-# ollama 使用本机 Ollama 的 OpenAI-compatible 接口，不需要云端 Key；本机 16GB Mac 推荐
-# qwen2.5:7b（已量化）作为当前稳定基线。
+# ollama 使用本机 Ollama 的 OpenAI-compatible 接口，不需要云端 Key；本地资源受限设备可优先
+# 使用 qwen2.5:7b（已量化）作为稳定基线，实际模型按宿主机资源调整。
 # 信息短视频和小说 StoryBible、分集、分场剧本、分镜均已支持 mock/openai_compatible；长文本调用通过异步 Worker 执行。
 # 当前没有 API Key 时请使用 mock；切换 openai_compatible 但缺少 Key 会返回 PROVIDER_AUTH_FAILED，不会发起外部请求。
 # SiliconFlow 兼容接口示例：base_url = "https://api.siliconflow.cn/v1"、model = "deepseek-ai/DeepSeek-V3"。
@@ -280,7 +280,7 @@ base_url = ""
 model = "whisper-1"
 request_timeout_seconds = 180
 binary = "whisper-cli"
-# whisper_cpp 需要本机安装 whisper-cpp，并下载一个 GGML 模型文件；16GB Mac 建议 small。
+# whisper_cpp 需要本机安装 whisper-cpp，并下载一个 GGML 模型文件；资源受限设备可从 small 开始。
 model_path = ""
 threads = 4
 # 环境变量覆盖：AI_VIDEO_ASR_PROVIDER、AI_VIDEO_ASR_BASE_URL、

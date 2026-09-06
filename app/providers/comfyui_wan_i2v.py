@@ -23,7 +23,7 @@ class ComfyUIWanI2VVideoGenerationProvider:
     The workflow is intentionally external. It must contain the target Wan2.1
     nodes and expose the ``__AI_VIDEO_*__`` placeholders documented in the
     project deployment guide. This keeps ComfyUI custom-node details outside
-    the task service and makes the 16GB Mac profile replaceable.
+    the task service and makes any host-specific local profile replaceable.
     """
 
     def __init__(

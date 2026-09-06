@@ -1,6 +1,6 @@
 """Local Ken Burns-style motion over a still keyframe.
 
-This is the default video stage for a 16GB Apple Silicon portfolio setup. It
+This is a low-resource local video stage for development and portfolio setup. It
 does not pretend to be an I2V model: it turns a reviewed keyframe into a small,
 playable MP4 using FFmpeg pan/zoom motion, with a deterministic color-card
 fallback when no keyframe has been supplied yet.
