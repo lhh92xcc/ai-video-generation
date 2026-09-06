@@ -20,6 +20,11 @@ const initialView = supportedViews.includes(initialViewParam as AppView) ? initi
 const activeView = ref<AppView>(initialView)
 const activeSurface = ref<AppSurface>(initialSurface === 'creator' ? 'creator' : 'operator')
 
+function openOperator(view: AppView = 'overview') {
+  activeSurface.value = 'operator'
+  activeView.value = view
+}
+
 const {
   profiles,
   availableProfiles,
@@ -63,7 +68,7 @@ onMounted(refreshHealth)
 </script>
 
 <template>
-  <CreatorHome v-if="activeSurface === 'creator'" @open-operator="activeSurface = 'operator'" />
+  <CreatorHome v-if="activeSurface === 'creator'" @open-operator="openOperator" />
   <div v-else class="app-shell">
     <aside class="sidebar">
       <div class="brand-lockup">
@@ -270,7 +275,7 @@ onMounted(refreshHealth)
         <SubtitleTaskView v-else-if="activeView === 'subtitle'" @submitted="activeView = 'tasks'" />
         <TaskCenter v-else-if="activeView === 'tasks'" />
         <ProductionQueue v-else-if="activeView === 'queue'" />
-        <ArtifactLibrary v-else-if="activeView === 'artifacts'" />
+        <ArtifactLibrary v-else-if="activeView === 'artifacts'" @open-tasks="activeView = 'tasks'" />
         <ScriptAssetWorkbench v-else />
       </main>
     </div>

@@ -2,19 +2,25 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiClientError } from '../api/client'
 import { getNovelProjects } from '../api/novels'
-import { getArtifacts } from '../api/tasks'
-import type { ArtifactRecord, NovelProjectRecord } from '../types/task'
+import { getArtifacts, getTasks } from '../api/tasks'
+import type { ArtifactRecord, GenerationTaskRecord, NovelProjectRecord } from '../types/task'
+import { friendlyErrorMessage, formatTaskKind, hasBinaryArtifact, isActiveTask, isMediaTaskKind } from '../utils/taskStatus'
 import MediaPreview from './MediaPreview.vue'
 
 const projects = ref<NovelProjectRecord[]>([])
 const artifacts = ref<ArtifactRecord[]>([])
+const tasks = ref<GenerationTaskRecord[]>([])
 const selectedArtifactId = ref<string | null>(null)
 const projectId = ref('')
 const artifactType = ref('all')
 const searchQuery = ref('')
 const loading = ref(false)
+const loadingTasks = ref(false)
 const loadingProjects = ref(false)
 const errorMessage = ref<string | null>(null)
+const tasksError = ref<string | null>(null)
+
+const emit = defineEmits<{ openTasks: [] }>()
 
 const typeLabels: Record<string, string> = {
   all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图', script_json: '脚本 JSON', story_bible_json: 'StoryBible', episode_outline_json: '分集大纲', episode_script_json: '分场剧本', shot_list_json: '分镜 JSON',
@@ -46,14 +52,76 @@ const artifactCounts = computed(() => ({
 }))
 const filteredArtifacts = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return orderedArtifacts.value
-  return orderedArtifacts.value.filter((artifact) => [
+  const typeFiltered = artifactType.value === 'all'
+    ? orderedArtifacts.value
+    : orderedArtifacts.value.filter((artifact) => artifact.type === artifactType.value)
+  if (!query) return typeFiltered
+  return typeFiltered.filter((artifact) => [
     typeLabels[artifact.type] ?? artifact.type,
     artifact.type,
     artifact.provider,
     artifact.id,
     String(artifact.metadata.storage_key ?? ''),
   ].join(' ').toLowerCase().includes(query))
+})
+const selectedProject = computed(() => projects.value.find((project) => project.id === projectId.value) ?? null)
+const visualArtifactCount = computed(() => artifacts.value.filter(isVisualArtifact).length)
+const visualTasks = computed(() => tasks.value.filter((task) => isVisualTaskKind(task.kind)))
+const activeVisualTaskCount = computed(() => visualTasks.value.filter(isActiveTask).length)
+const failedVisualTasks = computed(() => visualTasks.value.filter((task) => task.status === 'failed'))
+const succeededVisualTasksWithoutArtifact = computed(() => visualTasks.value.filter((task) => task.status === 'succeeded' && !hasBinaryArtifact(task)))
+const visualFailureGroups = computed(() => {
+  const groups = new Map<string, { kind: string; code: string; message: string; count: number }>()
+  for (const task of failedVisualTasks.value) {
+    const code = task.error?.code ?? 'TASK_FAILED'
+    const key = `${task.kind}:${code}`
+    const existing = groups.get(key)
+    if (existing) existing.count += 1
+    else groups.set(key, { kind: task.kind, code, message: friendlyErrorMessage(task.error), count: 1 })
+  }
+  return [...groups.values()].sort((left, right) => right.count - left.count)
+})
+const visualStatusTone = computed<'ready' | 'working' | 'attention' | 'empty' | 'unknown'>(() => {
+  if (visualArtifactCount.value > 0) return 'ready'
+  if (loadingTasks.value) return 'working'
+  if (tasksError.value) return 'unknown'
+  if (activeVisualTaskCount.value > 0) return 'working'
+  if (failedVisualTasks.value.length > 0 || succeededVisualTasksWithoutArtifact.value.length > 0) return 'attention'
+  return 'empty'
+})
+const visualStatusTitle = computed(() => {
+  if (visualArtifactCount.value > 0) return '图片和视频产物可预览'
+  if (loadingTasks.value) return '正在同步图片和视频任务'
+  if (tasksError.value) return '生成任务状态暂时不可用'
+  if (activeVisualTaskCount.value > 0) return '图片和视频正在生成'
+  if (failedVisualTasks.value.length > 0) return '生成任务失败，当前没有图片或视频产物'
+  if (succeededVisualTasksWithoutArtifact.value.length > 0) return '任务已完成，但产物内容不可读取'
+  return '当前项目还没有图片或视频产物'
+})
+const visualStatusDescription = computed(() => {
+  if (visualArtifactCount.value > 0) return `已找到 ${visualArtifactCount.value} 个可预览的图片/视频文件；点击左侧条目即可在右侧打开。`
+  if (loadingTasks.value) return '正在读取任务状态。页面会区分生成中、失败和存储异常，不会把它们误报为浏览器故障。'
+  if (tasksError.value) return '无法读取任务状态，因此暂时不能判断是尚未生成还是生成失败；请打开生产任务查看。'
+  if (activeVisualTaskCount.value > 0) return `当前有 ${activeVisualTaskCount.value} 个图片/视频任务处理中，完成后刷新本页即可预览。`
+  if (failedVisualTasks.value.length > 0) {
+    const firstGroup = visualFailureGroups.value[0]
+    const reason = firstGroup ? `${formatTaskKind(firstGroup.kind)} ${firstGroup.count} 个：${firstGroup.message}` : '请查看任务详情。'
+    return `这不是浏览器预览故障。${reason} 可前往生产任务重试，历史失败记录会保留。`
+  }
+  if (succeededVisualTasksWithoutArtifact.value.length > 0) return '任务状态显示成功，但没有可读取的二进制 Artifact；请检查 Worker 和对象存储。'
+  return projectId.value ? '请先完成分镜、参考图或视频片段任务；结构化文件和音频不会自动变成图片/视频。' : '选择一个项目可查看它的生成状态；全局列表会显示所有可预览产物。'
+})
+const emptyStateTitle = computed(() => {
+  if (artifacts.value.length > 0) return artifactType.value === 'all' ? '没有匹配的资产' : `暂无${typeLabels[artifactType.value] ?? '该类型'}产物`
+  if (loadingTasks.value) return '正在同步任务状态'
+  if (tasksError.value) return '暂时无法判断产物状态'
+  if (activeVisualTaskCount.value > 0) return '图片或视频正在生成'
+  if (failedVisualTasks.value.length > 0) return '图片或视频任务失败'
+  return projectId.value ? '该项目暂无可预览产物' : '暂无可预览资产'
+})
+const emptyStateDescription = computed(() => {
+  if (artifacts.value.length > 0) return searchQuery.value.trim() ? '尝试更换搜索词或清空搜索。' : '当前筛选条件下没有结果，请切换资产类型。'
+  return visualStatusDescription.value
 })
 const selectedIdentityAudit = computed<Record<string, unknown> | null>(() => {
   const value = selectedArtifact.value?.metadata.identity_audit
@@ -65,6 +133,14 @@ const selectedIdentityStatus = computed(() => String(selectedIdentityAudit.value
 function displayError(error: unknown) {
   if (error instanceof ApiClientError) return `${error.message} · ${error.code}`
   return '媒体资产暂时无法读取，请稍后重试。'
+}
+
+function isVisualArtifact(artifact: ArtifactRecord) {
+  return isVideoArtifact(artifact) || artifact.type === 'reference_image'
+}
+
+function isVisualTaskKind(kind: string) {
+  return isMediaTaskKind(kind)
 }
 
 function metadataText(artifact: ArtifactRecord, key: string, fallback = '—') {
@@ -159,27 +235,45 @@ async function loadProjects() {
 
 async function loadArtifacts() {
   loading.value = true
+  loadingTasks.value = true
   errorMessage.value = null
+  tasksError.value = null
   selectedArtifactId.value = null
   try {
-    const response = await getArtifacts({
-      projectId: projectId.value || undefined,
-      type: artifactType.value === 'all' ? undefined : artifactType.value,
-      limit: 200,
-      expiresInSeconds: 3600,
-    })
-    artifacts.value = response.items
-    const initialArtifactId = preferredArtifactId(response.items)
+    const [artifactResult, taskResult] = await Promise.allSettled([
+      getArtifacts({
+        projectId: projectId.value || undefined,
+        limit: 200,
+        expiresInSeconds: 3600,
+      }),
+      getTasks({ projectId: projectId.value || undefined, limit: 200 }),
+    ])
+    if (artifactResult.status === 'rejected') throw artifactResult.reason
+    artifacts.value = artifactResult.value.items
+    if (taskResult.status === 'fulfilled') tasks.value = taskResult.value.items
+    else {
+      tasks.value = []
+      tasksError.value = displayError(taskResult.reason)
+    }
+    const initialArtifactId = preferredArtifactId(filteredArtifacts.value)
     if (initialArtifactId) selectArtifact(initialArtifactId)
   } catch (error) {
     artifacts.value = []
+    tasks.value = []
     errorMessage.value = displayError(error)
   } finally {
     loading.value = false
+    loadingTasks.value = false
   }
 }
 
-watch([projectId, artifactType], loadArtifacts)
+watch(projectId, loadArtifacts)
+watch(filteredArtifacts, (items) => {
+  if (!items.some((artifact) => artifact.id === selectedArtifactId.value)) {
+    const initialArtifactId = preferredArtifactId(items)
+    selectedArtifactId.value = initialArtifactId
+  }
+})
 onMounted(async () => {
   await loadProjects()
   await loadArtifacts()
@@ -200,16 +294,24 @@ onMounted(async () => {
     <label class="form-field"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects"><option value="">全部项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
     <label class="form-field"><span>资产类型</span><select v-model="artifactType"><option v-for="(label, value) in typeLabels" :key="value" :value="value">{{ label }}</option></select></label>
     <label class="form-field artifact-search-field"><span>搜索资产</span><input v-model="searchQuery" type="search" placeholder="类型、Provider 或 Artifact ID" /></label>
-      <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>预览优先走同源授权接口，签名链接仅作为回退；不会暴露磁盘路径。视频 {{ artifactCounts.video }} · 图片 {{ artifactCounts.image }} · 音频 {{ artifactCounts.audio }}</span></div>
+    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>预览优先走同源授权接口，签名链接仅作为回退；不会暴露磁盘路径。视频 {{ artifactCounts.video }} · 图片 {{ artifactCounts.image }} · 音频 {{ artifactCounts.audio }}</span></div>
   </section>
 
   <div v-if="errorMessage" class="alert-card error-card"><div><strong>媒体资产读取失败</strong><p>{{ errorMessage }}</p></div><button class="secondary-button" type="button" @click="loadArtifacts">重试</button></div>
+
+  <section v-if="projectId" class="artifact-task-status" :class="`is-${visualStatusTone}`" aria-live="polite">
+    <div class="artifact-task-status-copy"><span class="artifact-task-status-icon">{{ visualStatusTone === 'ready' ? '✓' : visualStatusTone === 'working' ? '↻' : visualStatusTone === 'attention' ? '!' : 'i' }}</span><div><strong>{{ selectedProject?.title || '当前项目' }} · {{ visualStatusTitle }}</strong><p>{{ visualStatusDescription }}</p></div></div>
+    <div class="artifact-task-status-metrics"><span>图片/视频 <b>{{ visualArtifactCount }}</b></span><span>处理中 <b>{{ activeVisualTaskCount }}</b></span><span>失败 <b>{{ failedVisualTasks.length }}</b></span></div>
+    <button v-if="visualStatusTone !== 'ready' && !tasksError" class="artifact-task-status-action" type="button" @click="emit('openTasks')">查看生产任务 <span>↗</span></button>
+    <button v-else-if="visualStatusTone === 'ready'" class="artifact-task-status-action secondary" type="button" @click="artifactType = 'reference_image'">只看参考图 <span>→</span></button>
+  </section>
+  <div v-if="tasksError" class="artifact-task-status-error"><strong>任务状态读取失败</strong><span>{{ tasksError }}</span><button type="button" @click="loadArtifacts">重新读取</button></div>
 
   <section class="artifact-workspace">
     <article class="card artifact-list-card">
       <div class="card-header table-heading"><div><h2>资产列表</h2><p>{{ filteredArtifacts.length }} 个结果<span v-if="filteredArtifacts.length !== artifacts.length"> · 共 {{ artifacts.length }} 个</span>，点击查看详情</p></div><span class="table-count">已加载</span></div>
       <div v-if="loading" class="task-empty"><span class="spinner" />正在读取媒体资产…</div>
-      <div v-else-if="filteredArtifacts.length === 0" class="task-empty"><strong>{{ artifacts.length ? '没有匹配的资产' : '暂无可预览资产' }}</strong><span>{{ artifacts.length ? '尝试更换搜索词或筛选条件。' : '完成视频、音频或参考图任务后，产物会出现在这里。' }}</span></div>
+      <div v-else-if="filteredArtifacts.length === 0" class="task-empty"><strong>{{ emptyStateTitle }}</strong><span>{{ emptyStateDescription }}</span><button v-if="artifacts.length && artifactType !== 'all'" class="creator-small-button" type="button" @click="artifactType = 'all'">显示全部类型</button><button v-else-if="projectId && !tasksError" class="creator-small-button" type="button" @click="emit('openTasks')">前往生产任务</button></div>
       <div v-else class="artifact-list">
         <button v-for="artifact in filteredArtifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectArtifact(artifact.id)">
           <span class="artifact-list-thumb" :class="artifact.type"><MediaPreview :artifact="artifact" variant="thumb" :controls="false" :lazy="false" /></span>
@@ -238,6 +340,27 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.artifact-task-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -4px 0 18px; border: 1px solid #dfe1fa; border-radius: 11px; padding: 13px 15px; background: linear-gradient(135deg, #f7f7ff, #fff 72%); }
+.artifact-task-status.is-ready { border-color: #d8eee1; background: linear-gradient(135deg, #f4fbf7, #fff 72%); }
+.artifact-task-status.is-attention { border-color: #f1d5d9; background: linear-gradient(135deg, #fff6f7, #fff 72%); }
+.artifact-task-status.is-working { border-color: #e3e2fb; background: linear-gradient(135deg, #f8f7ff, #fff 72%); }
+.artifact-task-status-copy { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1; }
+.artifact-task-status-icon { display: grid; place-items: center; flex: 0 0 27px; width: 27px; height: 27px; border-radius: 8px; color: #6264d9; background: #e9eaff; font-size: 12px; font-weight: 800; }
+.artifact-task-status.is-ready .artifact-task-status-icon { color: #2f956a; background: #def4e8; }
+.artifact-task-status.is-attention .artifact-task-status-icon { color: #c25763; background: #ffe7ea; }
+.artifact-task-status-copy strong, .artifact-task-status-copy p { display: block; }
+.artifact-task-status-copy strong { color: #4a546c; font-size: 10px; }
+.artifact-task-status-copy p { margin: 4px 0 0; color: #8992a5; font-size: 9px; line-height: 1.5; }
+.artifact-task-status-metrics { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
+.artifact-task-status-metrics span { border-radius: 999px; padding: 5px 7px; color: #8a93a6; background: rgba(255,255,255,.8); font-size: 8px; white-space: nowrap; }
+.artifact-task-status-metrics b { margin-left: 3px; color: #566078; font-size: 9px; }
+.artifact-task-status-action { flex: 0 0 auto; border: 1px solid #cfd1f3; border-radius: 7px; padding: 8px 10px; color: #5d60cd; background: #fff; font-size: 9px; font-weight: 700; white-space: nowrap; }
+.artifact-task-status-action:hover { border-color: #9fa2e8; background: #f8f8ff; }
+.artifact-task-status-action.secondary { border-color: #d9e9df; color: #398767; }
+.artifact-task-status-error { display: flex; align-items: center; gap: 9px; margin: -4px 0 18px; border: 1px solid #f1d5d9; border-radius: 8px; padding: 9px 11px; color: #b14e5c; background: #fff5f6; font-size: 9px; }
+.artifact-task-status-error strong { flex: 0 0 auto; }
+.artifact-task-status-error span { min-width: 0; flex: 1; }
+.artifact-task-status-error button { flex: 0 0 auto; border: 0; color: #b14e5c; background: transparent; font-size: 9px; font-weight: 700; }
 .artifact-list-thumb { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; overflow: hidden; border: 1px solid #e8eaf2; border-radius: 9px; background: #f6f7fb; }
 .artifact-list-thumb img, .artifact-list-thumb video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .artifact-list-thumb.video_clip, .artifact-list-thumb.lip_synced_video, .artifact-list-thumb.rendered_video { background: #eef0ff; }
@@ -257,4 +380,12 @@ onMounted(async () => {
 .artifact-identity-audit-metrics { display: flex; flex-wrap: wrap; gap: 7px; }
 .artifact-identity-audit-metrics span { border-radius: 999px; padding: 3px 7px; color: inherit; background: rgba(255, 255, 255, .72); }
 .artifact-identity-audit-metrics strong { color: var(--text); }
+@media (max-width: 720px) {
+  .artifact-task-status { align-items: stretch; flex-direction: column; }
+  .artifact-task-status-metrics { flex-basis: auto; }
+  .artifact-task-status-action { width: 100%; }
+  .artifact-task-status-error { align-items: flex-start; flex-wrap: wrap; }
+  .artifact-task-status-error span { flex-basis: 100%; }
+  .artifact-task-status-error button { margin-left: auto; }
+}
 </style>

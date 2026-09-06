@@ -43,7 +43,12 @@ const previewUrl = computed(() => {
   if (fallbackUsed.value) return signedUrl.value
   return contentUrl.value || signedUrl.value
 })
-const downloadUrl = computed(() => contentUrl.value ? getArtifactContentUrl(props.artifact.id, true) : signedUrl.value)
+const downloadUrl = computed(() => fallbackUsed.value && signedUrl.value
+  ? signedUrl.value
+  : contentUrl.value
+    ? getArtifactContentUrl(props.artifact.id, true)
+    : signedUrl.value)
+const previewSourceLabel = computed(() => fallbackUsed.value ? '临时链接回退' : contentUrl.value ? '服务端安全预览' : signedUrl.value ? '签名链接预览' : '未登记文件地址')
 
 const mediaKind = computed<'image' | 'video' | 'audio' | 'document'>(() => {
   if (['reference_image'].includes(props.artifact.type)) return 'image'
@@ -167,8 +172,8 @@ onUnmounted(() => intersectionObserver?.disconnect())
 
     <div v-else-if="loadFailed" class="media-preview-message">
       <span class="media-preview-message-icon">!</span>
-      <strong>预览暂时失败</strong>
-      <small>已尝试服务端安全通道和临时链接</small>
+      <strong>文件加载失败</strong>
+      <small>已尝试{{ contentUrl && signedUrl ? '服务端安全通道和临时链接' : '当前可用的文件地址' }}；这不代表任务没有生成产物。</small>
       <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
     </div>
 
@@ -180,13 +185,14 @@ onUnmounted(() => intersectionObserver?.disconnect())
 
     <div v-else class="media-preview-message">
       <span class="media-preview-message-icon">i</span>
-      <strong>暂无可预览文件</strong>
-      <small>该 Artifact 没有可读取的二进制内容</small>
+      <strong>未找到媒体文件</strong>
+      <small>Artifact 记录存在，但服务端没有登记可读取的文件地址；这不是浏览器预览故障。</small>
     </div>
 
     <a v-if="showDownload && downloadUrl" class="media-preview-download" :href="downloadUrl" target="_blank" rel="noopener" download>
       下载文件 <span>↓</span>
     </a>
+    <span v-if="!isThumb && (canPreview || loadFailed || downloadUrl)" class="media-preview-source">{{ previewSourceLabel }}</span>
   </div>
 </template>
 
@@ -211,4 +217,5 @@ onUnmounted(() => intersectionObserver?.disconnect())
 .media-preview-message button:hover { background: rgba(255,255,255,.18); }
 .media-preview-download { position: absolute; right: 10px; bottom: 10px; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; padding: 6px 8px; color: #fff; background: rgba(16,19,29,.72); font-size: 9px; text-decoration: none; }
 .media-preview-download:hover { background: rgba(16,19,29,.92); }
+.media-preview-source { position: absolute; top: 10px; left: 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 4px 7px; color: #d9deed; background: rgba(16,19,29,.62); font-size: 8px; }
 </style>

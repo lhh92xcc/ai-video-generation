@@ -5,9 +5,12 @@ import { createNovelProject, getNovelProjects } from '../api/novels'
 import { getArtifacts, getTasks } from '../api/tasks'
 import CreatorProjectWorkspace from './CreatorProjectWorkspace.vue'
 import MediaPreview from './MediaPreview.vue'
+import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import type { ArtifactRecord, GenerationTaskRecord, NovelProjectRecord, TaskStatus } from '../types/task'
 
-const emit = defineEmits<{ openOperator: [] }>()
+type OperatorView = 'overview' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
+
+const emit = defineEmits<{ openOperator: [view?: OperatorView] }>()
 
 const projects = ref<NovelProjectRecord[]>([])
 const tasks = ref<GenerationTaskRecord[]>([])
@@ -41,27 +44,16 @@ const recentTaskGroups = computed(() => {
 })
 const canCreate = computed(() => Boolean(title.value.trim()) && rightsConfirmed.value && !creating.value && sourceMode.value === 'novel')
 
-const taskLabels: Record<string, string> = {
-  novel_story_bible: '故事设定分析',
-  novel_episode_plan: '分集大纲',
-  novel_episode_script: '分场剧本',
-  novel_shot_list: '分镜生成',
-  video_clip: '视频片段',
-  video_assembly: '成片合成',
-  audio_narration: '旁白配音',
-  subtitle_asr: '字幕识别',
-}
-
-const statusLabels: Record<TaskStatus, string> = {
-  created: '已创建', queued: '排队中', running: '处理中', succeeded: '已完成', failed: '失败', canceled: '已取消',
-}
-
 function formatTaskKind(kind: string) {
-  return taskLabels[kind] ?? kind.replaceAll('_', ' ')
+  return formatTaskKindLabel(kind)
 }
 
 function formatStatus(status: TaskStatus) {
-  return statusLabels[status] ?? status
+  return formatTaskStatus(status)
+}
+
+function projectStatusLabel(status: string) {
+  return status === 'ready' ? '可继续制作' : status === 'failed' ? '需要处理' : '草稿'
 }
 
 function formatTime(value: string) {
@@ -70,7 +62,7 @@ function formatTime(value: string) {
 }
 
 function displayError(error: unknown) {
-  if (error instanceof ApiClientError) return `${error.message} · ${error.code}`
+  if (error instanceof ApiClientError) return taskErrorDetail({ code: error.code, message: error.message })
   return '暂时无法读取工作区数据，请稍后重试。'
 }
 
@@ -216,20 +208,20 @@ onMounted(refreshDashboard)
           <div v-if="loading" class="creator-empty"><span class="spinner" />正在读取项目…</div>
           <div v-else-if="projects.length === 0" class="creator-empty"><strong>还没有项目</strong><span>从上方开始创建你的第一个项目。</span><button class="creator-small-button" type="button" @click="openCreatePanel">创建项目</button></div>
           <div v-else class="creator-project-list">
-            <button v-for="project in projects.slice(0, 4)" :key="project.id" class="creator-project-row" type="button" @click="openProject(project.id)"><span class="creator-project-cover">{{ project.title.slice(0, 1) }}</span><div><strong>{{ project.title }}</strong><small>{{ project.target_episode_count }} 集 · 每集约 {{ project.target_episode_duration_seconds }} 秒</small></div><span class="creator-project-status">{{ project.status === 'ready' ? '已就绪' : '草稿' }}</span><b>→</b></button>
+            <button v-for="project in projects.slice(0, 4)" :key="project.id" class="creator-project-row" type="button" @click="openProject(project.id)"><span class="creator-project-cover">{{ project.title.slice(0, 1) }}</span><div><strong>{{ project.title }}</strong><small>{{ project.target_episode_count }} 集 · 每集约 {{ project.target_episode_duration_seconds }} 秒</small></div><span class="creator-project-status">{{ projectStatusLabel(project.status) }}</span><b>→</b></button>
           </div>
         </article>
 
         <article id="progress" class="creator-panel creator-task-panel">
-          <div class="creator-panel-heading"><div><p class="creator-eyebrow">LIVE PIPELINE</p><h2>制作进度</h2></div><button class="creator-small-link" type="button" @click="emit('openOperator')">查看全部 <span>→</span></button></div>
+          <div class="creator-panel-heading"><div><p class="creator-eyebrow">LIVE PIPELINE</p><h2>制作进度</h2></div><button class="creator-small-link" type="button" @click="emit('openOperator', 'tasks')">查看全部 <span>→</span></button></div>
           <div v-if="loading" class="creator-empty"><span class="spinner" />正在读取任务…</div>
           <div v-else-if="tasks.length === 0" class="creator-empty"><strong>暂无制作任务</strong><span>创建项目后，任务进度会显示在这里。</span></div>
-          <div v-else class="creator-task-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`" class="creator-task-row"><span class="creator-task-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ group.task.error?.code ? `${group.task.error.code} · ` : '' }}{{ formatTime(group.task.updated_at) }}</small></div><span class="creator-task-status" :class="group.task.status">{{ formatStatus(group.task.status) }}</span></div></div>
+          <div v-else class="creator-task-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`" class="creator-task-row"><span class="creator-task-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ group.task.error ? friendlyErrorMessage(group.task.error) : formatTime(group.task.updated_at) }}</small></div><span class="creator-task-status" :class="group.task.status">{{ formatStatus(group.task.status) }}</span></div></div>
         </article>
       </section>
 
       <section v-if="videos.length && !activeProject" class="creator-section creator-output-section">
-        <div class="creator-section-heading"><div><p class="creator-eyebrow">YOUR OUTPUTS</p><h2>最近成片</h2><p>已完成的视频可以在媒体资产中预览和下载。</p></div><button class="creator-link-button" type="button" @click="emit('openOperator')">打开媒体资产 <span>→</span></button></div>
+        <div class="creator-section-heading"><div><p class="creator-eyebrow">YOUR OUTPUTS</p><h2>最近成片</h2><p>已完成的视频可以在媒体资产中预览和下载。</p></div><button class="creator-link-button" type="button" @click="emit('openOperator', 'artifacts')">打开媒体资产 <span>→</span></button></div>
         <div class="creator-output-strip"><article v-for="video in videos.slice(0, 3)" :key="video.id" class="creator-output-card"><div class="creator-output-thumbnail"><MediaPreview :artifact="video" variant="thumb" :controls="false" alt="最近成片预览" /><span class="creator-output-play">▶</span><small>{{ video.metadata.duration_seconds ? `${Number(video.metadata.duration_seconds).toFixed(0)}s` : 'VIDEO' }}</small></div><div><strong>成片视频</strong><small>{{ video.provider }} · {{ formatTime(video.created_at) }}</small></div></article></div>
       </section>
     </main>

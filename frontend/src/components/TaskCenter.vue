@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ApiClientError } from '../api/client'
 import { createTaskBatch, getTaskBatches, getTasks, resumeTaskBatch, retryTask } from '../api/tasks'
+import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import type { GenerationTaskRecord, TaskBatchRecord, TaskStatus } from '../types/task'
 
 const tasks = ref<GenerationTaskRecord[]>([])
@@ -26,22 +27,14 @@ const selectedProjectId = computed(() => {
 })
 const batchCanCreate = computed(() => Boolean(selectedProjectId.value && selectedTasks.value.length > 0 && batchLabel.value.trim()))
 
-const statusLabels: Record<TaskStatus, string> = {
-  created: '已创建', queued: '排队中', running: '处理中', succeeded: '已完成', failed: '失败', canceled: '已取消',
-}
-const kindLabels: Record<string, string> = {
-  subtitle_asr: 'ASR 字幕', subtitle_align: '字幕对齐', subtitle_srt: '人工字幕', audio_narration: '旁白音频', audio_bgm: 'BGM 音频',
-  video_clip: '视频片段', video_assembly: '视频合成', info_script: '信息短视频脚本',
-}
-
-function formatStatus(status: TaskStatus) { return statusLabels[status] ?? status }
-function formatKind(kind: string) { return kindLabels[kind] ?? kind }
+function formatStatus(status: TaskStatus) { return formatTaskStatus(status) }
+function formatKind(kind: string) { return formatTaskKindLabel(kind) }
 function formatTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 function displayError(error: unknown) {
-  if (error instanceof ApiClientError) return `${error.message} · ${error.code}`
+  if (error instanceof ApiClientError) return taskErrorDetail({ code: error.code, message: error.message })
   return '任务中心暂时无法读取，请稍后重试。'
 }
 
@@ -189,7 +182,7 @@ onUnmounted(() => { if (pollingTimer) window.clearInterval(pollingTimer) })
         </button>
         <div v-if="expandedTaskId === task.id" class="task-detail">
           <div class="task-detail-grid"><div><dt>Project ID</dt><dd>{{ task.project_id }}</dd></div><div><dt>当前阶段</dt><dd>{{ task.current_stage || '—' }}</dd></div><div><dt>创建时间</dt><dd>{{ formatTime(task.created_at) }}</dd></div><div><dt>Artifact</dt><dd>{{ task.artifacts.length }} 个产物</dd></div></div>
-          <div v-if="task.error" class="task-failure"><strong>{{ task.error.code }}</strong><span>{{ task.error.message }}</span><button class="secondary-button" type="button" :disabled="retryingTaskId === task.id" @click.stop="retry(task)">{{ retryingTaskId === task.id ? '重试中…' : '重试任务' }}</button></div>
+          <div v-if="task.error" class="task-failure"><strong>{{ friendlyErrorMessage(task.error) }}</strong><span>错误码：{{ task.error.code }}</span><button class="secondary-button" type="button" :disabled="retryingTaskId === task.id" @click.stop="retry(task)">{{ retryingTaskId === task.id ? '重试中…' : '重试任务' }}</button></div>
           <div v-if="task.artifacts.length" class="task-artifacts"><span>产物</span><div v-for="artifact in task.artifacts" :key="artifact.id" class="artifact-chip"><strong>{{ artifact.type }}</strong><small>{{ artifact.provider }} · {{ artifact.id }}</small></div></div>
         </div>
       </article>
