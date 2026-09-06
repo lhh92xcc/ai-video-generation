@@ -13,8 +13,12 @@ import { useProviderProfiles } from './composables/useProviderProfiles'
 type AppView = 'overview' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
 type AppSurface = 'operator' | 'creator'
 
-const activeView = ref<AppView>('overview')
-const activeSurface = ref<AppSurface>('operator')
+const initialSurface = new URLSearchParams(window.location.search).get('surface')
+const initialViewParam = new URLSearchParams(window.location.search).get('view')
+const supportedViews: AppView[] = ['overview', 'subtitle', 'tasks', 'queue', 'artifacts', 'workbench']
+const initialView = supportedViews.includes(initialViewParam as AppView) ? initialViewParam as AppView : 'overview'
+const activeView = ref<AppView>(initialView)
+const activeSurface = ref<AppSurface>(initialSurface === 'creator' ? 'creator' : 'operator')
 
 const {
   profiles,

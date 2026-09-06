@@ -4,6 +4,7 @@ import { ApiClientError } from '../api/client'
 import { createNovelProject, getNovelProjects } from '../api/novels'
 import { getArtifacts, getTasks } from '../api/tasks'
 import CreatorProjectWorkspace from './CreatorProjectWorkspace.vue'
+import MediaPreview from './MediaPreview.vue'
 import type { ArtifactRecord, GenerationTaskRecord, NovelProjectRecord, TaskStatus } from '../types/task'
 
 const emit = defineEmits<{ openOperator: [] }>()
@@ -150,7 +151,7 @@ onMounted(refreshDashboard)
     </header>
 
     <main class="creator-main">
-      <section class="creator-hero">
+      <section v-if="!activeProject" class="creator-hero">
         <div class="creator-hero-copy">
           <p class="creator-eyebrow">AI VIDEO WORKSPACE</p>
           <h1>把一个想法，<br /><span>变成可发布的视频。</span></h1>
@@ -173,7 +174,7 @@ onMounted(refreshDashboard)
         </div>
       </section>
 
-      <section v-if="errorMessage" class="creator-alert"><strong>工作区暂时不可用</strong><span>{{ errorMessage }}</span><button type="button" @click="refreshDashboard">重试</button></section>
+      <section v-if="errorMessage && !activeProject" class="creator-alert"><strong>工作区暂时不可用</strong><span>{{ errorMessage }}</span><button type="button" @click="refreshDashboard">重试</button></section>
 
       <CreatorProjectWorkspace
         v-if="activeProject"
@@ -184,13 +185,13 @@ onMounted(refreshDashboard)
         @open-operator="emit('openOperator')"
       />
 
-      <section class="creator-metrics" aria-label="工作区概览">
+      <section v-if="!activeProject" class="creator-metrics" aria-label="工作区概览">
         <article><span class="creator-metric-icon purple">✦</span><div><small>我的项目</small><strong>{{ loading ? '—' : projects.length }}</strong></div><span class="creator-metric-note">内容空间</span></article>
         <article><span class="creator-metric-icon blue">↻</span><div><small>进行中的任务</small><strong>{{ loading ? '—' : activeTasks }}</strong></div><span class="creator-metric-note" :class="{ good: activeTasks === 0 }">{{ activeTasks ? '实时处理中' : '当前空闲' }}</span></article>
         <article><span class="creator-metric-icon green">✓</span><div><small>已完成步骤</small><strong>{{ loading ? '—' : completedTasks }}</strong></div><span class="creator-metric-note good">可复用</span></article>
       </section>
 
-      <section id="create" class="creator-section creator-workflow-section">
+      <section v-if="!activeProject" id="create" class="creator-section creator-workflow-section">
         <div class="creator-section-heading"><div><p class="creator-eyebrow">START WITH A BRIEF</p><h2>从内容开始创建</h2><p>选择一种内容入口，剩下的工作交给可观察的生产流水线。</p></div><button class="creator-link-button" type="button" @click="openCreatePanel">创建一个项目 <span>→</span></button></div>
         <div class="creator-workflow-cards">
           <button class="creator-workflow-card selected" type="button" @click="openCreatePanel"><span class="creator-card-number">01</span><span class="creator-workflow-icon novel">▤</span><strong>小说短剧</strong><p>导入小说，生成 StoryBible、分集剧本、分镜和视频片段。</p><span class="creator-card-link">立即开始 <b>→</b></span></button>
@@ -199,7 +200,7 @@ onMounted(refreshDashboard)
         </div>
       </section>
 
-      <section id="projects" class="creator-section creator-dashboard-grid">
+      <section v-if="!activeProject" id="projects" class="creator-section creator-dashboard-grid">
         <article class="creator-panel creator-project-panel">
           <div class="creator-panel-heading"><div><p class="creator-eyebrow">YOUR CONTENT</p><h2>最近项目</h2></div><button class="creator-small-link" type="button" @click="emit('openOperator')">管理项目 <span>→</span></button></div>
           <div v-if="loading" class="creator-empty"><span class="spinner" />正在读取项目…</div>
@@ -217,9 +218,9 @@ onMounted(refreshDashboard)
         </article>
       </section>
 
-      <section v-if="videos.length" class="creator-section creator-output-section">
+      <section v-if="videos.length && !activeProject" class="creator-section creator-output-section">
         <div class="creator-section-heading"><div><p class="creator-eyebrow">YOUR OUTPUTS</p><h2>最近成片</h2><p>已完成的视频可以在媒体资产中预览和下载。</p></div><button class="creator-link-button" type="button" @click="emit('openOperator')">打开媒体资产 <span>→</span></button></div>
-        <div class="creator-output-strip"><article v-for="video in videos.slice(0, 3)" :key="video.id" class="creator-output-card"><div class="creator-output-thumbnail"><span>▶</span><small>{{ video.metadata.duration_seconds ? `${Number(video.metadata.duration_seconds).toFixed(0)}s` : 'VIDEO' }}</small></div><div><strong>成片视频</strong><small>{{ video.provider }} · {{ formatTime(video.created_at) }}</small></div></article></div>
+        <div class="creator-output-strip"><article v-for="video in videos.slice(0, 3)" :key="video.id" class="creator-output-card"><div class="creator-output-thumbnail"><MediaPreview :artifact="video" variant="thumb" :controls="false" alt="最近成片预览" /><span class="creator-output-play">▶</span><small>{{ video.metadata.duration_seconds ? `${Number(video.metadata.duration_seconds).toFixed(0)}s` : 'VIDEO' }}</small></div><div><strong>成片视频</strong><small>{{ video.provider }} · {{ formatTime(video.created_at) }}</small></div></article></div>
       </section>
     </main>
 

@@ -2,49 +2,41 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiClientError } from '../api/client'
 import { getNovelProjects } from '../api/novels'
-import { getArtifactContentUrl, getArtifacts } from '../api/tasks'
+import { getArtifacts } from '../api/tasks'
 import type { ArtifactRecord, NovelProjectRecord } from '../types/task'
+import MediaPreview from './MediaPreview.vue'
 
 const projects = ref<NovelProjectRecord[]>([])
 const artifacts = ref<ArtifactRecord[]>([])
 const selectedArtifactId = ref<string | null>(null)
 const projectId = ref('')
 const artifactType = ref('all')
+const searchQuery = ref('')
 const loading = ref(false)
 const loadingProjects = ref(false)
 const errorMessage = ref<string | null>(null)
-const previewFallbackUsed = ref(false)
-const previewLoadFailed = ref(false)
 
 const typeLabels: Record<string, string> = {
-  all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图',
+  all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图', script_json: '脚本 JSON', story_bible_json: 'StoryBible', episode_outline_json: '分集大纲', episode_script_json: '分场剧本', shot_list_json: '分镜 JSON',
 }
 const selectedArtifact = computed(() => artifacts.value.find((item) => item.id === selectedArtifactId.value) ?? null)
-const selectedIsVideo = computed(() => selectedArtifact.value?.type === 'rendered_video' || selectedArtifact.value?.type === 'video_clip' || selectedArtifact.value?.type === 'lip_synced_video')
-const selectedIsAudio = computed(() => selectedArtifact.value?.type === 'audio_narration' || selectedArtifact.value?.type === 'audio_bgm')
-const selectedIsImage = computed(() => selectedArtifact.value?.type === 'reference_image')
-const selectedIsSubtitle = computed(() => selectedArtifact.value?.type === 'subtitle_srt')
+const filteredArtifacts = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return artifacts.value
+  return artifacts.value.filter((artifact) => [
+    typeLabels[artifact.type] ?? artifact.type,
+    artifact.type,
+    artifact.provider,
+    artifact.id,
+    String(artifact.metadata.storage_key ?? ''),
+  ].join(' ').toLowerCase().includes(query))
+})
 const selectedIdentityAudit = computed<Record<string, unknown> | null>(() => {
   const value = selectedArtifact.value?.metadata.identity_audit
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
 })
 const selectedIdentityStatus = computed(() => String(selectedIdentityAudit.value?.status ?? 'unknown'))
-const selectedArtifactContentUrl = computed(() => {
-  const artifact = selectedArtifact.value
-  return artifact?.metadata.storage_key ? getArtifactContentUrl(artifact.id) : ''
-})
-const selectedArtifactPreviewUrl = computed(() => {
-  const artifact = selectedArtifact.value
-  if (!artifact) return ''
-  if (previewFallbackUsed.value || !artifact.download_url) return selectedArtifactContentUrl.value
-  return artifact.download_url
-})
-const selectedArtifactDownloadUrl = computed(() => {
-  const artifact = selectedArtifact.value
-  if (!artifact) return ''
-  return artifact.download_url || (artifact.metadata.storage_key ? getArtifactContentUrl(artifact.id, true) : '')
-})
 
 function displayError(error: unknown) {
   if (error instanceof ApiClientError) return `${error.message} · ${error.code}`
@@ -62,22 +54,6 @@ function isVideoArtifact(artifact: ArtifactRecord) {
 
 function isAudioArtifact(artifact: ArtifactRecord) {
   return artifact.type === 'audio_narration' || artifact.type === 'audio_bgm'
-}
-
-function isImageArtifact(artifact: ArtifactRecord) {
-  return artifact.type === 'reference_image'
-}
-
-function artifactContentUrl(artifact: ArtifactRecord) {
-  return artifact.download_url || (artifact.metadata.storage_key ? getArtifactContentUrl(artifact.id) : '')
-}
-
-function artifactIcon(artifact: ArtifactRecord) {
-  if (isVideoArtifact(artifact)) return 'V'
-  if (isImageArtifact(artifact)) return '图'
-  if (artifact.type === 'subtitle_srt') return '字'
-  if (isAudioArtifact(artifact)) return '声'
-  return '文'
 }
 
 function formatBytes(value: unknown) {
@@ -137,17 +113,6 @@ function formatTime(value: string) {
 
 function selectArtifact(artifactId: string) {
   selectedArtifactId.value = artifactId
-  previewFallbackUsed.value = false
-  previewLoadFailed.value = false
-}
-
-function handlePreviewError() {
-  const artifact = selectedArtifact.value
-  if (artifact?.download_url && selectedArtifactContentUrl.value && !previewFallbackUsed.value) {
-    previewFallbackUsed.value = true
-    return
-  }
-  previewLoadFailed.value = true
 }
 
 async function loadProjects() {
@@ -165,8 +130,6 @@ async function loadArtifacts() {
   loading.value = true
   errorMessage.value = null
   selectedArtifactId.value = null
-  previewFallbackUsed.value = false
-  previewLoadFailed.value = false
   try {
     const response = await getArtifacts({
       projectId: projectId.value || undefined,
@@ -204,23 +167,20 @@ onMounted(async () => {
   <section class="card artifact-toolbar">
     <label class="form-field"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects"><option value="">全部项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
     <label class="form-field"><span>资产类型</span><select v-model="artifactType"><option v-for="(label, value) in typeLabels" :key="value" :value="value">{{ label }}</option></select></label>
-    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>对象存储使用临时签名 URL；本地存储通过服务端安全通道预览，不暴露磁盘路径。</span></div>
+    <label class="form-field artifact-search-field"><span>搜索资产</span><input v-model="searchQuery" type="search" placeholder="类型、Provider 或 Artifact ID" /></label>
+    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>预览优先走同源授权接口，签名链接仅作为回退；不会暴露磁盘路径。</span></div>
   </section>
 
   <div v-if="errorMessage" class="alert-card error-card"><div><strong>媒体资产读取失败</strong><p>{{ errorMessage }}</p></div><button class="secondary-button" type="button" @click="loadArtifacts">重试</button></div>
 
   <section class="artifact-workspace">
     <article class="card artifact-list-card">
-      <div class="card-header table-heading"><div><h2>资产列表</h2><p>{{ artifacts.length }} 个结果，点击查看详情</p></div><span class="table-count">已加载</span></div>
+      <div class="card-header table-heading"><div><h2>资产列表</h2><p>{{ filteredArtifacts.length }} 个结果<span v-if="filteredArtifacts.length !== artifacts.length"> · 共 {{ artifacts.length }} 个</span>，点击查看详情</p></div><span class="table-count">已加载</span></div>
       <div v-if="loading" class="task-empty"><span class="spinner" />正在读取媒体资产…</div>
-      <div v-else-if="artifacts.length === 0" class="task-empty"><strong>暂无可预览资产</strong><span>完成视频、音频或参考图任务后，产物会出现在这里。</span></div>
+      <div v-else-if="filteredArtifacts.length === 0" class="task-empty"><strong>{{ artifacts.length ? '没有匹配的资产' : '暂无可预览资产' }}</strong><span>{{ artifacts.length ? '尝试更换搜索词或筛选条件。' : '完成视频、音频或参考图任务后，产物会出现在这里。' }}</span></div>
       <div v-else class="artifact-list">
-        <button v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectArtifact(artifact.id)">
-          <span class="artifact-list-thumb" :class="artifact.type">
-            <img v-if="isImageArtifact(artifact) && artifactContentUrl(artifact)" :src="artifactContentUrl(artifact)" alt="" loading="lazy" />
-            <video v-else-if="isVideoArtifact(artifact) && artifactContentUrl(artifact)" :src="artifactContentUrl(artifact)" muted playsinline preload="metadata" aria-hidden="true" />
-            <span v-else class="artifact-type-icon" :class="artifact.type">{{ artifactIcon(artifact) }}</span>
-          </span>
+        <button v-for="artifact in filteredArtifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectArtifact(artifact.id)">
+          <span class="artifact-list-thumb" :class="artifact.type"><MediaPreview :artifact="artifact" variant="thumb" :controls="false" /></span>
           <span class="artifact-list-copy"><strong>{{ typeLabels[artifact.type] || artifact.type }}</strong><small>{{ artifact.provider }} · {{ isVideoArtifact(artifact) || isAudioArtifact(artifact) ? formatDuration(artifact.metadata.duration_seconds) : formatTime(artifact.created_at) }}</small></span>
           <span class="artifact-list-arrow">›</span>
         </button>
@@ -230,14 +190,7 @@ onMounted(async () => {
     <article class="card artifact-preview-card">
       <div v-if="selectedArtifact" class="artifact-preview-content">
         <div class="artifact-preview-heading"><div><span class="page-kicker">SELECTED ARTIFACT</span><h2>{{ typeLabels[selectedArtifact.type] || selectedArtifact.type }}</h2><p>{{ selectedArtifact.provider }} · {{ selectedArtifact.id }}</p></div><span class="configured-tag">已完成</span></div>
-        <div class="media-preview-box">
-          <video v-if="selectedIsVideo && selectedArtifactPreviewUrl && !previewLoadFailed" controls preload="metadata" :src="selectedArtifactPreviewUrl" @error="handlePreviewError" />
-          <audio v-else-if="selectedIsAudio && selectedArtifactPreviewUrl && !previewLoadFailed" controls :src="selectedArtifactPreviewUrl" @error="handlePreviewError" />
-          <img v-else-if="selectedIsImage && selectedArtifactPreviewUrl && !previewLoadFailed" :src="selectedArtifactPreviewUrl" alt="参考图 Artifact 预览" @error="handlePreviewError" />
-          <div v-else-if="selectedIsSubtitle" class="subtitle-preview-placeholder"><span class="quality-icon">字</span><strong>SRT 字幕文件</strong><p>字幕文件可以下载后进行人工复核，质量报告保存在 Artifact metadata 中。</p></div>
-          <div v-else-if="previewLoadFailed" class="subtitle-preview-placeholder"><span class="quality-icon">!</span><strong>媒体内容读取失败</strong><p>安全预览通道没有返回可播放内容，请刷新后重试并检查存储服务状态。</p></div>
-          <div v-else class="subtitle-preview-placeholder"><span class="quality-icon">i</span><strong>该 Artifact 没有可读文件</strong><p>这是任务快照或结构化 metadata，没有可供浏览器读取的二进制内容。</p></div>
-        </div>
+        <div class="media-preview-box"><MediaPreview :artifact="selectedArtifact" variant="panel" :alt="`${typeLabels[selectedArtifact.type] || selectedArtifact.type}预览`" show-download /></div>
         <div v-if="selectedIdentityAudit" class="artifact-identity-audit" :class="identityAuditClass(selectedIdentityStatus)">
           <div class="artifact-identity-audit-heading"><div><strong>角色身份一致性初审</strong><span>InsightFace 抽样结果 · 不是最终人工验收</span></div><span class="identity-audit-pill" :class="identityAuditClass(selectedIdentityStatus)">{{ identityAuditLabel(selectedIdentityStatus) }}</span></div>
           <p>{{ identityAuditMessage(selectedIdentityStatus) }}</p>
@@ -245,7 +198,7 @@ onMounted(async () => {
         </div>
         <dl class="artifact-meta-grid"><div><dt>项目 ID</dt><dd>{{ selectedArtifact.project_id }}</dd></div><div><dt>文件类型</dt><dd>{{ metadataText(selectedArtifact, 'content_type', selectedArtifact.type) }}</dd></div><div><dt>时长</dt><dd>{{ formatDuration(selectedArtifact.metadata.duration_seconds) }}</dd></div><div><dt>文件大小</dt><dd>{{ formatBytes(selectedArtifact.metadata.size_bytes) }}</dd></div><div><dt>SHA-256</dt><dd>{{ metadataText(selectedArtifact, 'sha256') }}</dd></div><div><dt>生成时间</dt><dd>{{ formatTime(selectedArtifact.created_at) }}</dd></div></dl>
         <div v-if="selectedArtifact.metadata.quality" class="artifact-quality-note"><strong>质量复核 metadata</strong><span>{{ JSON.stringify(selectedArtifact.metadata.quality) }}</span></div>
-        <div class="artifact-actions"><a v-if="selectedArtifactDownloadUrl" class="primary-button artifact-download" :href="selectedArtifactDownloadUrl" target="_blank" rel="noopener" download>下载文件</a><span v-else class="field-hint">该 Artifact 只有结构化快照，没有可下载的二进制文件。</span></div>
+        <div class="artifact-actions"><span class="field-hint">预览与下载均经过项目权限校验；结构化文件请在上方下载后查看。</span></div>
       </div>
       <div v-else class="task-empty"><strong>选择一个 Artifact</strong><span>右侧会显示可用的预览和安全 metadata。</span></div>
     </article>
