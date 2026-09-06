@@ -99,6 +99,237 @@ from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer
 NarrationScene = tuple[str, str, str]
 
 
+PORTFOLIO_REPORT_SCHEMA_VERSION = 2
+PORTFOLIO_TARGET = {
+    "profile_id": "portfolio-demo-v1",
+    "duration_seconds": {"min": 45, "max": 60},
+    "aspect_ratio": "9:16",
+    "shot_count": {"min": 8, "max": 12},
+    "orientation": "vertical",
+    "style": "2D manhwa / dynamic comic",
+}
+PORTFOLIO_HUMAN_REVIEW_ITEMS = (
+    {
+        "id": "story_fidelity",
+        "label": "改编忠实度",
+        "description": "剧本和分镜没有偏离原文核心人物、冲突与结局。",
+    },
+    {
+        "id": "character_identity",
+        "label": "角色一致性",
+        "description": "参考图与各镜头中的脸型、发型、服装和色彩保持一致。",
+    },
+    {
+        "id": "motion_continuity",
+        "label": "动作与镜头",
+        "description": "没有明显变脸、肢体崩坏、跳切或图片拼接感。",
+    },
+    {
+        "id": "voice_naturalness",
+        "label": "声音自然度",
+        "description": "语速、停顿、发音和场景之间的衔接可以正常听清。",
+    },
+    {
+        "id": "subtitle_alignment",
+        "label": "字幕同步",
+        "description": "字幕文本正确，出现和消失时间与声音基本一致。",
+    },
+    {
+        "id": "final_story_flow",
+        "label": "成片观感",
+        "description": "完整观看后节奏、信息密度和竖屏构图适合作品集展示。",
+    },
+)
+
+
+def _report_number(value: object, default: float = 0.0) -> float:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
+def _report_probe(metadata: object) -> dict[str, object]:
+    if not isinstance(metadata, dict):
+        return {}
+    nested = metadata.get("ffprobe")
+    return nested if isinstance(nested, dict) else metadata
+
+
+def _portfolio_readiness_report(
+    *,
+    args: argparse.Namespace,
+    shot_count: int,
+    reference_image_count: int,
+    clip_count: int,
+    narration_artifact: ArtifactSummary | None,
+    subtitle_artifact: ArtifactSummary | None,
+    subtitle_metadata: dict[str, object] | None,
+    rendered_artifact: ArtifactSummary | None,
+    clip_task_snapshots: list[GenerationTaskRecord],
+) -> dict[str, object]:
+    """Build an honest, machine-readable portfolio acceptance report.
+
+    The report intentionally keeps human review separate from deterministic
+    checks.  A successful Provider call, FFprobe result or identity helper
+    result cannot prove that a finished sample is pleasant to watch.
+    """
+
+    rendered_metadata = rendered_artifact.metadata if rendered_artifact is not None else {}
+    probe = _report_probe(rendered_metadata)
+    width = int(_report_number(probe.get("width"), 0))
+    height = int(_report_number(probe.get("height"), 0))
+    duration = _report_number(
+        probe.get("duration_seconds"),
+        _report_number(rendered_metadata.get("duration_ms"), 0.0) / 1000,
+    )
+    ratio = width / height if width > 0 and height > 0 else 0.0
+    expected_ratio = 9 / 16
+    vertical = ratio > 0 and abs(ratio - expected_ratio) <= 0.04
+    narration_metadata = narration_artifact.metadata if narration_artifact is not None else {}
+    subtitle_metadata = subtitle_metadata or {}
+    audio_duration = _report_number(narration_metadata.get("duration_seconds"))
+    cue_count = int(_report_number(subtitle_metadata.get("cue_count"), 0))
+
+    def count_status(count: int, target: int) -> str:
+        if count == target:
+            return "passed"
+        return "pending" if count < target else "failed"
+
+    checks: list[dict[str, object]] = [
+        {
+            "id": "reference_images",
+            "label": "真实参考图",
+            "status": "not_applicable" if args.mock_media else "passed" if reference_image_count > 0 else "pending",
+            "blocking": not args.mock_media,
+            "evidence": f"{reference_image_count} 个参考图任务/复用引用",
+        },
+        {
+            "id": "video_clips",
+            "label": "逐镜头视频片段",
+            "status": count_status(clip_count, shot_count),
+            "blocking": True,
+            "evidence": f"{clip_count}/{shot_count} 个镜头已生成并通过 Artifact 校验",
+        },
+        {
+            "id": "shot_budget",
+            "label": "镜头规模",
+            "status": "passed" if 8 <= shot_count <= 12 else "failed",
+            "blocking": True,
+            "evidence": f"{shot_count} 个镜头 · 目标 8～12 个",
+        },
+        {
+            "id": "narration",
+            "label": "连续旁白",
+            "status": "passed" if audio_duration > 0 else "pending",
+            "blocking": True,
+            "evidence": (
+                f"{audio_duration:.3f} 秒 · {narration_metadata.get('content_type', 'unknown')}"
+                if narration_artifact is not None
+                else "尚未生成连续旁白 Artifact"
+            ),
+        },
+        {
+            "id": "subtitles",
+            "label": "字幕 Artifact",
+            "status": "passed" if cue_count > 0 else "pending",
+            "blocking": True,
+            "evidence": (
+                f"{cue_count} 条 cue · {subtitle_metadata.get('alignment_precision', 'unknown')}"
+                if subtitle_artifact is not None
+                else "尚未生成字幕 Artifact"
+            ),
+        },
+        {
+            "id": "vertical_output",
+            "label": "竖屏输出",
+            "status": "passed" if vertical else "pending" if rendered_artifact is None else "failed",
+            "blocking": True,
+            "evidence": f"{width}×{height} · 目标 9:16",
+        },
+        {
+            "id": "duration_target",
+            "label": "目标时长",
+            "status": "passed" if 45 <= duration <= 60 else "pending" if rendered_artifact is None else "failed",
+            "blocking": True,
+            "evidence": f"{duration:.3f} 秒 · 目标 45～60 秒",
+        },
+    ]
+
+    identity_reports: list[dict[str, object]] = []
+    for task in clip_task_snapshots:
+        for artifact in task.artifacts:
+            report = artifact.metadata.get("identity_audit")
+            if isinstance(report, dict):
+                identity_reports.append(report)
+    identity_statuses = [str(report.get("status", "")) for report in identity_reports]
+    if args.mock_media:
+        identity_status = "not_applicable"
+        identity_evidence = "Mock 媒体不会执行真实身份审核"
+    elif not identity_statuses:
+        identity_status = "pending"
+        identity_evidence = "尚未登记身份审核结果；必须人工抽查参考图和视频"
+    elif any(status in {"failed", "no_face", "reference_no_face", "error"} for status in identity_statuses):
+        identity_status = "failed"
+        identity_evidence = f"{sum(status in {'failed', 'no_face', 'reference_no_face', 'error'} for status in identity_statuses)}/{len(identity_statuses)} 个身份审核结果异常"
+    else:
+        identity_status = "passed"
+        identity_evidence = f"{sum(status == 'passed' for status in identity_statuses)}/{len(identity_statuses)} 个身份审核通过"
+    checks.append(
+        {
+            "id": "identity_audit",
+            "label": "身份自动初审",
+            "status": identity_status,
+            "blocking": identity_status == "failed",
+            "evidence": identity_evidence,
+        }
+    )
+
+    blocking_checks = [item for item in checks if item["blocking"]]
+    blocking_failures = [
+        item for item in blocking_checks if item["status"] != "passed"
+    ]
+    machine_passed = sum(item["status"] == "passed" for item in blocking_checks)
+    human_review = [
+        {
+            **item,
+            "required": True,
+            "status": "pending",
+            "reviewer": "",
+            "reviewed_at": "",
+            "score": None,
+            "notes": "",
+        }
+        for item in PORTFOLIO_HUMAN_REVIEW_ITEMS
+    ]
+    return {
+        "schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
+        "target": PORTFOLIO_TARGET,
+        "readiness": {
+            "status": "ready_for_human_review" if not blocking_failures else "incomplete",
+            "ready_for_portfolio": False,
+            "machine_checks_passed": machine_passed,
+            "machine_checks_total": len(blocking_checks),
+            "human_checks_completed": 0,
+            "human_checks_total": len(human_review),
+            "blocked_reasons": [str(item["evidence"]) for item in blocking_failures],
+            "next_action": (
+                "先处理机器门禁失败项，再进行人工画面、声音和字幕验收。"
+                if blocking_failures
+                else "请完成全部人工验收清单；自动检查不能替代完整观看和听审。"
+            ),
+        },
+        "machine_checks": checks,
+        "human_review": {
+            "required": True,
+            "status": "pending",
+            "items": human_review,
+            "note": "请在复制的审核模板或作品集记录中填写；不要把 pending 写成通过。",
+        },
+    }
+
+
 class NarrationTimelineSegment(NamedTuple):
     """One scene narration placed on the measured video timeline."""
 
@@ -2417,12 +2648,41 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             if isinstance(entry, dict) and entry.get("status") == "succeeded"
         ]
         _write_checkpoint(_checkpoint_path(output_dir), checkpoint)
+        clip_task_snapshots: list[GenerationTaskRecord] = []
+        for task_id in clip_tasks:
+            snapshot = await store.get_task(task_id)
+            if snapshot is not None:
+                clip_task_snapshots.append(snapshot)
+        portfolio_readiness = _portfolio_readiness_report(
+            args=args,
+            shot_count=len(shots),
+            reference_image_count=len(reference_tasks),
+            clip_count=len(clip_tasks),
+            narration_artifact=None,
+            subtitle_artifact=None,
+            subtitle_metadata={},
+            rendered_artifact=None,
+            clip_task_snapshots=clip_task_snapshots,
+        )
         partial_report = {
+            "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
             "status": "paused",
+            "project_id": str(project_id),
+            "episode_id": str(episode.id),
+            "script_id": str(script.id),
+            "shot_list_id": str(shot_list.id),
             "shots_requested": len(shots),
             "shots_completed": len(clip_tasks),
+            "reference_image_count": len(reference_tasks),
             "checkpoint_path": str(_checkpoint_path(output_dir)),
             "output_dir": str(output_dir),
+            "artifact_ids": {
+                "rendered_video": None,
+                "source_video_clips": [str(task_id) for task_id in clip_tasks],
+                "narration": [],
+                "subtitles": None,
+            },
+            "portfolio_readiness": portfolio_readiness,
             "next_command": (
                 f"AI_VIDEO_PROFILE=local_mac_16gb AI_VIDEO_CONFIG={args.config} "
                 f"python scripts/run-local-portfolio-sample.py --shots {args.shots} "
@@ -2719,7 +2979,24 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         )
         stable_narration = output_dir / f"narration{narration_suffix}"
         stable_narration.write_bytes(narration_bytes)
+    clip_task_snapshots: list[GenerationTaskRecord] = []
+    for task_id in clip_tasks:
+        snapshot = await store.get_task(task_id)
+        if snapshot is not None:
+            clip_task_snapshots.append(snapshot)
+    portfolio_readiness = _portfolio_readiness_report(
+        args=args,
+        shot_count=len(shots),
+        reference_image_count=len(reference_tasks),
+        clip_count=len(clip_tasks),
+        narration_artifact=narration_artifact,
+        subtitle_artifact=subtitle_artifact,
+        subtitle_metadata=subtitle_metadata,
+        rendered_artifact=rendered_artifact,
+        clip_task_snapshots=clip_task_snapshots,
+    )
     report = {
+        "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
         "project_id": str(project_id),
         "episode_id": str(episode.id),
         "script_id": str(script.id),
@@ -2843,6 +3120,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "human_review_required": True,
             "reference_reused": bool(args.reuse_recent_references and not args.mock_media),
         },
+        "portfolio_readiness": portfolio_readiness,
     }
     (output_dir / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2),

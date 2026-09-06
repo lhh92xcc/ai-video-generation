@@ -24,6 +24,7 @@ import { useProviderProfiles } from '../composables/useProviderProfiles'
 import { useVisualQualityProfiles } from '../composables/useVisualQualityProfiles'
 import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import MediaPreview from './MediaPreview.vue'
+import PortfolioReadinessPanel from './PortfolioReadinessPanel.vue'
 import ProductionQualityPanel from './ProductionQualityPanel.vue'
 import ProviderProfileSelect from './ProviderProfileSelect.vue'
 import VisualQualityProfileSelect from './VisualQualityProfileSelect.vue'
@@ -32,6 +33,7 @@ import type {
   ChapterRecord,
   EpisodeRecord,
   GenerationTaskRecord,
+  ArtifactSummary,
   ArtifactRecord,
   NovelProjectRecord,
   RightsStatus,
@@ -1045,6 +1047,24 @@ onUnmounted(() => {
       </button>
     </div>
     <section class="creator-workflow-summary" aria-live="polite"><div class="creator-workflow-summary-main"><p class="creator-eyebrow">CURRENT STAGE</p><h3>{{ workflowStageLabel }}</h3><p>{{ workflowStageDetail }}</p></div><div class="creator-workflow-summary-metric"><small>核心门槛完成度 · 共 10 个</small><strong>{{ workflowCoreCompletedCount }}/10</strong><span>{{ workflowBlocker }}</span><em>{{ selectedShotList ? `${videoClipSucceededCount}/${selectedShotList.shots.length} 个视频片段已完成` : '等待分镜清单' }}</em></div><button class="creator-primary-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">{{ nextWorkflowStep.label }} <span>→</span></button></section>
+    <PortfolioReadinessPanel
+      :project="projectData"
+      :episode="selectedEpisode"
+      :source-ready="sourceReady"
+      :story-bible-ready="storyBibleReady"
+      :episodes-ready="episodesReady"
+      :script-ready="scriptReady"
+      :shot-list-ready="shotListReady"
+      :asset-gate-ready="assetGateReady"
+      :shot-total-count="shotTotalCount"
+      :video-clip-ready-count="videoClipReadyCount"
+      :video-clip-succeeded-count="videoClipSucceededCount"
+      :audio-artifact="audioArtifact"
+      :subtitle-artifact="subtitleArtifact"
+      :rendered-video-artifact="renderedVideoArtifact"
+      :tasks="tasks"
+      @locate="scrollToWorkflowStep"
+    />
     <section class="creator-route-guide"><div><span class="creator-route-guide-label">推荐生产路径</span><strong>原文 → 剧本 → 资产审核 → 媒体生成 → 成片复核</strong><small>5 个业务阶段 · 10 个核心门槛 · 11 个执行步骤</small></div><p>正常制作只需要跟随上方“下一步”；详细步骤用于定位、复盘和断点重试。一键生产也会保留资产审核门禁。</p></section>
 
     <details class="creator-detail-workflow">

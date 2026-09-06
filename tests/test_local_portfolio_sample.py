@@ -35,6 +35,7 @@ _frame_aligned_duration = _MODULE._frame_aligned_duration
 _frame_aligned_scene_durations = _MODULE._frame_aligned_scene_durations
 _build_continuous_narration_timeline = _MODULE._build_continuous_narration_timeline
 _fit_narration_artifact_to_shot = _MODULE._fit_narration_artifact_to_shot
+_portfolio_readiness_report = _MODULE._portfolio_readiness_report
 
 
 def test_portfolio_sample_has_ten_short_drama_scenes() -> None:
@@ -44,6 +45,128 @@ def test_portfolio_sample_has_ten_short_drama_scenes() -> None:
     # Keep the free, natural-rate Edge TTS demo within the 45–60 second target;
     # do not compensate for an overlong script by speeding up the waveform.
     assert len("".join(scene[1] for scene in scenes)) < 300
+
+
+def test_portfolio_readiness_report_separates_machine_gates_from_human_review() -> None:
+    from app.domain.models import ArtifactSummary, GenerationTaskKind, GenerationTaskRecord, TaskStatus
+
+    rendered = ArtifactSummary(
+        type="rendered_video",
+        provider="ffmpeg",
+        metadata={
+            "ffprobe": {
+                "width": 576,
+                "height": 1024,
+                "duration_seconds": 50.0,
+            },
+            "duration_ms": 50000,
+        },
+    )
+    narration = ArtifactSummary(
+        type="audio_narration",
+        provider="edge_tts",
+        metadata={"duration_seconds": 49.8, "content_type": "audio/wav"},
+    )
+    subtitles = ArtifactSummary(
+        type="subtitle_srt",
+        provider="word_boundary",
+        metadata={"cue_count": 8, "alignment_precision": "word_boundary"},
+    )
+    clip_task = GenerationTaskRecord(
+        project_id=uuid4(),
+        kind=GenerationTaskKind.VIDEO_CLIP,
+        status=TaskStatus.SUCCEEDED,
+        input_data={"episode_id": str(uuid4()), "shot_index": 1},
+        artifacts=[
+            ArtifactSummary(
+                type="video_clip",
+                provider="comfyui_wan_i2v",
+                metadata={"identity_audit": {"status": "passed"}},
+            )
+        ],
+    )
+
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False),
+        shot_count=8,
+        reference_image_count=4,
+        clip_count=8,
+        narration_artifact=narration,
+        subtitle_artifact=subtitles,
+        subtitle_metadata=subtitles.metadata,
+        rendered_artifact=rendered,
+        clip_task_snapshots=[clip_task],
+    )
+
+    readiness = report["readiness"]
+    assert readiness["status"] == "ready_for_human_review"
+    assert readiness["ready_for_portfolio"] is False
+    assert readiness["machine_checks_passed"] == readiness["machine_checks_total"] == 7
+    assert readiness["human_checks_completed"] == 0
+    assert len(report["human_review"]["items"]) == 6
+    assert {item["status"] for item in report["machine_checks"]} == {"passed"}
+
+
+def test_mock_portfolio_readiness_report_is_not_blocked_by_real_media_checks() -> None:
+    from app.domain.models import ArtifactSummary
+
+    rendered = ArtifactSummary(
+        type="rendered_video",
+        provider="ffmpeg",
+        metadata={"width": 576, "height": 1024, "duration_seconds": 50.0},
+    )
+    narration = ArtifactSummary(
+        type="audio_narration",
+        provider="mock",
+        metadata={"duration_seconds": 50.0},
+    )
+    subtitles = ArtifactSummary(
+        type="subtitle_srt",
+        provider="mock",
+        metadata={"cue_count": 8},
+    )
+
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=True),
+        shot_count=8,
+        reference_image_count=0,
+        clip_count=8,
+        narration_artifact=narration,
+        subtitle_artifact=subtitles,
+        subtitle_metadata=subtitles.metadata,
+        rendered_artifact=rendered,
+        clip_task_snapshots=[],
+    )
+
+    checks = {item["id"]: item for item in report["machine_checks"]}
+    assert checks["reference_images"]["status"] == "not_applicable"
+    assert checks["identity_audit"]["status"] == "not_applicable"
+    assert report["readiness"]["status"] == "ready_for_human_review"
+
+
+def test_partial_portfolio_readiness_report_marks_unfinished_stages_pending() -> None:
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False),
+        shot_count=10,
+        reference_image_count=2,
+        clip_count=3,
+        narration_artifact=None,
+        subtitle_artifact=None,
+        subtitle_metadata={},
+        rendered_artifact=None,
+        clip_task_snapshots=[],
+    )
+
+    assert report["schema_version"] == 2
+    assert report["readiness"]["status"] == "incomplete"
+    checks = {item["id"]: item for item in report["machine_checks"]}
+    assert checks["reference_images"]["status"] == "passed"
+    assert checks["video_clips"]["status"] == "pending"
+    assert checks["narration"]["status"] == "pending"
+    assert checks["subtitles"]["status"] == "pending"
+    assert checks["vertical_output"]["status"] == "pending"
+    assert checks["duration_target"]["status"] == "pending"
+    assert report["human_review"]["status"] == "pending"
 
 
 def test_portfolio_shot_fixture_uses_supported_tokens_for_all_ten_shots() -> None:
