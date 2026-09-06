@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -40,9 +41,9 @@ _ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
 _assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
 
 
-def test_portfolio_sample_has_ten_short_drama_scenes() -> None:
+def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target() -> None:
     scenes = _narration_scenes()
-    assert len(scenes) == 10
+    assert len(scenes) == _MODULE.PORTFOLIO_MAX_SHOTS == 12
     assert all(title and voiceover and visual_prompt for title, voiceover, visual_prompt in scenes)
     # Keep the free, natural-rate Edge TTS demo within the 45–60 second target;
     # do not compensate for an overlong script by speeding up the waveform.
@@ -256,11 +257,13 @@ def test_partial_portfolio_readiness_report_marks_unfinished_stages_pending() ->
     assert report["human_review"]["status"] == "pending"
 
 
-def test_portfolio_shot_fixture_uses_supported_tokens_for_all_ten_shots() -> None:
+def test_portfolio_shot_fixture_uses_supported_tokens_for_all_twelve_shots() -> None:
     from app.domain.models import ShotContent
 
-    assert len(_MODULE._PORTFOLIO_SHOT_SIZES) == 10
-    assert len(_MODULE._PORTFOLIO_CAMERA_MOVEMENTS) == 10
+    assert len(_MODULE._PORTFOLIO_SHOT_SIZES) == _MODULE.PORTFOLIO_MAX_SHOTS
+    assert len(_MODULE._PORTFOLIO_CAMERA_MOVEMENTS) == _MODULE.PORTFOLIO_MAX_SHOTS
+    assert len(_MODULE._PORTFOLIO_SHOT_ASSETS) == _MODULE.PORTFOLIO_MAX_SHOTS
+    assert len(_MODULE._PORTFOLIO_REFERENCE_NAMES) == _MODULE.PORTFOLIO_MAX_SHOTS
     for index, (shot_size, camera_movement) in enumerate(
         zip(
             _MODULE._PORTFOLIO_SHOT_SIZES,
@@ -283,6 +286,25 @@ def test_portfolio_shot_fixture_uses_supported_tokens_for_all_ten_shots() -> Non
         )
         assert shot.shot_size == shot_size
         assert shot.camera_movement == camera_movement
+
+
+def test_portfolio_runner_accepts_the_full_twelve_shot_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run-local-portfolio-sample.py",
+            "--shots",
+            "12",
+            "--stop-after-shot",
+            "12",
+        ],
+    )
+
+    args = _MODULE.parse_args()
+
+    assert args.shots == _MODULE.PORTFOLIO_MAX_SHOTS == 12
+    assert args.stop_after_shot == _MODULE.PORTFOLIO_MAX_SHOTS
 
 
 def test_reference_prompts_are_single_subject_or_scene() -> None:
@@ -481,9 +503,10 @@ def test_continuous_narration_preserves_semantic_boundaries_for_tts() -> None:
     assert "灰尘归位，雨声突然消失" in text
     assert "暂停的照片，女孩" in text
     assert "一扇禁门；林默" in text
-    assert "走进黑暗，最后一声" in text
+    assert "走进黑暗，暗门尽头" in text
+    assert "第四声正在黑暗里回响，最后一声" in text
     assert text.count("。") == 1
-    assert text.endswith("自己摇头。")
+    assert text.endswith("作出选择。")
 
 
 def test_continuous_scene_pause_compaction_targets_only_visual_boundaries() -> None:

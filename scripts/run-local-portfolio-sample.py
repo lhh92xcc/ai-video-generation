@@ -120,6 +120,7 @@ PORTFOLIO_TARGET = {
     "orientation": "vertical",
     "style": "2D manhwa / dynamic comic",
 }
+PORTFOLIO_MAX_SHOTS = int(PORTFOLIO_TARGET["shot_count"]["max"])
 PORTFOLIO_HUMAN_REVIEW_ITEMS = (
     {
         "id": "story_fidelity",
@@ -559,9 +560,9 @@ class ContinuousSceneAudioTiming(NamedTuple):
     speech_start_seconds: float
     speech_end_seconds: float
 
-# Keep the fixture's ten-shot plan aligned with the ShotContent protocol.  The
-# ninth entry used to put the camera movement token ``dolly`` in ``shot_size``;
-# that stayed hidden while the Wan smoke stopped at eight shots.
+# Keep the fixture's 12-shot plan aligned with the ShotContent protocol.  The
+# runner still permits a 1-shot hardware smoke, while a complete portfolio
+# sample can now use the full 8–12 shot target stated in the report.
 _PORTFOLIO_SHOT_SIZES: tuple[str, ...] = (
     "wide",
     "wide",
@@ -573,6 +574,8 @@ _PORTFOLIO_SHOT_SIZES: tuple[str, ...] = (
     "over_the_shoulder",
     "close_up",
     "medium",
+    "wide",
+    "close_up",
 )
 _PORTFOLIO_CAMERA_MOVEMENTS: tuple[str, ...] = (
     "dolly",
@@ -585,6 +588,36 @@ _PORTFOLIO_CAMERA_MOVEMENTS: tuple[str, ...] = (
     "dolly",
     "zoom",
     "zoom",
+    "pan",
+    "tracking",
+)
+_PORTFOLIO_SHOT_ASSETS: tuple[tuple[str, ...], ...] = (
+    ("林默", "旧城区钟表店"),
+    ("林默", "旧城区钟表店"),
+    ("黑伞女孩", "旧城区钟表店", "铜色怀表"),
+    ("黑伞女孩", "旧城区钟表店", "铜色怀表"),
+    ("铜色怀表", "旧城区钟表店"),
+    ("林默", "铜色怀表", "旧城区钟表店"),
+    ("林默", "黑伞女孩", "旧城区钟表店"),
+    ("黑伞女孩", "旧城区钟表店"),
+    ("林默", "铜色怀表", "旧城区钟表店"),
+    ("林默", "铜色怀表", "旧城区钟表店"),
+    ("林默", "黑伞女孩", "铜色怀表"),
+    ("林默", "铜色怀表", "旧城区钟表店"),
+)
+_PORTFOLIO_REFERENCE_NAMES: tuple[str, ...] = (
+    "林默",
+    "林默",
+    "黑伞女孩",
+    "黑伞女孩",
+    "铜色怀表",
+    "林默",
+    "林默",
+    "黑伞女孩",
+    "林默",
+    "林默",
+    "林默",
+    "林默",
 )
 
 # Visual shots are deliberately not speech units.  The fixture carries a
@@ -608,7 +641,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config/config.local.toml")
     parser.add_argument("--output-dir", default=".tmp/portfolio-sample")
-    parser.add_argument("--shots", type=int, choices=tuple(range(1, 11)), default=10)
+    parser.add_argument(
+        "--shots",
+        type=int,
+        choices=tuple(range(1, PORTFOLIO_MAX_SHOTS + 1)),
+        default=10,
+    )
     parser.add_argument(
         "--shot-duration",
         type=int,
@@ -642,7 +680,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stop-after-shot",
         type=int,
-        choices=tuple(range(1, 11)),
+        choices=tuple(range(1, PORTFOLIO_MAX_SHOTS + 1)),
         default=None,
         help="Pause after this shot; useful for validating checkpoint recovery.",
     )
@@ -919,9 +957,19 @@ def _narration_scenes() -> list[NarrationScene]:
             "cinematic vertical shot looking down into a hidden basement staircase behind an old map in a clock shop, bronze pocket watch glowing in a young man's hand, blue darkness and amber rim light",
         ),
         (
+            "暗门后的钟室",
+            "暗门尽头，是一间没有出口的钟室，第四声正在黑暗里回响，",
+            "cinematic vertical fantasy shot inside a hidden underground clock room, a young Chinese clockmaker holding a bronze pocket watch, concentric mechanical clocks and blue darkness, no extra people",
+        ),
+        (
             "明天的自己",
-            "最后一声钟响，他看见明天的自己摇头。",
-            "cinematic vertical fantasy finale in a hidden underground clock room, young Chinese clockmaker holding a bronze pocket watch, a future version of himself reflected in darkness",
+            "最后一声钟响，他看见明天的自己在黑暗里摇头，",
+            "cinematic vertical fantasy close-up in a hidden underground clock room, young Chinese clockmaker holding a bronze pocket watch, a restrained future reflection of the same man in darkness, cinematic rim light",
+        ),
+        (
+            "回到十二点",
+            "林默握紧怀表，终于明白，明天正在等他作出选择。",
+            "cinematic vertical closing shot of a young Chinese clockmaker standing before a hidden clock-room doorway, bronze pocket watch stopped at twelve, warm light returning through rainy blue darkness, quiet hopeful suspense",
         ),
     ]
 
@@ -2651,18 +2699,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     )
     script = await store.save_episode_script(script)
 
-    shot_assets = [
-        ["林默", "旧城区钟表店"],
-        ["林默", "旧城区钟表店"],
-        ["黑伞女孩", "旧城区钟表店", "铜色怀表"],
-        ["黑伞女孩", "旧城区钟表店", "铜色怀表"],
-        ["铜色怀表", "旧城区钟表店"],
-        ["林默", "铜色怀表", "旧城区钟表店"],
-        ["林默", "黑伞女孩", "旧城区钟表店"],
-        ["黑伞女孩", "旧城区钟表店"],
-        ["林默", "铜色怀表", "旧城区钟表店"],
-        ["林默", "铜色怀表", "旧城区钟表店"],
-    ][: args.shots]
+    shot_assets = _PORTFOLIO_SHOT_ASSETS[: args.shots]
     shots = [
         ShotContent(
             shot_index=index,
@@ -2752,10 +2789,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             reference_image_ids[asset_name] = UUID(str(completed.input_data["reference_image_id"]))
 
     clip_tasks: list[UUID] = []
-    shot_reference_names = [
-        "林默", "林默", "黑伞女孩", "黑伞女孩", "铜色怀表",
-        "林默", "林默", "黑伞女孩", "林默", "林默",
-    ][: args.shots]
+    shot_reference_names = _PORTFOLIO_REFERENCE_NAMES[: args.shots]
     shot_reference_ids: dict[int, UUID] = {}
     for shot, reference_name in zip(shots, shot_reference_names, strict=True):
         checkpoint_entry = _shot_checkpoint_entry(checkpoint, shot.shot_index)
