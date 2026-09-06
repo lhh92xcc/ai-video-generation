@@ -101,7 +101,8 @@ def test_portfolio_readiness_report_separates_machine_gates_from_human_review() 
     readiness = report["readiness"]
     assert readiness["status"] == "ready_for_human_review"
     assert readiness["ready_for_portfolio"] is False
-    assert readiness["machine_checks_passed"] == readiness["machine_checks_total"] == 7
+    assert readiness["machine_checks_passed"] == 8
+    assert readiness["machine_checks_total"] == 8
     assert readiness["human_checks_completed"] == 0
     assert len(report["human_review"]["items"]) == 6
     assert {item["status"] for item in report["machine_checks"]} == {"passed"}
@@ -142,6 +143,25 @@ def test_mock_portfolio_readiness_report_is_not_blocked_by_real_media_checks() -
     assert checks["reference_images"]["status"] == "not_applicable"
     assert checks["identity_audit"]["status"] == "not_applicable"
     assert report["readiness"]["status"] == "ready_for_human_review"
+
+
+def test_real_portfolio_readiness_blocks_until_identity_audit_exists() -> None:
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False),
+        shot_count=10,
+        reference_image_count=2,
+        clip_count=10,
+        narration_artifact=None,
+        subtitle_artifact=None,
+        subtitle_metadata={},
+        rendered_artifact=None,
+        clip_task_snapshots=[],
+    )
+
+    checks = {item["id"]: item for item in report["machine_checks"]}
+    assert checks["identity_audit"]["status"] == "pending"
+    assert checks["identity_audit"]["blocking"] is True
+    assert report["readiness"]["status"] == "incomplete"
 
 
 def test_partial_portfolio_readiness_report_marks_unfinished_stages_pending() -> None:

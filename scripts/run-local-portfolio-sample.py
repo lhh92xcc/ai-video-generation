@@ -281,7 +281,7 @@ def _portfolio_readiness_report(
             "id": "identity_audit",
             "label": "身份自动初审",
             "status": identity_status,
-            "blocking": identity_status == "failed",
+            "blocking": not args.mock_media,
             "evidence": identity_evidence,
         }
     )

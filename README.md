@@ -123,7 +123,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `307 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `311 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
@@ -140,7 +140,7 @@ docker compose config --quiet
 - 已具备：小说上传、StoryBible/剧本/分镜 JSON、资产审核门禁、参考图与视频 Provider 抽象、异步 Worker、失败重试、音频/字幕/成片 Artifact、远程队列和创作者前台。
 - 本地质量基线：Mac 16GB 使用竖屏 `512×768` 参考图、Wan2.1 I2V `320×576`/`8fps`/`6 steps`/串行生成；参考图和视频 Prompt 默认包含单主体、身份连续性和防变脸约束。模型仍在宿主机，不进入仓库。
 - 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
-- 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
+- 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
 - 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
 
 这条清单把“工程闭环已完成”和“媒体质量尚未验收”分开，避免把通过单测或 FFprobe 误写成成片质量结论。

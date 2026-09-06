@@ -192,7 +192,11 @@ const machineGates = computed<ReadinessGate[]>(() => [
     id: 'assets',
     label: '资产门禁',
     description: '角色、场景、道具均已审核、唯一绑定并具备参考图。',
-    evidence: props.assetGateReady ? `${props.shotTotalCount} 个镜头均通过资产门禁` : `${Math.max(0, props.shotTotalCount - props.videoClipReadyCount)} 个镜头仍需处理`,
+    evidence: !props.episode || props.shotTotalCount === 0
+      ? '等待当前分集分镜清单'
+      : props.assetGateReady
+        ? `${props.shotTotalCount} 个镜头均通过资产门禁`
+        : `${Math.max(0, props.shotTotalCount - props.videoClipReadyCount)} 个镜头仍需处理`,
     state: stateFor(props.assetGateReady && props.shotTotalCount > 0, Boolean(props.episode), props.shotTotalCount > 0),
     blocking: true,
     target: 'creator-step-assets',
@@ -211,14 +215,16 @@ const machineGates = computed<ReadinessGate[]>(() => [
           true,
           identityAuditSummary.value.failed > 0,
         ),
-    blocking: identityAuditSummary.value.failed > 0,
+    blocking: Boolean(props.episode),
     target: 'creator-step-quality',
   },
   {
     id: 'media',
     label: '声音、字幕与片段',
     description: '旁白、字幕和当前分集的全部可生成镜头都有成功 Artifact。',
-    evidence: props.audioArtifact && props.subtitleArtifact
+    evidence: !props.episode || props.shotTotalCount === 0
+      ? '等待当前分集分镜清单'
+      : props.audioArtifact && props.subtitleArtifact
       ? `${props.videoClipSucceededCount}/${props.videoClipReadyCount || props.shotTotalCount} 个视频片段已完成`
       : '旁白或字幕 Artifact 尚未完成',
     state: stateFor(Boolean(
@@ -333,19 +339,19 @@ function locate(gate: ReadinessGate) {
 </template>
 
 <style scoped>
-.portfolio-readiness-card { margin-top: 12px; border: 1px solid #dfe1fa; border-radius: 12px; padding: 16px; background: linear-gradient(145deg, #fafaff 0%, #fff 63%); }
+.portfolio-readiness-card { margin-top: 16px; border: 1px solid #dfe1fa; border-radius: 16px; padding: 18px; background: radial-gradient(circle at 100% 0%, rgba(119,121,220,.09), transparent 34%), linear-gradient(145deg, #fafaff 0%, #fff 63%); box-shadow: 0 12px 30px rgba(79, 82, 157, .05); }
 .portfolio-readiness-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.portfolio-readiness-heading h3 { margin: 0; color: #3f4770; font-size: 16px; }
-.portfolio-readiness-heading p:last-child { max-width: 680px; margin: 6px 0 0; color: #7f879c; font-size: 9px; line-height: 1.55; }
-.portfolio-readiness-badge { flex: 0 0 auto; border-radius: 999px; padding: 6px 9px; color: #767e91; background: #eef1f7; font-size: 9px; font-weight: 750; }
+.portfolio-readiness-heading h3 { margin: 0; color: #3f4770; font-size: 17px; letter-spacing: -.025em; }
+.portfolio-readiness-heading p:last-child { max-width: 680px; margin: 7px 0 0; color: #7f879c; font-size: 10px; line-height: 1.65; }
+.portfolio-readiness-badge { flex: 0 0 auto; border-radius: 999px; padding: 7px 10px; color: #767e91; background: #eef1f7; font-size: 10px; font-weight: 750; }
 .portfolio-readiness-badge.review { color: #756329; background: #fff4d9; }.portfolio-readiness-badge.ready { color: #287b55; background: #e5f7ed; }
-.portfolio-readiness-progress { margin-top: 14px; border: 1px solid #e6e7f4; border-radius: 9px; padding: 10px 11px; background: rgba(255,255,255,.78); }
-.portfolio-readiness-progress-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.portfolio-readiness-progress-copy strong { color: #5d61ce; font-size: 18px; }.portfolio-readiness-progress-copy span { color: #9299aa; font-size: 8px; }
+.portfolio-readiness-progress { margin-top: 16px; border: 1px solid #e6e7f4; border-radius: 11px; padding: 11px 12px; background: rgba(255,255,255,.82); }
+.portfolio-readiness-progress-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.portfolio-readiness-progress-copy strong { color: #5d61ce; font-size: 19px; }.portfolio-readiness-progress-copy span { color: #9299aa; font-size: 9px; }
 .portfolio-readiness-progress-track { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #eeeff6; }.portfolio-readiness-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7476dc, #4ca77e); transition: width 180ms ease; }
-.portfolio-readiness-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 12px; margin-top: 13px; }.portfolio-readiness-section { min-width: 0; border: 1px solid #e5e7f0; border-radius: 10px; padding: 12px; background: rgba(255,255,255,.7); }
-.portfolio-readiness-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }.portfolio-readiness-section-heading strong, .portfolio-readiness-section-heading small { display: block; }.portfolio-readiness-section-heading strong { color: #566078; font-size: 10px; }.portfolio-readiness-section-heading small { margin-top: 3px; color: #9ba3b3; font-size: 8px; line-height: 1.4; }.portfolio-readiness-section-heading > span { color: #6469ce; font-size: 10px; font-weight: 750; }.portfolio-reset-button { border: 0; padding: 0; color: #8a92a5; background: transparent; font-size: 8px; cursor: pointer; }.portfolio-reset-button:hover { color: #5e63c7; }
-.portfolio-gate-list, .portfolio-review-list { display: grid; gap: 6px; margin-top: 10px; }.portfolio-gate { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; border: 1px solid #eceef4; border-radius: 8px; padding: 8px; color: inherit; background: #fff; text-align: left; cursor: pointer; }.portfolio-gate:hover:not(:disabled) { border-color: #c9ccf1; background: #fcfcff; }.portfolio-gate:disabled { cursor: default; }.portfolio-gate-icon, .portfolio-review-mark { display: grid; place-items: center; flex: 0 0 21px; width: 21px; height: 21px; border-radius: 7px; color: #8d96a8; background: #f0f2f6; font-size: 10px; font-weight: 800; }.portfolio-gate.passed .portfolio-gate-icon { color: #fff; background: #4aa77d; }.portfolio-gate.blocked .portfolio-gate-icon { color: #fff; background: #d86c77; }.portfolio-gate-copy { min-width: 0; flex: 1; }.portfolio-gate-copy strong, .portfolio-gate-copy small, .portfolio-gate-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portfolio-gate-copy strong { color: #5b657a; font-size: 9px; }.portfolio-gate-copy small { margin-top: 2px; color: #6f78ce; font-size: 8px; }.portfolio-gate-copy em { margin-top: 2px; color: #a1a8b5; font-size: 7px; font-style: normal; }.portfolio-gate > b { flex: 0 0 auto; color: #a0a8b5; font-size: 8px; font-weight: 650; }.portfolio-gate.passed > b { color: #3d936d; }.portfolio-gate.pending > b { color: #9b7b35; }
-.portfolio-review-item { display: flex; align-items: flex-start; gap: 8px; min-width: 0; border: 1px solid #eceef4; border-radius: 8px; padding: 8px; background: #fff; cursor: pointer; }.portfolio-review-item:hover { border-color: #d2d4f4; }.portfolio-review-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }.portfolio-review-item.checked { border-color: #cde9da; background: #f8fdf9; }.portfolio-review-item.checked .portfolio-review-mark { color: #fff; background: #4aa77d; }.portfolio-review-item > span:last-child { min-width: 0; }.portfolio-review-item strong, .portfolio-review-item small { display: block; }.portfolio-review-item strong { color: #5b657a; font-size: 9px; }.portfolio-review-item small { margin-top: 3px; color: #99a1b0; font-size: 8px; line-height: 1.45; }
-.portfolio-readiness-blockers, .portfolio-readiness-success { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; border-radius: 8px; padding: 9px 10px; font-size: 9px; line-height: 1.5; }.portfolio-readiness-blockers { color: #806831; background: #fff9e9; }.portfolio-readiness-success { color: #397958; background: #effaf4; }.portfolio-readiness-blockers > span, .portfolio-readiness-success > span { display: grid; place-items: center; flex: 0 0 16px; width: 16px; height: 16px; border-radius: 50%; color: inherit; background: rgba(255,255,255,.72); font-weight: 800; }.portfolio-readiness-blockers p, .portfolio-readiness-success p { margin: 0; }
+.portfolio-readiness-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 13px; margin-top: 14px; }.portfolio-readiness-section { min-width: 0; border: 1px solid #e5e7f0; border-radius: 12px; padding: 14px; background: rgba(255,255,255,.72); }
+.portfolio-readiness-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }.portfolio-readiness-section-heading strong, .portfolio-readiness-section-heading small { display: block; }.portfolio-readiness-section-heading strong { color: #566078; font-size: 11px; }.portfolio-readiness-section-heading small { margin-top: 4px; color: #9ba3b3; font-size: 9px; line-height: 1.45; }.portfolio-readiness-section-heading > span { color: #6469ce; font-size: 11px; font-weight: 750; }.portfolio-reset-button { border: 0; padding: 0; color: #8a92a5; background: transparent; font-size: 9px; cursor: pointer; }.portfolio-reset-button:hover { color: #5e63c7; }
+.portfolio-gate-list, .portfolio-review-list { display: grid; gap: 7px; margin-top: 11px; }.portfolio-gate { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; color: inherit; background: #fff; text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 150ms ease; }.portfolio-gate:hover:not(:disabled) { border-color: #c9ccf1; background: #fcfcff; transform: translateY(-1px); }.portfolio-gate:disabled { cursor: default; }.portfolio-gate-icon, .portfolio-review-mark { display: grid; place-items: center; flex: 0 0 23px; width: 23px; height: 23px; border-radius: 8px; color: #8d96a8; background: #f0f2f6; font-size: 11px; font-weight: 800; }.portfolio-gate.passed .portfolio-gate-icon { color: #fff; background: #4aa77d; }.portfolio-gate.blocked .portfolio-gate-icon { color: #fff; background: #d86c77; }.portfolio-gate-copy { min-width: 0; flex: 1; }.portfolio-gate-copy strong, .portfolio-gate-copy small, .portfolio-gate-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portfolio-gate-copy strong { color: #5b657a; font-size: 10px; }.portfolio-gate-copy small { margin-top: 3px; color: #6f78ce; font-size: 9px; }.portfolio-gate-copy em { margin-top: 3px; color: #a1a8b5; font-size: 8px; font-style: normal; }.portfolio-gate > b { flex: 0 0 auto; color: #a0a8b5; font-size: 9px; font-weight: 650; }.portfolio-gate.passed > b { color: #3d936d; }.portfolio-gate.pending > b { color: #9b7b35; }
+.portfolio-review-item { display: flex; align-items: flex-start; gap: 9px; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; background: #fff; cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }.portfolio-review-item:hover { border-color: #d2d4f4; }.portfolio-review-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }.portfolio-review-item.checked { border-color: #cde9da; background: #f8fdf9; }.portfolio-review-item.checked .portfolio-review-mark { color: #fff; background: #4aa77d; }.portfolio-review-item > span:last-child { min-width: 0; }.portfolio-review-item strong, .portfolio-review-item small { display: block; }.portfolio-review-item strong { color: #5b657a; font-size: 10px; }.portfolio-review-item small { margin-top: 4px; color: #99a1b0; font-size: 9px; line-height: 1.5; }
+.portfolio-readiness-blockers, .portfolio-readiness-success { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; border-radius: 9px; padding: 10px 11px; font-size: 10px; line-height: 1.55; }.portfolio-readiness-blockers { color: #806831; background: #fff9e9; }.portfolio-readiness-success { color: #397958; background: #effaf4; }.portfolio-readiness-blockers > span, .portfolio-readiness-success > span { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: inherit; background: rgba(255,255,255,.72); font-weight: 800; }.portfolio-readiness-blockers p, .portfolio-readiness-success p { margin: 0; }
 @media (max-width: 860px) { .portfolio-readiness-heading { flex-direction: column; gap: 9px; }.portfolio-readiness-columns { grid-template-columns: 1fr; } }
 </style>
