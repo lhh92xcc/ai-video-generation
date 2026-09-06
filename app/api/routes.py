@@ -137,7 +137,7 @@ from app.media.identity_calibration import IdentityCalibrationService
 from app.services.lip_sync_service import LipSyncInputError, LipSyncTaskService
 from app.services.bgm_service import BGMTaskService
 from app.services.subtitle_service import SubtitleTaskService
-from app.providers.profiles import ASRProviderProfileError
+from app.providers.profiles import ProviderProfileError
 from app.services.novel_service import (
     EpisodeNotFoundError,
     EpisodeScriptNotFoundError,
@@ -420,15 +420,26 @@ async def list_provider_profiles(
     request: Request,
     capability: str = "asr",
 ) -> ProviderProfileListResponse:
-    registry = request.app.state.asr_profile_registry
     try:
-        profiles = registry.list_profiles(capability)
-    except ASRProviderProfileError as exc:
+        if capability == "asr":
+            registry = request.app.state.asr_profile_registry
+            profiles = registry.list_profiles(capability)
+            default_profile_id = registry.default_profile_id
+        elif capability in {"image", "video"}:
+            registry = request.app.state.visual_profile_registry
+            profiles = registry.list_profiles(capability)
+            default_profile_id = registry.default_profile_id(capability)
+        else:
+            raise ProviderProfileError(
+                "PROVIDER_CAPABILITY_NOT_SUPPORTED",
+                f"Provider profile capability {capability!r} is not supported",
+            )
+    except ProviderProfileError as exc:
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
     return ProviderProfileListResponse(
         items=[ProviderProfileSummary.model_validate(profile.as_public_dict()) for profile in profiles],
         total=len(profiles),
-        default_profile_id=registry.default_profile_id,
+        default_profile_id=default_profile_id,
     )
 
 
@@ -1436,6 +1447,8 @@ async def create_reference_image_task(
         raise ApiError(404, "ASSET_NOT_FOUND", "Asset was not found") from exc
     except AssetNotReadyError as exc:
         raise ApiError(409, "ASSET_NOT_READY", str(exc)) from exc
+    except ProviderProfileError as exc:
+        raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
 @router.get(
@@ -1569,6 +1582,8 @@ async def create_episode_task_plan(
         ) from exc
     except EpisodeTaskPlanEmptyError as exc:
         raise ApiError(409, "EPISODE_TASK_PLAN_NO_EPISODES", "No episodes are available for task planning") from exc
+    except ProviderProfileError as exc:
+        raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
 @router.post(
@@ -1596,6 +1611,8 @@ async def start_production_run(
         raise ApiError(404, "NOVEL_PROJECT_NOT_FOUND", "Novel project was not found") from exc
     except NovelSourceNotFoundError as exc:
         raise ApiError(409, "NOVEL_SOURCE_REQUIRED", "Upload a novel source before starting production") from exc
+    except ProviderProfileError as exc:
+        raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
 @router.get(
@@ -2134,7 +2151,7 @@ async def create_subtitle_asr_task(
         return task
     except EpisodeNotFoundError as exc:
         raise ApiError(404, "EPISODE_NOT_FOUND", "Episode was not found") from exc
-    except ASRProviderProfileError as exc:
+    except ProviderProfileError as exc:
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
@@ -2168,6 +2185,8 @@ async def create_video_clip_task(
         raise ApiError(404, "SHOT_NOT_FOUND", "Shot was not found") from exc
     except VideoClipAssetGateError as exc:
         raise ApiError(409, "SHOT_ASSETS_NOT_READY", str(exc)) from exc
+    except ProviderProfileError as exc:
+        raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
 @router.post(

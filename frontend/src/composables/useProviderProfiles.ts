@@ -1,9 +1,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { getProviderProfiles } from '../api/providerProfiles'
+import type { ProviderCapability } from '../api/providerProfiles'
 import type { ProviderProfile } from '../types/provider'
 import { ApiClientError } from '../api/client'
 
-export function useProviderProfiles() {
+export function useProviderProfiles(capability: ProviderCapability = 'asr') {
   const profiles = ref<ProviderProfile[]>([])
   const defaultProfileId = ref<string | null>(null)
   const selectedProfileId = ref<string | null>(null)
@@ -22,7 +23,7 @@ export function useProviderProfiles() {
     errorMessage.value = null
     errorCode.value = null
     try {
-      const response = await getProviderProfiles()
+      const response = await getProviderProfiles(capability)
       profiles.value = response.items
       defaultProfileId.value = response.default_profile_id
       const configuredDefault = response.items.find(

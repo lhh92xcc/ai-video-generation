@@ -23,6 +23,7 @@ import { useProviderProfiles } from '../composables/useProviderProfiles'
 import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import MediaPreview from './MediaPreview.vue'
 import ProductionQualityPanel from './ProductionQualityPanel.vue'
+import ProviderProfileSelect from './ProviderProfileSelect.vue'
 import type { EpisodeScriptRecord, ShotContent, ShotListRecord } from '../types/novel'
 import type {
   ChapterRecord,
@@ -60,7 +61,23 @@ const emit = defineEmits<{
   openOperator: [view?: OperatorView]
 }>()
 
-const { availableProfiles, selectedProfileId, isLoading: profilesLoading } = useProviderProfiles()
+const {
+  availableProfiles: asrAvailableProfiles,
+  selectedProfileId,
+  isLoading: profilesLoading,
+} = useProviderProfiles('asr')
+const {
+  profiles: imageProfiles,
+  defaultProfileId: imageDefaultProfileId,
+  selectedProfileId: selectedImageProfileId,
+  isLoading: imageProfilesLoading,
+} = useProviderProfiles('image')
+const {
+  profiles: videoProfiles,
+  defaultProfileId: videoDefaultProfileId,
+  selectedProfileId: selectedVideoProfileId,
+  isLoading: videoProfilesLoading,
+} = useProviderProfiles('video')
 
 const projectData = ref(props.project)
 const chapters = ref<ChapterRecord[]>([])
@@ -717,7 +734,7 @@ async function startVideoClip(shot: ShotContent) {
     () => createVideoClipTask(
       selectedEpisode.value?.id ?? '',
       shot.shot_index,
-      {},
+      { provider_profile_id: selectedVideoProfileId.value ?? undefined },
       newIdempotencyKey(`video-clip-${selectedEpisode.value?.id}-${shot.shot_index}`),
     ),
   )
@@ -885,6 +902,8 @@ async function startEpisodeTaskPlan() {
         include_video: true,
         include_assembly: true,
         subtitle_mode: 'align',
+        image_provider_profile_id: selectedImageProfileId.value ?? undefined,
+        video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
       },
       newIdempotencyKey('episode-task-plan'),
     )
@@ -907,6 +926,8 @@ async function startFullProduction() {
         include_video: true,
         include_assembly: true,
         subtitle_mode: 'align',
+        image_provider_profile_id: selectedImageProfileId.value ?? undefined,
+        video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
         auto_advance: true,
       },
       `creator:${projectData.value.id}:production-run`,
@@ -1028,6 +1049,32 @@ onUnmounted(() => {
           <div v-else class="creator-source-summary"><span class="creator-source-icon">▤</span><div><strong>小说原文已接入</strong><small>{{ projectData.source_id }} · 已切分 {{ chapters.length }} 个章节</small></div><span class="creator-source-meta">{{ chapters.length ? formatBytes(chapters.reduce((total, chapter) => total + chapter.content.length, 0)) : '已保存' }}</span></div>
           <div v-if="!sourceReady" class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!selectedFile || Boolean(action)" @click="uploadSource">{{ action === 'upload' ? '上传中…' : '上传并切分章节' }} <span>→</span></button></div>
           <div v-else class="creator-chapter-preview"><div class="creator-subheading"><strong>章节预览</strong><small>{{ chapters.length }} 个章节</small></div><div v-if="chapters.length" class="creator-chapter-list"><div v-for="chapter in chapters.slice(0, 3)" :key="chapter.id"><span>第 {{ chapter.chapter_number }} 章</span><strong>{{ chapter.title }}</strong></div></div><small v-if="chapters.length > 3" class="creator-more-note">还有 {{ chapters.length - 3 }} 个章节，完整内容将在制作后台中查看。</small></div>
+          <div v-if="sourceReady" class="creator-provider-panel">
+            <div class="creator-provider-panel-heading"><div><p class="creator-eyebrow">PROVIDER PROFILES</p><h4>本次生产配置</h4><p>选择会写入新任务快照；已经运行中的任务不会被改写，也不需要手动编辑配置文件。</p></div><span>任务快照</span></div>
+            <div class="creator-provider-grid">
+              <ProviderProfileSelect
+                v-model="selectedImageProfileId"
+                :profiles="imageProfiles"
+                :default-profile-id="imageDefaultProfileId"
+                :disabled="imageProfilesLoading || Boolean(action)"
+                label="参考图 Provider"
+                select-id="creator-image-provider"
+                hint="本地 ComfyUI/Mock 不需要 Key；云端档案只有配置了 Key 才能提交。"
+              />
+              <ProviderProfileSelect
+                v-model="selectedVideoProfileId"
+                :profiles="videoProfiles"
+                :default-profile-id="videoDefaultProfileId"
+                :disabled="videoProfilesLoading || Boolean(action)"
+                label="视频 Provider"
+                select-id="creator-video-provider"
+                hint="本地 Wan/FFmpeg 或已配置的云端档案可按任务选择，选择结果会随 DAG 保存。"
+              />
+            </div>
+            <p v-if="imageProfilesLoading || videoProfilesLoading" class="creator-provider-status">正在读取图片和视频配置…</p>
+            <p v-else-if="!imageProfiles.length || !videoProfiles.length" class="creator-provider-status warning">图片或视频 Provider 列表为空，请检查 API 配置。</p>
+            <p v-else class="creator-provider-status">未配置的云端档案会保留在列表中但不可选；当前选择会同时用于“一键启动完整生产”和高级分集计划。</p>
+          </div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
             <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
             <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
@@ -1099,7 +1146,7 @@ onUnmounted(() => {
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 09</p><h3>生成并审核字幕</h3><p>使用已校验的单集旁白创建字幕任务。ASR 依赖选定 Provider，句子级对齐只提供待审核的时间估算。</p></div><span class="creator-card-state" :class="{ ready: subtitleTask?.status === 'succeeded' }">{{ subtitleTask?.status === 'succeeded' ? '已完成' : subtitleTask ? formatStatus(subtitleTask.status) : '待生成' }}</span></div>
           <div class="creator-subtitle-source"><span class="creator-audio-icon">♫</span><div><strong>已选择本集旁白 Artifact</strong><small>{{ audioArtifact.provider }} · {{ formatAudioDuration(audioArtifact.metadata.duration_seconds) }} · 已通过音频校验</small></div><span class="creator-artifact-state">可用</span></div>
           <div class="creator-subtitle-mode-switch" role="tablist" aria-label="字幕生成方式"><button type="button" :class="{ active: subtitleMode === 'asr' }" @click="subtitleMode = 'asr'">真实 ASR 转写</button><button type="button" :class="{ active: subtitleMode === 'align' }" @click="subtitleMode = 'align'">句子级对齐</button></div>
-          <div v-if="subtitleMode === 'asr'" class="creator-subtitle-note"><strong>ASR Provider</strong><select v-model="selectedProfileId" :disabled="profilesLoading || Boolean(action)"><option value="" disabled>请选择已配置的识别服务</option><option v-for="profile in availableProfiles" :key="profile.profile_id" :value="profile.profile_id">{{ profile.label }} · {{ profile.model }}{{ profile.default ? ' · 默认' : '' }}</option></select><small v-if="profilesLoading">正在读取可用配置…</small><small v-else-if="availableProfiles.length === 0">当前没有可用 ASR Provider；可以切换到句子级对齐，或先在制作后台配置服务。</small><small v-else>文本会作为质量复核参考；Provider 的密钥只保存在服务端。</small></div>
+          <div v-if="subtitleMode === 'asr'" class="creator-subtitle-note"><strong>ASR Provider</strong><select v-model="selectedProfileId" :disabled="profilesLoading || Boolean(action)"><option value="" disabled>请选择已配置的识别服务</option><option v-for="profile in asrAvailableProfiles" :key="profile.profile_id" :value="profile.profile_id">{{ profile.label }} · {{ profile.model }}{{ profile.default ? ' · 默认' : '' }}</option></select><small v-if="profilesLoading">正在读取可用配置…</small><small v-else-if="asrAvailableProfiles.length === 0">当前没有可用 ASR Provider；可以切换到句子级对齐，或先在制作后台配置服务。</small><small v-else>文本会作为质量复核参考；Provider 的密钥只保存在服务端。</small></div>
           <div v-else class="creator-subtitle-note align"><strong>句子级对齐</strong><p>系统会按句子与音频总时长估算时间轴，不读取声学特征，结果必须人工审核后才能进入成片。</p></div>
           <label class="creator-audio-field"><span>{{ subtitleMode === 'asr' ? '参考文本（用于质量复核）' : '字幕文本' }} <em>{{ subtitleText.length }}/5000</em></span><textarea v-model="subtitleText" rows="7" maxlength="5000" :disabled="Boolean(action) || Boolean(subtitleTask && isActive(subtitleTask.status))" placeholder="默认使用生成旁白时提交的文本；可在这里调整后再创建字幕任务。" @input="subtitleTextDirty = true" /></label>
           <div v-if="subtitleTask?.status === 'failed'" class="creator-audio-error"><strong>字幕任务失败</strong><span>{{ taskErrorDetail(subtitleTask.error) }}</span></div>
@@ -1122,6 +1169,17 @@ onUnmounted(() => {
         <section v-if="selectedShotList" id="creator-step-video" class="creator-workspace-card creator-video-clips-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 10 · VIDEO CLIPS</p><h3>生成单镜头视频片段</h3><p>只对已审核、资产绑定完整的镜头提交任务。每个镜头独立生成，失败后可以单独重试，不会重新生成整集。</p></div><span class="creator-card-state" :class="{ ready: videoClipReadyCount === selectedShotList.shots.length }">{{ videoClipReadyCount }}/{{ selectedShotList.shots.length }} 可生成</span></div>
           <div class="creator-production-note"><span>i</span><p>视频生成门禁由服务端再次校验。若镜头存在未解决资产需求、绑定警告或非 ready 资产，请进入制作后台处理后再回来提交。</p><button v-if="shotFailedCount" class="creator-inline-action" type="button" @click="focusFailedShots">只看失败镜头</button></div>
+          <div class="creator-video-provider-inline">
+            <ProviderProfileSelect
+              v-model="selectedVideoProfileId"
+              :profiles="videoProfiles"
+              :default-profile-id="videoDefaultProfileId"
+              :disabled="videoProfilesLoading || Boolean(action)"
+              label="当前视频片段 Provider"
+              select-id="creator-video-provider-inline"
+              hint="单镜头重试也会使用这里选择的 Profile；任务创建后会固定在任务快照中。"
+            />
+          </div>
           <div class="creator-shot-toolbar">
             <div><strong>镜头清单</strong><small>显示 {{ filteredShots.length }}/{{ shotTotalCount }} · 已完成 {{ shotSucceededCount }} · 失败 {{ shotFailedCount }} · 需补资产 {{ shotBlockedCount }}</small></div>
             <div class="creator-shot-controls"><div class="creator-shot-filters"><button v-for="filter in shotFilterOptions" :key="filter.key" type="button" :class="{ active: shotFilter === filter.key }" @click="shotFilter = filter.key">{{ filter.label }} <b>{{ filter.count }}</b></button></div><input v-model="shotSearch" type="search" placeholder="搜索镜头或提示词" aria-label="搜索镜头或提示词" /></div>

@@ -26,6 +26,7 @@ from app.domain.models import (
 )
 from app.providers.errors import ImageProviderError
 from app.providers.image_generation import ImageGenerationProvider
+from app.providers.profiles import VisualProviderProfileError, VisualProviderProfileRegistry
 from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     DEFAULT_REFERENCE_STYLE,
@@ -55,6 +56,7 @@ class ReferenceImageTaskService:
         identity_provider: ImageGenerationProvider | None = None,
         default_style: str = DEFAULT_REFERENCE_STYLE,
         default_negative_prompt: str = DEFAULT_REFERENCE_NEGATIVE_PROMPT,
+        provider_registry: VisualProviderProfileRegistry | None = None,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -67,6 +69,7 @@ class ReferenceImageTaskService:
         self._default_negative_prompt = (
             default_negative_prompt.strip() or DEFAULT_REFERENCE_NEGATIVE_PROMPT
         )
+        self._provider_registry = provider_registry
 
     async def create_task(
         self,
@@ -78,6 +81,17 @@ class ReferenceImageTaskService:
         if asset.status != AssetStatus.READY:
             raise AssetNotReadyError(
                 f"Asset {asset.id} is {asset.status.value}; approve the asset before generation"
+            )
+
+        provider_profile_id: str | None = None
+        if self._provider_registry is not None:
+            profile = self._provider_registry.resolve("image", request.provider_profile_id)
+            self._provider_registry.ensure_configured(profile)
+            provider_profile_id = profile.profile_id
+        elif request.provider_profile_id is not None:
+            raise VisualProviderProfileError(
+                "PROVIDER_PROFILE_SELECTION_UNAVAILABLE",
+                "Image Provider profile selection is not enabled for this service",
             )
 
         identity_reference_image_id, identity_anchor_reference_image_id = (
@@ -124,6 +138,11 @@ class ReferenceImageTaskService:
                     "identity_locked_variant"
                     if identity_reference_image_id is not None
                     else "candidate_reference"
+                ),
+                **(
+                    {"provider_profile_id": provider_profile_id}
+                    if provider_profile_id is not None
+                    else {}
                 ),
             },
             status=TaskStatus.QUEUED,
@@ -203,15 +222,24 @@ class ReferenceImageTaskService:
                 identity_image_mime_type = str(
                     identity_reference_image.metadata.get("content_type", "image/png")
                 )
+            provider = self._provider
+            identity_provider = self._identity_provider
+            selected_profile_id = task.input_data.get("provider_profile_id")
+            if self._provider_registry is not None and selected_profile_id:
+                provider = await self._provider_registry.get_image_provider(
+                    str(selected_profile_id)
+                )
+                if identity_reference_image_id is not None:
+                    identity_provider = await self._provider_registry.get_identity_image_provider(
+                        str(selected_profile_id)
+                    )
             if identity_reference_image_id is not None:
-                if self._identity_provider is None:
+                if identity_provider is None:
                     raise ImageProviderError(
                         "IMAGE_IDENTITY_PROVIDER_NOT_CONFIGURED",
                         "An identity-locked character image requires a configured identity image Provider",
                     )
-                provider = self._identity_provider
-            else:
-                provider = self._provider
+                provider = identity_provider
             result = await provider.generate_reference_image(
                 ReferenceImageGenerationRequest(
                     asset_id=reference_image.asset_id,
@@ -269,6 +297,7 @@ class ReferenceImageTaskService:
                         "asset_version": reference_image.asset_version,
                         "output_uri": reference_image.output_uri,
                         "identity_anchor": is_identity_anchor,
+                        "provider_profile_id": task.input_data.get("provider_profile_id"),
                         "reference_role": reference_image.metadata.get(
                             "reference_role", "candidate_reference"
                         ),

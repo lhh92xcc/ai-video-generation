@@ -105,6 +105,8 @@ export function createEpisodeTaskPlan(
     include_assembly?: boolean
     subtitle_mode?: 'align' | 'asr'
     provider_profile_id?: string
+    image_provider_profile_id?: string
+    video_provider_profile_id?: string
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'
@@ -135,6 +137,8 @@ export function startProductionRun(
     include_assembly?: boolean
     subtitle_mode?: 'align' | 'asr'
     provider_profile_id?: string
+    image_provider_profile_id?: string
+    video_provider_profile_id?: string
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'

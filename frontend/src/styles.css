@@ -645,3 +645,25 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-quality-section[open] summary { color: #565fc2; }
 .creator-quality-section > .creator-quality-card { margin-top: 0; border: 0; border-top: 1px solid #eef0f5; border-radius: 0 0 10px 10px; }
 .creator-task-row strong em { margin-left: 4px; color: #9b82cf; font-size: 8px; font-style: normal; font-weight: 700; }
+/* Provider selections used by the creator workflow. */
+.creator-provider-panel { margin-top: 17px; border: 1px solid #e3e4f8; border-radius: 10px; padding: 13px; background: linear-gradient(145deg, #fbfbff, #fff); }
+.creator-provider-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.creator-provider-panel-heading h4 { margin: 0; color: #4d5574; font-size: 11px; }
+.creator-provider-panel-heading p:not(.creator-eyebrow) { margin: 5px 0 0; color: #9098ab; font-size: 9px; line-height: 1.5; }
+.creator-provider-panel-heading > span { flex: 0 0 auto; border-radius: 999px; padding: 5px 8px; color: #6264d4; background: #efefff; font-size: 8px; font-weight: 700; }
+.creator-provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 13px; }
+.creator-provider-grid .provider-selector, .creator-video-provider-inline .provider-selector { min-width: 0; }
+.creator-provider-grid .field-label, .creator-video-provider-inline .field-label { margin-bottom: 6px; font-size: 9px; }
+.creator-provider-grid .provider-select, .creator-video-provider-inline .provider-select { height: 32px; padding: 0 8px; font-size: 9px; }
+.creator-provider-grid .field-hint, .creator-video-provider-inline .field-hint { margin-top: 5px; font-size: 8px; line-height: 1.45; }
+.creator-provider-status { margin: 11px 0 0; color: #858da1; font-size: 8px; line-height: 1.5; }
+.creator-provider-status.warning { color: #a8732d; }
+.creator-video-provider-inline { margin-top: 14px; border: 1px solid #ececf8; border-radius: 8px; padding: 10px 11px; background: #fcfcff; }
+.creator-video-provider-inline .provider-selector { display: grid; grid-template-columns: minmax(130px, 0.55fr) minmax(0, 1.45fr); align-items: center; gap: 7px 12px; }
+.creator-video-provider-inline .field-label { margin: 0; }
+.creator-video-provider-inline .field-hint { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 720px) {
+  .creator-provider-grid { grid-template-columns: 1fr; }
+  .creator-video-provider-inline .provider-selector { display: block; }
+  .creator-video-provider-inline .field-hint { margin-top: 5px; }
+}

@@ -60,8 +60,16 @@ def test_reference_image_requires_ready_asset_and_is_version_bound(client: TestC
 def test_mock_reference_image_task_and_idempotency(client: TestClient) -> None:
     asset = create_ready_character(client)
     endpoint = f"/api/v1/assets/{asset['id']}/reference-images"
-    first = client.post(endpoint, json={"style": "cinematic"}, headers={"Idempotency-Key": "ref-1"})
-    second = client.post(endpoint, json={"style": "cinematic"}, headers={"Idempotency-Key": "ref-1"})
+    first = client.post(
+        endpoint,
+        json={"style": "cinematic", "provider_profile_id": "image.mock"},
+        headers={"Idempotency-Key": "ref-1"},
+    )
+    second = client.post(
+        endpoint,
+        json={"style": "cinematic", "provider_profile_id": "image.mock"},
+        headers={"Idempotency-Key": "ref-1"},
+    )
 
     assert first.status_code == 202
     assert second.status_code == 202
@@ -70,6 +78,7 @@ def test_mock_reference_image_task_and_idempotency(client: TestClient) -> None:
     assert task["status"] == "succeeded"
     assert task["kind"] == "asset_reference_image"
     assert task["current_stage"] is None
+    assert task["input_data"]["provider_profile_id"] == "image.mock"
     assert task["artifacts"][0]["type"] == "reference_image"
 
     images = client.get(endpoint)

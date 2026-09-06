@@ -62,7 +62,7 @@ from app.services.runtime_health_service import RuntimeHealthService
 from app.services.temp_cleanup_service import TemporaryDirectoryCleanupService
 from app.services.production_orchestrator import ProductionOrchestrator
 from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer
-from app.providers.profiles import ASRProviderProfileRegistry
+from app.providers.profiles import ASRProviderProfileRegistry, VisualProviderProfileRegistry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -93,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     bgm_provider = create_bgm_provider(app_settings)
     subtitle_alignment_provider = create_subtitle_alignment_provider(app_settings)
     asr_profile_registry = ASRProviderProfileRegistry(app_settings)
+    visual_profile_registry = VisualProviderProfileRegistry(app_settings)
     artifact_storage = create_artifact_storage(app_settings)
     novel_service = NovelService(
         store,
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         default_height=app_settings.image_height,
         default_style=app_settings.image_default_style,
         default_negative_prompt=app_settings.image_default_negative_prompt,
+        provider_registry=visual_profile_registry,
     )
     video_clip_task_service = VideoClipTaskService(
         store,
@@ -135,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         default_negative_prompt=app_settings.video_default_negative_prompt,
         prompt_suffix=app_settings.video_prompt_suffix,
+        provider_registry=visual_profile_registry,
     )
     video_assembly_task_service = VideoAssemblyTaskService(
         store,
@@ -276,6 +279,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if close_provider is not None:
                 await close_provider()
         await asr_profile_registry.close()
+        await visual_profile_registry.close()
         close_storage = getattr(artifact_storage, "close", None)
         if close_storage is not None:
             await close_storage()
@@ -309,6 +313,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.audit_service = audit_service
     app.state.artifact_storage = artifact_storage
     app.state.asr_profile_registry = asr_profile_registry
+    app.state.visual_profile_registry = visual_profile_registry
     app.state.identity_provider = identity_provider
     app.state.access_service = access_service
     app.state.identity_calibration_service = identity_calibration_service

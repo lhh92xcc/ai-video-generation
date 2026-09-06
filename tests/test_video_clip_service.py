@@ -24,8 +24,10 @@ from app.domain.models import (
 )
 from app.providers.local_fixture_video import LocalFixtureVideoGenerationProvider
 from app.providers.mock_video import MockVideoGenerationProvider
+from app.providers.profiles import VisualProviderProfileRegistry
 from app.queue import InProcessTaskQueue
 from app.repositories.in_memory import InMemoryStore
+from app.config import load_settings
 from app.services.video_clip_service import (
     VideoClipAssetGateError,
     VideoClipTaskService,
@@ -177,6 +179,9 @@ def test_mock_video_clip_task_creates_traceable_artifact(tmp_path) -> None:
             queue,
             MockVideoGenerationProvider(),
             storage,
+            provider_registry=VisualProviderProfileRegistry(
+                load_settings("config/config.example.toml")
+            ),
         )
         queue.set_handler(service.run_task)
         project_id = uuid4()
@@ -239,7 +244,7 @@ def test_mock_video_clip_task_creates_traceable_artifact(tmp_path) -> None:
         task, reused = await service.create_task(
             episode.id,
             1,
-            VideoClipCreateRequest(),
+            VideoClipCreateRequest(provider_profile_id="video.mock"),
             idempotency_key="shot-1",
         )
         await queue.close()
@@ -251,6 +256,8 @@ def test_mock_video_clip_task_creates_traceable_artifact(tmp_path) -> None:
         assert saved_task.current_stage is None
         assert saved_task.artifacts[0].type == "video_clip"
         assert saved_task.artifacts[0].metadata["shot_index"] == 1
+        assert saved_task.input_data["provider_profile_id"] == "video.mock"
+        assert saved_task.artifacts[0].metadata["provider_profile_id"] == "video.mock"
         assert saved_task.artifacts[0].metadata["output_uri"].startswith(
             "mock://video-clips/"
         )

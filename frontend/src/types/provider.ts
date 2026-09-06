@@ -1,6 +1,6 @@
 export interface ProviderProfile {
   profile_id: string
-  capability: 'asr'
+  capability: 'asr' | 'image' | 'video'
   label: string
   provider: string
   model: string

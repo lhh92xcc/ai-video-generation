@@ -298,6 +298,18 @@ threads = 4
 # AI_VIDEO_ASR_SILICONFLOW_API_KEY、AI_VIDEO_ASR_OPENAI_COMPATIBLE_API_KEY。
 # 现有 AI_VIDEO_ASR_API_KEY 仍作为当前 AI_VIDEO_ASR_PROVIDER 的兼容 fallback；所有 Key 只从环境变量读取。
 
+# 图片和视频也支持运行时 Provider Profile：
+# GET /api/v1/provider-profiles?capability=image|video 返回安全元数据，
+# 参考图/视频任务及完整生产计划可传 provider_profile_id；选择结果写入任务快照，
+# 前端不需要手动修改 TOML。内置图片档案：image.mock、image.comfyui、
+# image.siliconflow、image.openai_compatible；内置视频档案：video.mock、
+# video.local_fixture、video.ffmpeg_motion、video.comfyui_wan_i2v、
+# video.siliconflow、video.openai_compatible。
+# 真实图片/视频档案使用独立环境变量：
+# AI_VIDEO_IMAGE_SILICONFLOW_API_KEY、AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY、
+# AI_VIDEO_VIDEO_SILICONFLOW_API_KEY、AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY。
+# 现有 AI_VIDEO_IMAGE_API_KEY / AI_VIDEO_VIDEO_API_KEY 仍作为当前默认 Provider 的兼容 fallback。
+
 [materials]
 default_provider = "pexels"
 providers = ["pexels", "pixabay"]

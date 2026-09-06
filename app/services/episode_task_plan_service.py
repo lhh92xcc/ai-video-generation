@@ -354,7 +354,11 @@ class EpisodeTaskPlanService:
 
         if request.include_reference_images:
             reference_item, reference_task_ids, ready_references, blocked = await self._plan_reference_images(
-                episode, shot_list.shots, project_tasks, idempotency_key,
+                episode,
+                shot_list.shots,
+                project_tasks,
+                idempotency_key,
+                request.image_provider_profile_id,
             )
             if reference_item is not None:
                 return reference_item, reference_task_ids
@@ -407,7 +411,12 @@ class EpisodeTaskPlanService:
         video_clip_tasks: list[GenerationTaskRecord] = []
         if request.include_video:
             video_item, video_task_ids, video_clip_tasks, blocked = await self._plan_video_clips(
-                episode, shot_list.shots, project_tasks, ready_references, idempotency_key,
+                episode,
+                shot_list.shots,
+                project_tasks,
+                ready_references,
+                idempotency_key,
+                request.video_provider_profile_id,
             )
             if video_item is not None:
                 return video_item, video_task_ids
@@ -452,7 +461,14 @@ class EpisodeTaskPlanService:
             ), completed_task_ids
         return self._item(episode, GenerationTaskKind.VIDEO_ASSEMBLY.value, EpisodeTaskPlanAction.BLOCKED, "成片合成阶段被阻塞，请检查可选音频、字幕和片段 Artifact", blocked), []
 
-    async def _plan_reference_images(self, episode, shots, project_tasks, idempotency_key):
+    async def _plan_reference_images(
+        self,
+        episode,
+        shots,
+        project_tasks,
+        idempotency_key,
+        image_provider_profile_id=None,
+    ):
         assets = await self._store.list_assets(episode.project_id)
         by_key = {(asset.asset_type, asset.asset_key): asset for asset in assets}
         referenced: dict[UUID, AssetRecord] = {}
@@ -490,7 +506,9 @@ class EpisodeTaskPlanService:
                 continue
             created_task, reused = await self._reference_image_task_service.create_task(
                 asset.id,
-                ReferenceImageCreateRequest(),
+                ReferenceImageCreateRequest(
+                    provider_profile_id=image_provider_profile_id,
+                ),
                 self._task_key(idempotency_key, "reference", asset.id),
             )
             pending.append(created_task.id)
@@ -584,7 +602,15 @@ class EpisodeTaskPlanService:
         )
         return self._item(episode, GenerationTaskKind.AUDIO_BGM.value, EpisodeTaskPlanAction.REUSED if reused else EpisodeTaskPlanAction.CREATED, "复用已有 BGM 任务" if reused else "已创建 BGM 任务", [created.id]), [created.id], None, []
 
-    async def _plan_video_clips(self, episode, shots, project_tasks, references, idempotency_key):
+    async def _plan_video_clips(
+        self,
+        episode,
+        shots,
+        project_tasks,
+        references,
+        idempotency_key,
+        video_provider_profile_id=None,
+    ):
         blocked: list[str] = []
         successful: list[GenerationTaskRecord] = []
         pending: list[UUID] = []
@@ -607,7 +633,10 @@ class EpisodeTaskPlanService:
             created_task, reused = await self._video_clip_task_service.create_task(
                 episode.id,
                 shot.shot_index,
-                VideoClipCreateRequest(reference_image_id=reference_image_id),
+                VideoClipCreateRequest(
+                    reference_image_id=reference_image_id,
+                    provider_profile_id=video_provider_profile_id,
+                ),
                 self._task_key(idempotency_key, f"video-{shot.shot_index}", episode.id),
             )
             pending.append(created_task.id)

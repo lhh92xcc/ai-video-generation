@@ -51,7 +51,7 @@ from app.services.voice_asset_service import VoiceAssetService
 from app.services.episode_task_plan_service import EpisodeTaskPlanService
 from app.services.production_orchestrator import ProductionOrchestrator
 from app.services.temp_cleanup_service import TemporaryDirectoryCleanupService
-from app.providers.profiles import ASRProviderProfileRegistry
+from app.providers.profiles import ASRProviderProfileRegistry, VisualProviderProfileRegistry
 from app.storage.factory import create_artifact_storage
 from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer
 
@@ -90,6 +90,7 @@ async def run_worker() -> None:
     bgm_provider = create_bgm_provider(settings)
     subtitle_alignment_provider = create_subtitle_alignment_provider(settings)
     asr_profile_registry = ASRProviderProfileRegistry(settings)
+    visual_profile_registry = VisualProviderProfileRegistry(settings)
     artifact_storage = create_artifact_storage(settings)
     novel_service = NovelService(
         store,
@@ -108,6 +109,7 @@ async def run_worker() -> None:
         default_height=settings.image_height,
         default_style=settings.image_default_style,
         default_negative_prompt=settings.image_default_negative_prompt,
+        provider_registry=visual_profile_registry,
     )
     video_clip_task_service = VideoClipTaskService(
         store,
@@ -131,6 +133,7 @@ async def run_worker() -> None:
         ),
         default_negative_prompt=settings.video_default_negative_prompt,
         prompt_suffix=settings.video_prompt_suffix,
+        provider_registry=visual_profile_registry,
     )
     video_assembly_task_service = VideoAssemblyTaskService(
         store,
@@ -341,6 +344,7 @@ async def run_worker() -> None:
             if close_provider is not None:
                 await close_provider()
         await asr_profile_registry.close()
+        await visual_profile_registry.close()
         close_storage = getattr(artifact_storage, "close", None)
         if close_storage is not None:
             await close_storage()

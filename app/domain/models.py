@@ -895,12 +895,13 @@ class ReferenceImageCreateRequest(BaseModel):
     negative_prompt: str | None = Field(default=None, max_length=1000)
     width: int | None = Field(default=None, ge=256, le=2048)
     height: int | None = Field(default=None, ge=256, le=2048)
+    provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     identity_reference_image_id: UUID | None = Field(
         default=None,
         description="Optional succeeded reference image used by an identity adapter workflow.",
     )
 
-    @field_validator("style", "negative_prompt")
+    @field_validator("style", "negative_prompt", "provider_profile_id")
     @classmethod
     def strip_reference_image_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -946,8 +947,9 @@ class VideoClipCreateRequest(BaseModel):
     prompt_override: str | None = Field(default=None, max_length=1500)
     reference_image_id: UUID | None = None
     negative_prompt: str | None = Field(default=None, max_length=1000)
+    provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
 
-    @field_validator("prompt_override", "negative_prompt")
+    @field_validator("prompt_override", "negative_prompt", "provider_profile_id")
     @classmethod
     def strip_video_prompt(cls, value: str | None) -> str | None:
         if value is None:
@@ -1188,7 +1190,7 @@ class ProviderProfileSummary(BaseModel):
     """Safe Provider metadata suitable for a frontend selection control."""
 
     profile_id: str
-    capability: Literal["asr"] = "asr"
+    capability: Literal["asr", "image", "video"] = "asr"
     label: str
     provider: str
     model: str
@@ -1624,6 +1626,8 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
     include_assembly: bool = True
     subtitle_mode: Literal["align", "asr"] = "align"
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    image_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    video_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     auto_advance: bool = True
     bgm_source_path: str | None = Field(default=None, max_length=500)
     bgm_label: str = Field(default="licensed-local-bgm", min_length=1, max_length=120)
@@ -1652,6 +1656,10 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
             raise ValueError("subtitle_mode cannot be set when subtitles are disabled")
         if self.provider_profile_id is not None and self.subtitle_mode != "asr":
             raise ValueError("provider_profile_id is only valid for ASR subtitles")
+        if self.image_provider_profile_id is not None and not self.include_reference_images:
+            raise ValueError("image_provider_profile_id is only valid when reference images are enabled")
+        if self.video_provider_profile_id is not None and not self.include_video:
+            raise ValueError("video_provider_profile_id is only valid when video clips are enabled")
         return self
 
 

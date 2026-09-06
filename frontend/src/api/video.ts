@@ -4,6 +4,7 @@ import type { GenerationTaskRecord } from '../types/task'
 export interface VideoClipCreateRequest {
   prompt_override?: string
   negative_prompt?: string
+  provider_profile_id?: string
 }
 
 export function createVideoClipTask(

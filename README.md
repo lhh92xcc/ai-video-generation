@@ -95,6 +95,12 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 
 公开仓库已排除学习/协作文档、模型、虚拟环境、运行产物、媒体文件和本地配置；这些内容不会进入 Git 历史。
 
+### 运行时选择 Provider
+
+创作者前台的完整生产配置支持分别选择参考图和视频 Provider。选择结果只写入新建任务的快照，不会修改已经运行的任务，也不需要手动编辑 TOML。未配置密钥的云端档案会显示为不可选；本地 Mock、ComfyUI、FFmpeg 和 Wan 档案不需要云端 API Key。
+
+后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
+
 ## 验证
 
 ```bash

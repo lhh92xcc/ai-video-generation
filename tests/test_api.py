@@ -30,6 +30,35 @@ def test_provider_profile_list_is_safe_for_frontend_dropdown(client: TestClient)
     assert all("api_key" not in item for item in body["items"])
 
 
+def test_visual_provider_profile_lists_are_safe_for_frontend_dropdown(client: TestClient) -> None:
+    expected = {
+        "image": {
+            "image.mock",
+            "image.comfyui",
+            "image.siliconflow",
+            "image.openai_compatible",
+        },
+        "video": {
+            "video.mock",
+            "video.local_fixture",
+            "video.ffmpeg_motion",
+            "video.comfyui_wan_i2v",
+            "video.siliconflow",
+            "video.openai_compatible",
+        },
+    }
+    for capability, expected_ids in expected.items():
+        response = client.get(f"/api/v1/provider-profiles?capability={capability}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == len(expected_ids)
+        assert {item["profile_id"] for item in body["items"]} == expected_ids
+        assert body["default_profile_id"].startswith(f"{capability}.")
+        assert all(item["capability"] == capability for item in body["items"])
+        assert all("api_key" not in item for item in body["items"])
+
+
 def test_create_and_list_project(client: TestClient) -> None:
     payload = {
         "title": "露营装备推荐",

@@ -33,6 +33,7 @@ from app.media.visual_prompts import (
 )
 from app.providers.errors_video import VideoProviderError
 from app.providers.video_generation import VideoGenerationProvider
+from app.providers.profiles import VisualProviderProfileError, VisualProviderProfileRegistry
 from app.queue import TaskQueue
 from app.repositories.protocol import NovelStore
 from app.services.novel_service import (
@@ -61,6 +62,7 @@ class VideoClipTaskService:
         identity_auditor: IdentityAuditProvider | None = None,
         default_negative_prompt: str = DEFAULT_VIDEO_NEGATIVE_PROMPT,
         prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
+        provider_registry: VisualProviderProfileRegistry | None = None,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -72,6 +74,7 @@ class VideoClipTaskService:
             default_negative_prompt.strip() or DEFAULT_VIDEO_NEGATIVE_PROMPT
         )
         self._prompt_suffix = prompt_suffix.strip()
+        self._provider_registry = provider_registry
 
     async def create_task(
         self,
@@ -83,6 +86,16 @@ class VideoClipTaskService:
         episode = await self._store.get_episode(episode_id)
         if episode is None:
             raise EpisodeNotFoundError
+        provider_profile_id: str | None = None
+        if self._provider_registry is not None:
+            profile = self._provider_registry.resolve("video", request.provider_profile_id)
+            self._provider_registry.ensure_configured(profile)
+            provider_profile_id = profile.profile_id
+        elif request.provider_profile_id is not None:
+            raise VisualProviderProfileError(
+                "PROVIDER_PROFILE_SELECTION_UNAVAILABLE",
+                "Video Provider profile selection is not enabled for this service",
+            )
         shot_list = await self._store.get_latest_shot_list(episode_id)
         if shot_list is None:
             raise ShotListNotFoundError
@@ -163,6 +176,11 @@ class VideoClipTaskService:
                     reference.model_dump(mode="json") for reference in shot.asset_refs
                 ],
                 "generation_attempt": 1,
+                **(
+                    {"provider_profile_id": provider_profile_id}
+                    if provider_profile_id is not None
+                    else {}
+                ),
             },
             status=TaskStatus.QUEUED,
             current_stage=StageName.VIDEO_CLIP,
@@ -232,7 +250,13 @@ class VideoClipTaskService:
                             anchor.metadata.get("content_type", "image/png")
                         )
             generation_attempt = max(1, int(input_data.get("generation_attempt", 1)))
-            result = await self._provider.generate_video_clip(
+            provider = self._provider
+            selected_profile_id = input_data.get("provider_profile_id")
+            if self._provider_registry is not None and selected_profile_id:
+                provider = await self._provider_registry.get_video_provider(
+                    str(selected_profile_id)
+                )
+            result = await provider.generate_video_clip(
                 VideoClipGenerationRequest(
                     episode_id=UUID(str(input_data["episode_id"])),
                     shot_list_id=UUID(str(input_data["shot_list_id"])),
@@ -282,6 +306,7 @@ class VideoClipTaskService:
                         "episode_id": input_data["episode_id"],
                         "shot_list_id": input_data["shot_list_id"],
                         "shot_index": input_data["shot_index"],
+                        "provider_profile_id": input_data.get("provider_profile_id"),
                         **result.metadata,
                         **self._stored_artifact_metadata(stored_artifact),
                         "output_uri": output_uri,
