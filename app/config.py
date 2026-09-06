@@ -93,6 +93,9 @@ class Settings:
     video_noise_aug_strength: float
     video_motion_zoom: float
     video_binary: str
+    video_render_preset: str
+    video_render_crf: int
+    video_render_tune: str
     tts_provider: str
     tts_voice: str
     tts_rate: str
@@ -547,6 +550,15 @@ def load_settings(path: str | Path | None = None) -> Settings:
         ),
         video_binary=str(
             setting(video_config, "binary", "AI_VIDEO_VIDEO_BINARY", "ffmpeg")
+        ),
+        video_render_preset=str(
+            setting(video_config, "render_preset", "AI_VIDEO_VIDEO_RENDER_PRESET", "medium")
+        ),
+        video_render_crf=int(
+            setting(video_config, "render_crf", "AI_VIDEO_VIDEO_RENDER_CRF", 18)
+        ),
+        video_render_tune=str(
+            setting(video_config, "render_tune", "AI_VIDEO_VIDEO_RENDER_TUNE", "animation")
         ),
         tts_provider=str(setting(tts_config, "provider", "AI_VIDEO_TTS_PROVIDER", "edge_tts")),
         tts_voice=str(

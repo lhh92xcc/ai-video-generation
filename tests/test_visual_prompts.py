@@ -36,5 +36,7 @@ def test_video_prompt_adds_shot_framing_camera_and_identity_constraints() -> Non
     assert "slow subtle push-in" in prompt
     assert "Approved visible characters: 林默" in prompt
     assert "Continuity requirements: 保持深色外套和侧光方向" in prompt
+    assert "face-focused motion plan" in prompt
+    assert "no unscripted speaking" in prompt
     assert "choose only one restrained micro-motion" in prompt
     assert "Do not add any other character" in prompt

@@ -51,6 +51,9 @@ class RenderedVideo:
     input_clip_count: int
     subtitle_count: int = 0
     audio_track_count: int = 0
+    render_preset: str = "medium"
+    render_crf: int = 18
+    render_tune: str = "animation"
 
     def as_metadata(self) -> dict[str, object]:
         return {
@@ -60,6 +63,12 @@ class RenderedVideo:
             "has_audio": self.probe.audio_stream_count > 0,
             "audio_track_count": self.audio_track_count,
             "subtitle_count": self.subtitle_count,
+            "encoding": {
+                "video_codec": "libx264",
+                "preset": self.render_preset,
+                "crf": self.render_crf,
+                "tune": self.render_tune or None,
+            },
             "ffprobe": self.probe.as_metadata(),
         }
 
@@ -67,14 +76,43 @@ class RenderedVideo:
 class FFmpegVideoRenderer:
     """Concatenate compatible video clips and mix optional timeline audio/SRT."""
 
+    _ENCODER_PRESETS = frozenset(
+        {
+            "ultrafast",
+            "superfast",
+            "veryfast",
+            "faster",
+            "fast",
+            "medium",
+            "slow",
+            "slower",
+            "veryslow",
+        }
+    )
+    _ENCODER_TUNES = frozenset(
+        {"", "animation", "film", "grain", "stillimage", "fastdecode", "zerolatency"}
+    )
+
     def __init__(
         self,
         binary: str = "ffmpeg",
         timeout_seconds: int = 300,
         video_validator: VideoArtifactValidator | None = None,
+        render_preset: str = "medium",
+        render_crf: int = 18,
+        render_tune: str = "animation",
     ) -> None:
         self.binary = binary
         self.timeout_seconds = max(1, timeout_seconds)
+        normalized_preset = render_preset.strip().lower()
+        if normalized_preset not in self._ENCODER_PRESETS:
+            raise ValueError(f"Unsupported FFmpeg x264 preset: {render_preset!r}")
+        normalized_tune = render_tune.strip().lower()
+        if normalized_tune not in self._ENCODER_TUNES:
+            raise ValueError(f"Unsupported FFmpeg x264 tune: {render_tune!r}")
+        self.render_preset = normalized_preset
+        self.render_crf = max(0, min(51, int(render_crf)))
+        self.render_tune = normalized_tune
         self._video_validator = video_validator or FFprobeVideoValidator(
             timeout_seconds=self.timeout_seconds
         )
@@ -184,6 +222,9 @@ class FFmpegVideoRenderer:
             input_clip_count=len(clips),
             subtitle_count=len(subtitle_cues),
             audio_track_count=len(normalized_tracks),
+            render_preset=self.render_preset,
+            render_crf=self.render_crf,
+            render_tune=self.render_tune,
         )
 
     @staticmethod
@@ -408,15 +449,19 @@ class FFmpegVideoRenderer:
                 "-c:v",
                 "libx264",
                 "-preset",
-                "veryfast",
+                self.render_preset,
+                "-crf",
+                str(self.render_crf),
                 "-pix_fmt",
                 "yuv420p",
                 "-movflags",
                 "+faststart",
             ]
         )
+        if self.render_tune:
+            command.extend(["-tune", self.render_tune])
         if audio_paths:
-            command.extend(["-c:a", "aac", "-b:a", "192k"])
+            command.extend(["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"])
         if video_duration > 0:
             command.extend(["-t", f"{video_duration:.3f}"])
         command.append(str(output_path))

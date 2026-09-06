@@ -44,6 +44,33 @@ DEFAULT_VIDEO_PROMPT_SUFFIX = (
     "transformation, no simultaneous complex actions"
 )
 
+_SHOT_MOTION_SAFETY = {
+    "close_up": (
+        "face-focused motion plan: use only one tiny natural blink, breathing motion or eye movement; "
+        "keep facial landmarks, mouth shape and hairstyle stable, with no unscripted speaking"
+    ),
+    "extreme_close_up": (
+        "detail-focused motion plan: use only one nearly imperceptible eye, breath or fabric movement; "
+        "keep the face or object edges locked and avoid any deformation"
+    ),
+    "medium": (
+        "character motion plan: use only one small head turn, blink, breathing motion or restrained hand gesture; "
+        "keep hands and facial features stable"
+    ),
+    "over_the_shoulder": (
+        "dialogue framing motion plan: use only one slight head or shoulder movement; "
+        "keep the foreground silhouette and the visible face stable"
+    ),
+    "wide": (
+        "environment motion plan: use only one subtle cloth, hair, light or breathing change; "
+        "keep the subject silhouette and background layout stable"
+    ),
+    "insert": (
+        "detail-object motion plan: use only one subtle light glint, focus shift or material movement; "
+        "keep the object contour and placement stable"
+    ),
+}
+
 
 def build_video_motion_prompt(
     *,
@@ -91,10 +118,14 @@ def build_video_motion_prompt(
         if continuity_notes.strip()
         else "Keep identity, costume, palette, lighting direction and prop placement consistent with the reference image. "
     )
+    motion_safety = _SHOT_MOTION_SAFETY.get(
+        shot_size,
+        "general motion plan: use only one restrained readable movement and keep the subject geometry stable",
+    )
     prompt = (
         f"{source_prompt.strip()[:900]}. {framing}. Location: {location.strip()[:120]}. "
         f"Camera direction: {movement}. {character_clause}{continuity_clause}"
-        f"{prompt_suffix.strip()}"
+        f"{motion_safety}. {prompt_suffix.strip()}"
     )
     return prompt[:2000]
 

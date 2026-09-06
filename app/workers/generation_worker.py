@@ -142,6 +142,9 @@ async def run_worker() -> None:
         renderer=FFmpegVideoRenderer(
             binary=settings.video_binary,
             timeout_seconds=settings.task_timeout_seconds,
+            render_preset=settings.video_render_preset,
+            render_crf=settings.video_render_crf,
+            render_tune=settings.video_render_tune,
         ),
         audio_validator=FFprobeAudioValidator(
             timeout_seconds=settings.tts_probe_timeout_seconds

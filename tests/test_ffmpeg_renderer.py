@@ -78,6 +78,12 @@ def test_ffmpeg_renderer_concatenates_video_clips_and_validates_output(tmp_path:
         assert "mp4" in rendered.probe.format_name
         assert 1.7 <= rendered.probe.duration_seconds <= 2.3
         assert rendered.as_metadata()["ffprobe"] == rendered.probe.as_metadata()
+        assert rendered.as_metadata()["encoding"] == {
+            "video_codec": "libx264",
+            "preset": "medium",
+            "crf": 18,
+            "tune": "animation",
+        }
 
     asyncio.run(exercise())
 
@@ -236,3 +242,10 @@ def test_ffmpeg_renderer_reports_missing_binary() -> None:
         assert error.value.code == "FFMPEG_UNAVAILABLE"
 
     asyncio.run(exercise())
+
+
+def test_ffmpeg_renderer_rejects_unsafe_encoder_options() -> None:
+    with pytest.raises(ValueError, match="preset"):
+        FFmpegVideoRenderer(render_preset="not-a-preset")
+    with pytest.raises(ValueError, match="tune"):
+        FFmpegVideoRenderer(render_tune="-x264-params")

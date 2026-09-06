@@ -148,6 +148,11 @@ cfg = 5.0
 noise_aug_strength = 0.02
 motion_zoom = 1.12
 binary = "ffmpeg"
+# 2D 漫剧成片默认使用 libx264 的 animation tune、CRF 18 和 medium preset，
+# 减少 Assembly 对低分辨率 I2V 片段的二次压缩；它不会凭空增加模型细节。
+render_preset = "medium"
+render_crf = 18
+render_tune = "animation"
 # 每个包含角色资产的视频片段完成后，可使用独立 Python 环境中的 InsightFace
 # 抽样比对标准人设图；缺少依赖或无法检测人脸时必须人工审核。
 identity_audit_enabled = false

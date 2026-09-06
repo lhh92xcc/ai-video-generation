@@ -146,6 +146,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         renderer=FFmpegVideoRenderer(
             binary=app_settings.video_binary,
             timeout_seconds=app_settings.task_timeout_seconds,
+            render_preset=app_settings.video_render_preset,
+            render_crf=app_settings.video_render_crf,
+            render_tune=app_settings.video_render_tune,
         ),
         audio_validator=FFprobeAudioValidator(
             timeout_seconds=app_settings.tts_probe_timeout_seconds

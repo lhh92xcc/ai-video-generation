@@ -54,7 +54,8 @@ signed_url_expire_seconds = 3600
 [llm]
 provider = "ollama"
 base_url = "http://host.docker.internal:11434/v1"
-model = "qwen2.5:7b-instruct-q4_K_M"
+# Ollama 的实际 tag；量化级别由已安装模型决定，不把 Q4 文件名伪装成 tag。
+model = "qwen2.5:7b"
 temperature = 0.5
 request_timeout_seconds = 600
 
@@ -96,6 +97,9 @@ cfg = 5.5
 noise_aug_strength = 0.015
 motion_zoom = 1.06
 binary = "ffmpeg"
+render_preset = "medium"
+render_crf = 18
+render_tune = "animation"
 identity_audit_enabled = false
 identity_audit_python_path = ""
 identity_audit_script_path = "scripts/face_identity_audit.py"
