@@ -29,7 +29,7 @@ const episodeDuration = ref(90)
 const rightsConfirmed = ref(false)
 
 const activeTasks = computed(() => tasks.value.filter((task) => ['created', 'queued', 'running'].includes(task.status)).length)
-const completedTasks = computed(() => tasks.value.filter((task) => task.status === 'succeeded').length)
+const previewableVideoCount = computed(() => videos.value.length)
 const currentProject = computed(() => projects.value[0] ?? null)
 const activeProject = computed(() => projects.value.find((project) => project.id === activeProjectId.value) ?? null)
 const recentTaskGroups = computed(() => {
@@ -167,8 +167,8 @@ onMounted(refreshDashboard)
       <section v-if="!activeProject" class="creator-hero">
         <div class="creator-hero-copy">
           <p class="creator-eyebrow">AI VIDEO WORKSPACE</p>
-          <h1>把一个想法，<br /><span>变成可发布的视频。</span></h1>
-          <p class="creator-hero-description">从小说、主题到分镜和成片，Video Forge 帮你把内容生产拆成可追踪、可审核、可恢复的工作流。</p>
+          <h1>把一个想法，<br /><span>变成可审核的成片。</span></h1>
+          <p class="creator-hero-description">从小说到剧本、资产、镜头和成片，Video Forge 把内容生产拆成可追踪、可审核、可恢复的工作流。</p>
           <div class="creator-hero-actions">
             <button class="creator-primary-button" type="button" @click="openCreatePanel">开始创建 <span>→</span></button>
             <button class="creator-ghost-button" type="button" @click="emit('openOperator')">查看制作后台</button>
@@ -201,7 +201,7 @@ onMounted(refreshDashboard)
       <section v-if="!activeProject" class="creator-metrics" aria-label="工作区概览">
         <article><span class="creator-metric-icon purple">✦</span><div><small>我的项目</small><strong>{{ loading ? '—' : projects.length }}</strong></div><span class="creator-metric-note">内容空间</span></article>
         <article><span class="creator-metric-icon blue">↻</span><div><small>进行中的任务</small><strong>{{ loading ? '—' : activeTasks }}</strong></div><span class="creator-metric-note" :class="{ good: activeTasks === 0 }">{{ activeTasks ? '实时处理中' : '当前空闲' }}</span></article>
-        <article><span class="creator-metric-icon green">✓</span><div><small>已完成步骤</small><strong>{{ loading ? '—' : completedTasks }}</strong></div><span class="creator-metric-note good">可复用</span></article>
+        <article><span class="creator-metric-icon green">▶</span><div><small>可预览成片</small><strong>{{ loading ? '—' : previewableVideoCount }}</strong></div><span class="creator-metric-note good">可复核</span></article>
       </section>
 
       <section v-if="!activeProject" id="create" class="creator-section creator-workflow-section">

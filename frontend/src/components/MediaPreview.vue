@@ -28,9 +28,11 @@ const previewRoot = ref<HTMLElement | null>(null)
 const fallbackUsed = ref(false)
 const loadFailed = ref(false)
 const mediaLoaded = ref(false)
+const loadingTimedOut = ref(false)
 const reloadKey = ref(0)
 const inViewport = ref(props.lazy !== true)
 let intersectionObserver: IntersectionObserver | null = null
+let loadTimer: number | null = null
 
 const storageKey = computed(() => {
   const value = props.artifact.metadata.storage_key
@@ -42,6 +44,13 @@ const signedUrl = computed(() => props.artifact.download_url ?? '')
 const previewUrl = computed(() => {
   if (fallbackUsed.value) return signedUrl.value
   return contentUrl.value || signedUrl.value
+})
+const previewRequestUrl = computed(() => {
+  // Cache-bust only the authorized content endpoint. Signed object URLs are
+  // signed over their query string and must not be modified.
+  if (!previewUrl.value || fallbackUsed.value || !contentUrl.value || reloadKey.value === 0) return previewUrl.value
+  const separator = previewUrl.value.includes('?') ? '&' : '?'
+  return `${previewUrl.value}${separator}preview_attempt=${reloadKey.value}`
 })
 const downloadUrl = computed(() => fallbackUsed.value && signedUrl.value
   ? signedUrl.value
@@ -69,11 +78,45 @@ const lazyPreview = computed(() => props.lazy === true)
 const deferred = computed(() => lazyPreview.value && !inViewport.value && mediaKind.value !== 'document')
 const canPreview = computed(() => Boolean(previewUrl.value) && mediaKind.value !== 'document' && !deferred.value)
 const isThumb = computed(() => props.variant === 'thumb')
+const isMediaLoading = computed(() => canPreview.value && !mediaLoaded.value && !loadFailed.value && !loadingTimedOut.value)
+const previewStatus = computed(() => {
+  if (loadFailed.value) return '文件读取失败'
+  if (loadingTimedOut.value) return '读取时间较长'
+  if (mediaLoaded.value) return '已加载'
+  if (deferred.value) return '等待进入视口'
+  if (mediaKind.value === 'document') return '结构化文件'
+  if (canPreview.value) return '正在读取文件'
+  return '未关联文件'
+})
+const previewStatusClass = computed(() => {
+  if (loadFailed.value) return 'failed'
+  if (loadingTimedOut.value) return 'slow'
+  if (mediaLoaded.value) return 'loaded'
+  return 'loading'
+})
+
+function clearLoadTimer() {
+  if (loadTimer !== null) {
+    window.clearTimeout(loadTimer)
+    loadTimer = null
+  }
+}
+
+function armLoadTimer() {
+  clearLoadTimer()
+  loadingTimedOut.value = false
+  if (!canPreview.value || mediaLoaded.value || loadFailed.value) return
+  loadTimer = window.setTimeout(() => {
+    if (!mediaLoaded.value && !loadFailed.value) loadingTimedOut.value = true
+  }, 12000)
+}
 
 function resetPreview() {
   fallbackUsed.value = false
   loadFailed.value = false
   mediaLoaded.value = false
+  loadingTimedOut.value = false
+  clearLoadTimer()
   reloadKey.value += 1
 }
 
@@ -96,22 +139,33 @@ function observePreview() {
 }
 
 function onLoaded() {
+  clearLoadTimer()
   mediaLoaded.value = true
   loadFailed.value = false
+  loadingTimedOut.value = false
 }
 
 function onError() {
+  clearLoadTimer()
   // The same-origin route is the reliable path for local and Docker storage.
   // Only fall back to a signed object URL when the authorized route itself is
   // unavailable (for example, while an older API image is still running).
   if (!fallbackUsed.value && contentUrl.value && signedUrl.value) {
     fallbackUsed.value = true
     mediaLoaded.value = false
+    loadingTimedOut.value = false
     reloadKey.value += 1
     return
   }
   mediaLoaded.value = false
   loadFailed.value = true
+  loadingTimedOut.value = false
+}
+
+function onLoadStart() {
+  mediaLoaded.value = false
+  loadingTimedOut.value = false
+  armLoadTimer()
 }
 
 watch(() => props.artifact.id, () => {
@@ -119,34 +173,44 @@ watch(() => props.artifact.id, () => {
   observePreview()
 })
 watch(() => [props.lazy, props.variant], observePreview)
+watch([canPreview, previewUrl], armLoadTimer)
 onMounted(observePreview)
-onUnmounted(() => intersectionObserver?.disconnect())
+onUnmounted(() => {
+  intersectionObserver?.disconnect()
+  clearLoadTimer()
+})
 </script>
 
 <template>
-  <div ref="previewRoot" class="media-preview" :class="[`media-preview-${variant}`, `media-preview-${mediaKind}`, { 'is-loading': canPreview && !mediaLoaded && !loadFailed, 'is-failed': loadFailed, 'is-deferred': deferred }]">
-    <template v-if="canPreview && !loadFailed">
+  <div ref="previewRoot" class="media-preview" :class="[`media-preview-${variant}`, `media-preview-${mediaKind}`, { 'is-loading': isMediaLoading || loadingTimedOut, 'is-failed': loadFailed, 'is-deferred': deferred }]" :aria-busy="isMediaLoading || loadingTimedOut ? 'true' : 'false'">
+    <template v-if="canPreview && !loadFailed && !loadingTimedOut">
       <video
         v-if="mediaKind === 'video'"
         :key="`${props.artifact.id}-${reloadKey}`"
-        :src="previewUrl"
+        :src="previewRequestUrl"
         :controls="controls && !isThumb"
         :preload="isThumb ? 'auto' : 'metadata'"
         :muted="isThumb"
+        :autoplay="isThumb"
+        :loop="isThumb"
         playsinline
         :aria-label="alt"
+        @loadstart="onLoadStart"
         @loadedmetadata="onLoaded"
         @loadeddata="onLoaded"
         @canplay="onLoaded"
         @error="onError"
-      />
+      >
+        正在读取视频文件…
+      </video>
       <audio
         v-else-if="mediaKind === 'audio'"
         :key="`${props.artifact.id}-${reloadKey}`"
-        :src="previewUrl"
+        :src="previewRequestUrl"
         :controls="controls"
         preload="metadata"
         :aria-label="alt"
+        @loadstart="onLoadStart"
         @loadedmetadata="onLoaded"
         @canplay="onLoaded"
         @error="onError"
@@ -154,14 +218,15 @@ onUnmounted(() => intersectionObserver?.disconnect())
       <img
         v-else
         :key="`${props.artifact.id}-${reloadKey}`"
-        :src="previewUrl"
+        :src="previewRequestUrl"
         :alt="alt"
         :loading="lazyPreview ? 'lazy' : 'eager'"
         decoding="async"
+        @loadstart="onLoadStart"
         @load="onLoaded"
         @error="onError"
       />
-      <span v-if="!mediaLoaded" class="media-preview-spinner spinner" aria-label="正在加载预览" />
+      <span v-if="isMediaLoading" class="media-preview-spinner spinner" aria-hidden="true" />
     </template>
 
     <div v-else-if="deferred" class="media-preview-message">
@@ -174,6 +239,13 @@ onUnmounted(() => intersectionObserver?.disconnect())
       <span class="media-preview-message-icon">!</span>
       <strong>文件加载失败</strong>
       <small>已尝试{{ contentUrl && signedUrl ? '服务端安全通道和临时链接' : '当前可用的文件地址' }}；这不代表任务没有生成产物。</small>
+      <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
+    </div>
+
+    <div v-else-if="loadingTimedOut" class="media-preview-message media-preview-slow-message" role="status" aria-live="polite">
+      <span class="media-preview-message-icon">↻</span>
+      <strong>文件读取较慢</strong>
+      <small>媒体仍在从服务端读取，可以继续等待或重新加载。</small>
       <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
     </div>
 
@@ -192,7 +264,9 @@ onUnmounted(() => intersectionObserver?.disconnect())
     <a v-if="showDownload && downloadUrl" class="media-preview-download" :href="downloadUrl" target="_blank" rel="noopener" download>
       下载文件 <span>↓</span>
     </a>
-    <span v-if="!isThumb && (canPreview || loadFailed || downloadUrl)" class="media-preview-source">{{ previewSourceLabel }}</span>
+    <span v-if="!isThumb && (canPreview || loadFailed || downloadUrl)" class="media-preview-source" :class="previewStatusClass">
+      {{ previewStatus }} · {{ previewSourceLabel }}
+    </span>
   </div>
 </template>
 
@@ -202,6 +276,7 @@ onUnmounted(() => intersectionObserver?.disconnect())
 .media-preview-panel { min-height: 250px; border-radius: 9px; }
 .media-preview video, .media-preview img { display: block; width: 100%; height: 100%; object-fit: contain; background: #10131d; }
 .media-preview-thumb video, .media-preview-thumb img { object-fit: cover; }
+.media-preview-thumb video { pointer-events: none; }
 .media-preview audio { width: calc(100% - 36px); }
 .media-preview-panel video { max-height: 420px; }
 .media-preview-panel img { max-height: 420px; }
@@ -215,7 +290,12 @@ onUnmounted(() => intersectionObserver?.disconnect())
 .media-preview-thumb .media-preview-message strong, .media-preview-thumb .media-preview-message small { display: none; }
 .media-preview-message button { margin-top: 4px; border: 1px solid rgba(214,220,237,.35); border-radius: 6px; padding: 6px 9px; color: #fff; background: rgba(255,255,255,.1); font-size: 9px; }
 .media-preview-message button:hover { background: rgba(255,255,255,.18); }
-.media-preview-download { position: absolute; right: 10px; bottom: 10px; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; padding: 6px 8px; color: #fff; background: rgba(16,19,29,.72); font-size: 9px; text-decoration: none; }
+.media-preview-slow-message { position: absolute; inset: 0; z-index: 2; background: rgba(21,26,40,.86); }
+.media-preview-download { position: absolute; right: 10px; bottom: 10px; z-index: 3; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; padding: 6px 8px; color: #fff; background: rgba(16,19,29,.72); font-size: 9px; text-decoration: none; }
 .media-preview-download:hover { background: rgba(16,19,29,.92); }
-.media-preview-source { position: absolute; top: 10px; left: 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 4px 7px; color: #d9deed; background: rgba(16,19,29,.62); font-size: 8px; }
+.media-preview-source { position: absolute; top: 10px; left: 10px; z-index: 3; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 4px 7px; color: #d9deed; background: rgba(16,19,29,.62); font-size: 8px; }
+.media-preview-source.loaded { color: #d8f4e6; border-color: rgba(120,221,171,.35); }
+.media-preview-source.slow { color: #ffe9b7; border-color: rgba(239,193,103,.4); }
+.media-preview-source.failed { color: #ffd8dd; border-color: rgba(240,145,157,.4); }
+.media-preview-thumb .media-preview-source { display: none; }
 </style>
