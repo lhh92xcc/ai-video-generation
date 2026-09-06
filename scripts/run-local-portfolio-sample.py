@@ -100,6 +100,18 @@ NarrationScene = tuple[str, str, str]
 
 
 PORTFOLIO_REPORT_SCHEMA_VERSION = 2
+# These Providers create a playable file for orchestration tests or still-image
+# motion demos, but they do not generate new video frames with an I2V/model
+# runtime. They must never be allowed to pass as the final portfolio sample.
+_PORTFOLIO_NON_REAL_MOTION_PROVIDERS = frozenset(
+    {"mock", "local_fixture", "ffmpeg_motion"}
+)
+# Keep this allowlist explicit. Adding a future provider (for example an
+# official cloud adapter) requires registering it here and adding its contract
+# tests, so a fallback cannot silently become portfolio evidence.
+_PORTFOLIO_REAL_MOTION_PROVIDERS = frozenset(
+    {"comfyui_wan_i2v", "openai_compatible", "siliconflow"}
+)
 PORTFOLIO_TARGET = {
     "profile_id": "portfolio-demo-v1",
     "duration_seconds": {"min": 45, "max": 60},
@@ -157,6 +169,172 @@ def _report_probe(metadata: object) -> dict[str, object]:
     return nested if isinstance(nested, dict) else metadata
 
 
+def _portfolio_provider_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _observed_portfolio_video_providers(
+    clip_task_snapshots: list[GenerationTaskRecord],
+) -> list[str]:
+    providers: set[str] = set()
+    for task in clip_task_snapshots:
+        for artifact in task.artifacts:
+            if artifact.type != "video_clip":
+                continue
+            provider = _portfolio_provider_name(artifact.provider)
+            if provider is not None:
+                providers.add(provider)
+    return sorted(providers)
+
+
+def _portfolio_video_provider_contract(
+    *,
+    configured_provider: str | None,
+    mock_media: bool,
+    preview_only: bool = False,
+    clip_task_snapshots: list[GenerationTaskRecord],
+) -> dict[str, object]:
+    """Return the report contract for real motion evidence.
+
+    The orchestration fixture is intentionally valid for tests, but it is not
+    motion-model evidence. Real runs must use a registered model-backed
+    Provider and their stored Artifacts must agree with that Provider.
+    """
+
+    observed = _observed_portfolio_video_providers(clip_task_snapshots)
+    configured = _portfolio_provider_name(configured_provider)
+    if mock_media:
+        return {
+            "status": "not_applicable",
+            "blocking": False,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": "Mock 媒体只验证任务编排和文件契约，不提供真实运动模型证据",
+        }
+    if preview_only:
+        return {
+            "status": "failed",
+            "blocking": True,
+            "configured_provider": _portfolio_provider_name(configured_provider),
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": "当前运行明确标记为 preview_only；预览结果不能作为正式作品集样片",
+        }
+
+    effective = configured or (observed[0] if len(observed) == 1 else None)
+    if effective is None:
+        return {
+            "status": "pending",
+            "blocking": True,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": "尚未确定真实视频 Provider；正式样片不能使用静态图回退",
+        }
+    if effective not in _PORTFOLIO_REAL_MOTION_PROVIDERS:
+        return {
+            "status": "failed",
+            "blocking": True,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": (
+                f"Provider {effective} 未登记为真实运动模型；"
+                "mock/local_fixture/ffmpeg_motion 只能用于工程联调"
+            ),
+        }
+    if not observed:
+        return {
+            "status": "pending",
+            "blocking": True,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": effective,
+            "evidence": f"已配置 {effective}，但尚无已校验的视频 Artifact",
+        }
+    if any(provider not in _PORTFOLIO_REAL_MOTION_PROVIDERS for provider in observed):
+        return {
+            "status": "failed",
+            "blocking": True,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": f"已观察到非真实视频 Provider Artifact：{', '.join(observed)}",
+        }
+    if any(provider != effective for provider in observed):
+        return {
+            "status": "failed",
+            "blocking": True,
+            "configured_provider": configured,
+            "observed_providers": observed,
+            "real_motion_provider": None,
+            "evidence": (
+                f"配置 Provider 为 {effective}，但视频 Artifact 来自："
+                f"{', '.join(observed)}"
+            ),
+        }
+    return {
+        "status": "passed",
+        "blocking": True,
+        "configured_provider": configured,
+        "observed_providers": observed,
+        "real_motion_provider": effective,
+        "evidence": f"{effective} · {len(observed)} 个 Provider 来源一致的视频 Artifact",
+    }
+
+
+def _ensure_portfolio_video_provider(
+    provider: str,
+    *,
+    mock_media: bool,
+) -> None:
+    """Fail before work starts if a real portfolio run uses a fake motion path."""
+
+    if mock_media:
+        return
+    normalized = _portfolio_provider_name(provider)
+    if normalized in _PORTFOLIO_REAL_MOTION_PROVIDERS:
+        return
+    raise RuntimeError(
+        "PORTFOLIO_REAL_VIDEO_REQUIRED: "
+        f"{provider!r} 不能用于正式作品集样片。请使用已登记的真实视频 Provider "
+        f"({', '.join(sorted(_PORTFOLIO_REAL_MOTION_PROVIDERS))})；"
+        "ffmpeg_motion、local_fixture 和 mock 仅用于工程联调。"
+    )
+
+
+def _assert_real_portfolio_video_artifact(
+    artifact: ArtifactSummary,
+    *,
+    configured_provider: str,
+) -> None:
+    """Reject a silent static-image fallback before copying a clip to output."""
+
+    configured = _portfolio_provider_name(configured_provider)
+    actual = _portfolio_provider_name(artifact.provider)
+    metadata = artifact.metadata
+    motion = _portfolio_provider_name(metadata.get("motion"))
+    source = _portfolio_provider_name(metadata.get("source"))
+    if (
+        configured not in _PORTFOLIO_REAL_MOTION_PROVIDERS
+        or actual not in _PORTFOLIO_REAL_MOTION_PROVIDERS
+        or actual != configured
+        or actual in _PORTFOLIO_NON_REAL_MOTION_PROVIDERS
+        or motion == "ken_burns"
+        or motion == "fixture-color-card"
+        or source == "deterministic_color_fallback"
+    ):
+        raise RuntimeError(
+            "PORTFOLIO_REAL_VIDEO_REQUIRED: "
+            f"视频 Artifact provider={artifact.provider!r}, motion={metadata.get('motion')!r}, "
+            f"source={metadata.get('source')!r}，不符合真实运动模型作品集门禁。"
+        )
+
+
 def _portfolio_readiness_report(
     *,
     args: argparse.Namespace,
@@ -168,6 +346,7 @@ def _portfolio_readiness_report(
     subtitle_metadata: dict[str, object] | None,
     rendered_artifact: ArtifactSummary | None,
     clip_task_snapshots: list[GenerationTaskRecord],
+    video_provider: str | None = None,
 ) -> dict[str, object]:
     """Build an honest, machine-readable portfolio acceptance report.
 
@@ -191,6 +370,12 @@ def _portfolio_readiness_report(
     subtitle_metadata = subtitle_metadata or {}
     audio_duration = _report_number(narration_metadata.get("duration_seconds"))
     cue_count = int(_report_number(subtitle_metadata.get("cue_count"), 0))
+    motion_contract = _portfolio_video_provider_contract(
+        configured_provider=video_provider,
+        mock_media=bool(getattr(args, "mock_media", False)),
+        preview_only=bool(getattr(args, "preview_only", False)),
+        clip_task_snapshots=clip_task_snapshots,
+    )
 
     def count_status(count: int, target: int) -> str:
         if count == target:
@@ -211,6 +396,13 @@ def _portfolio_readiness_report(
             "status": count_status(clip_count, shot_count),
             "blocking": True,
             "evidence": f"{clip_count}/{shot_count} 个镜头已生成并通过 Artifact 校验",
+        },
+        {
+            "id": "real_motion_provider",
+            "label": "真实视频 Provider",
+            "status": motion_contract["status"],
+            "blocking": motion_contract["blocking"],
+            "evidence": motion_contract["evidence"],
         },
         {
             "id": "shot_budget",
@@ -303,11 +495,24 @@ def _portfolio_readiness_report(
         }
         for item in PORTFOLIO_HUMAN_REVIEW_ITEMS
     ]
+    mock_media = bool(getattr(args, "mock_media", False))
+    preview_only = bool(getattr(args, "preview_only", False))
+    readiness_status = (
+        "engineering_fixture"
+        if mock_media
+        else "preview_only"
+        if preview_only
+        else "incomplete"
+        if blocking_failures
+        else "ready_for_human_review"
+    )
     return {
         "schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
         "target": PORTFOLIO_TARGET,
+        "real_motion_provider": motion_contract,
+        "sample_mode": "mock" if mock_media else "preview_only" if preview_only else "formal",
         "readiness": {
-            "status": "ready_for_human_review" if not blocking_failures else "incomplete",
+            "status": readiness_status,
             "ready_for_portfolio": False,
             "machine_checks_passed": machine_passed,
             "machine_checks_total": len(blocking_checks),
@@ -417,6 +622,14 @@ def parse_args() -> argparse.Namespace:
         help="Use Mock image/TTS and local fixture video for orchestration tests.",
     )
     parser.add_argument(
+        "--preview-only",
+        action="store_true",
+        help=(
+            "Allow a non-model preview provider such as ffmpeg_motion; the report "
+            "will remain ineligible as a formal portfolio sample."
+        ),
+    )
+    parser.add_argument(
         "--reuse-recent-references",
         action="store_true",
         help="Reuse the four newest local PNG Artifacts instead of generating Flux references.",
@@ -447,8 +660,12 @@ def _checkpoint_path(output_dir: Path) -> Path:
     return output_dir / "run-checkpoint.json"
 
 
-def _new_checkpoint(args: argparse.Namespace) -> dict[str, object]:
-    return {
+def _new_checkpoint(
+    args: argparse.Namespace,
+    *,
+    video_provider: str | None = None,
+) -> dict[str, object]:
+    checkpoint: dict[str, object] = {
         "schema_version": CHECKPOINT_VERSION,
         "status": "running",
         "created_at": _utc_timestamp(),
@@ -456,13 +673,19 @@ def _new_checkpoint(args: argparse.Namespace) -> dict[str, object]:
         "shots_requested": args.shots,
         "shot_duration_seconds": args.shot_duration,
         "mock_media": bool(args.mock_media),
+        "preview_only": bool(getattr(args, "preview_only", False)),
         "shots": {},
     }
+    if video_provider is not None:
+        checkpoint["video_provider"] = video_provider
+    return checkpoint
 
 
 def _load_or_create_checkpoint(
     output_dir: Path,
     args: argparse.Namespace,
+    *,
+    video_provider: str | None = None,
 ) -> dict[str, object]:
     path = _checkpoint_path(output_dir)
     if not args.resume:
@@ -470,7 +693,7 @@ def _load_or_create_checkpoint(
             raise RuntimeError(
                 f"Checkpoint already exists: {path}. Use --resume to continue or choose a new --output-dir."
             )
-        checkpoint = _new_checkpoint(args)
+        checkpoint = _new_checkpoint(args, video_provider=video_provider)
         _write_checkpoint(path, checkpoint)
         return checkpoint
 
@@ -491,6 +714,19 @@ def _load_or_create_checkpoint(
         raise RuntimeError("--resume must use the same --shot-duration value as the original run")
     if bool(checkpoint.get("mock_media")) != bool(args.mock_media):
         raise RuntimeError("--resume must use the same --mock-media mode as the original run")
+    if bool(checkpoint.get("preview_only", False)) != bool(
+        getattr(args, "preview_only", False)
+    ):
+        raise RuntimeError("--resume must use the same --preview-only mode as the original run")
+    checkpoint_provider = checkpoint.get("video_provider")
+    if (
+        video_provider is not None
+        and isinstance(checkpoint_provider, str)
+        and checkpoint_provider != video_provider
+    ):
+        raise RuntimeError(
+            "--resume must use the same configured video Provider as the original run"
+        )
     if not isinstance(checkpoint.get("shots"), dict):
         raise RuntimeError("Checkpoint is missing its shots map")
     if args.shots > original_shots:
@@ -2151,9 +2387,22 @@ def _recent_reference_files(artifact_root: Path, count: int = 4) -> list[Path]:
 
 async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     settings = load_settings(args.config)
+    preview_only = bool(getattr(args, "preview_only", False))
+    if args.mock_media and preview_only:
+        raise RuntimeError("--mock-media and --preview-only cannot be used together")
+    video_provider_name = "local_fixture" if args.mock_media else settings.video_provider
+    if not preview_only:
+        _ensure_portfolio_video_provider(
+            video_provider_name,
+            mock_media=bool(args.mock_media),
+        )
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint = _load_or_create_checkpoint(output_dir, args)
+    checkpoint = _load_or_create_checkpoint(
+        output_dir,
+        args,
+        video_provider=video_provider_name,
+    )
     artifact_root = Path(settings.storage_base_path)
     store = InMemoryStore()
     storage = LocalFileArtifactStorage(artifact_root)
@@ -2595,6 +2844,11 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             clip_artifact = next(
                 artifact for artifact in completed_clip_task.artifacts if artifact.type == "video_clip"
             )
+            if not args.mock_media and not preview_only:
+                _assert_real_portfolio_video_artifact(
+                    clip_artifact,
+                    configured_provider=settings.video_provider,
+                )
             storage_key = clip_artifact.metadata.get("storage_key")
             if not isinstance(storage_key, str) or not storage_key:
                 raise RuntimeError(f"video clip {shot.shot_index} did not produce a local Artifact")
@@ -2663,10 +2917,14 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             subtitle_metadata={},
             rendered_artifact=None,
             clip_task_snapshots=clip_task_snapshots,
+            video_provider=settings.video_provider,
         )
         partial_report = {
             "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
             "status": "paused",
+            "sample_mode": (
+                "mock" if args.mock_media else "preview_only" if preview_only else "formal"
+            ),
             "project_id": str(project_id),
             "episode_id": str(episode.id),
             "script_id": str(script.id),
@@ -2674,6 +2932,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "shots_requested": len(shots),
             "shots_completed": len(clip_tasks),
             "reference_image_count": len(reference_tasks),
+            "real_motion_provider": (
+                settings.video_provider if not args.mock_media and not preview_only else None
+            ),
+            "preview_only": preview_only,
             "checkpoint_path": str(_checkpoint_path(output_dir)),
             "output_dir": str(output_dir),
             "artifact_ids": {
@@ -2686,7 +2948,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "next_command": (
                 f"AI_VIDEO_PROFILE=local_mac_16gb AI_VIDEO_CONFIG={args.config} "
                 f"python scripts/run-local-portfolio-sample.py --shots {args.shots} "
-                f"--shot-duration {args.shot_duration} --resume --output-dir {output_dir}"
+                f"--shot-duration {args.shot_duration} "
+                f"{'--preview-only ' if preview_only else ''}"
+                f"--resume --output-dir {output_dir}"
             ),
         }
         (output_dir / "report.json").write_text(
@@ -2994,9 +3258,18 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         subtitle_metadata=subtitle_metadata,
         rendered_artifact=rendered_artifact,
         clip_task_snapshots=clip_task_snapshots,
+        video_provider=settings.video_provider,
     )
     report = {
         "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
+        "sample_mode": (
+            "mock" if args.mock_media else "preview_only" if preview_only else "formal"
+        ),
+        "formal_portfolio_eligible": (
+            not args.mock_media
+            and not preview_only
+            and settings.video_provider in _PORTFOLIO_REAL_MOTION_PROVIDERS
+        ),
         "project_id": str(project_id),
         "episode_id": str(episode.id),
         "script_id": str(script.id),
@@ -3076,6 +3349,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             for segment in narration_timeline
         ],
         "reference_image_count": len(reference_tasks),
+        "real_motion_provider": (
+            settings.video_provider if not args.mock_media and not preview_only else None
+        ),
         "providers": {
             "image": "mock" if args.mock_media else settings.image_provider,
             "video": "local_fixture" if args.mock_media else settings.video_provider,
@@ -3098,7 +3374,18 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         "narration_output_path": str(stable_narration) if stable_narration else None,
         "quality_boundary": {
             "image": "reference-image-driven" if not args.mock_media else "mock-placeholder",
-            "motion": "wan2.1_i2v" if not args.mock_media else "fixture-color-card",
+            "motion": (
+                "preview-only-non-model-motion"
+                if preview_only
+                else "model-generated-video"
+                if not args.mock_media
+                else "fixture-color-card"
+            ),
+            "real_motion_provider": (
+                settings.video_provider if not args.mock_media and not preview_only else None
+            ),
+            "real_motion_required": not args.mock_media and not preview_only,
+            "preview_only": preview_only,
             "subtitle": (
                 "continuous_audio_edge_word_boundary_editorial_sentence_cues"
                 if audio_scene_timings is not None

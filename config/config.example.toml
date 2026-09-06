@@ -117,7 +117,9 @@ max_poll_seconds = 600
 # API 格式工作流，必须包含 __AI_VIDEO_PROMPT__ 和 __AI_VIDEO_INPUT_IMAGE__ 占位符。
 # Mac 16GB 本地目标档使用 320x576、8fps、6 步；通用示例仍可按设备调整
 # image_size/output_width/output_height/fps/steps。较高 steps 会提高耗时和显存压力，必须实测。
-# ffmpeg_motion 仅保留为历史/低资源回退，不属于目标本地 Demo。
+# ffmpeg_motion 仅保留为历史/低资源回退，不属于目标本地 Demo，也不能用于正式作品集样片。
+# 没有模型运行时但需要联调旁白/字幕/Assembly 时，显式给脚本增加 --preview-only；报告会标记为预览，
+# 不会把静态图 Ken Burns 结果当成真实 I2V 视频。
 # openai_compatible 使用“提交任务 -> 轮询 -> 下载”HTTP 约定，需配置真实供应商的 URL 和 Key。
 # siliconflow 使用 /v1/video/submit -> /v1/video/status -> 下载 URL，需配置 API Key。
 # 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Wan-AI/Wan2.2-T2V-A14B"。

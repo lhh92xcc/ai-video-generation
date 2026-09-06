@@ -36,6 +36,8 @@ _frame_aligned_scene_durations = _MODULE._frame_aligned_scene_durations
 _build_continuous_narration_timeline = _MODULE._build_continuous_narration_timeline
 _fit_narration_artifact_to_shot = _MODULE._fit_narration_artifact_to_shot
 _portfolio_readiness_report = _MODULE._portfolio_readiness_report
+_ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
+_assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
 
 
 def test_portfolio_sample_has_ten_short_drama_scenes() -> None:
@@ -101,11 +103,74 @@ def test_portfolio_readiness_report_separates_machine_gates_from_human_review() 
     readiness = report["readiness"]
     assert readiness["status"] == "ready_for_human_review"
     assert readiness["ready_for_portfolio"] is False
-    assert readiness["machine_checks_passed"] == 8
-    assert readiness["machine_checks_total"] == 8
+    assert readiness["machine_checks_passed"] == 9
+    assert readiness["machine_checks_total"] == 9
     assert readiness["human_checks_completed"] == 0
     assert len(report["human_review"]["items"]) == 6
     assert {item["status"] for item in report["machine_checks"]} == {"passed"}
+    assert report["real_motion_provider"]["real_motion_provider"] == "comfyui_wan_i2v"
+
+
+def test_real_portfolio_rejects_non_model_motion_provider() -> None:
+    with pytest.raises(RuntimeError, match="PORTFOLIO_REAL_VIDEO_REQUIRED"):
+        _ensure_portfolio_video_provider("ffmpeg_motion", mock_media=False)
+
+
+def test_real_portfolio_accepts_registered_model_motion_provider() -> None:
+    _ensure_portfolio_video_provider("comfyui_wan_i2v", mock_media=False)
+
+
+def test_preview_only_report_cannot_be_ready_for_portfolio() -> None:
+    from app.domain.models import ArtifactSummary
+
+    report = _portfolio_readiness_report(
+        args=argparse.Namespace(mock_media=False, preview_only=True),
+        shot_count=10,
+        reference_image_count=4,
+        clip_count=10,
+        narration_artifact=ArtifactSummary(
+            type="audio_narration",
+            provider="edge_tts",
+            metadata={"duration_seconds": 50.0},
+        ),
+        subtitle_artifact=ArtifactSummary(
+            type="subtitle_srt",
+            provider="provided_cues",
+            metadata={"cue_count": 10},
+        ),
+        subtitle_metadata={"cue_count": 10},
+        rendered_artifact=ArtifactSummary(
+            type="rendered_video",
+            provider="ffmpeg",
+            metadata={
+                "width": 576,
+                "height": 1024,
+                "duration_seconds": 50.0,
+            },
+        ),
+        clip_task_snapshots=[],
+        video_provider="ffmpeg_motion",
+    )
+
+    assert report["sample_mode"] == "preview_only"
+    assert report["readiness"]["status"] == "preview_only"
+    assert report["readiness"]["ready_for_portfolio"] is False
+    assert report["real_motion_provider"]["status"] == "failed"
+
+
+def test_real_portfolio_rejects_static_motion_artifact() -> None:
+    from app.domain.models import ArtifactSummary
+
+    artifact = ArtifactSummary(
+        type="video_clip",
+        provider="ffmpeg_motion",
+        metadata={"motion": "ken_burns", "source": "reviewed_reference_image"},
+    )
+    with pytest.raises(RuntimeError, match="PORTFOLIO_REAL_VIDEO_REQUIRED"):
+        _assert_real_portfolio_video_artifact(
+            artifact,
+            configured_provider="comfyui_wan_i2v",
+        )
 
 
 def test_mock_portfolio_readiness_report_is_not_blocked_by_real_media_checks() -> None:
@@ -142,7 +207,9 @@ def test_mock_portfolio_readiness_report_is_not_blocked_by_real_media_checks() -
     checks = {item["id"]: item for item in report["machine_checks"]}
     assert checks["reference_images"]["status"] == "not_applicable"
     assert checks["identity_audit"]["status"] == "not_applicable"
-    assert report["readiness"]["status"] == "ready_for_human_review"
+    assert report["readiness"]["status"] == "engineering_fixture"
+    assert report["sample_mode"] == "mock"
+    assert report["readiness"]["ready_for_portfolio"] is False
 
 
 def test_real_portfolio_readiness_blocks_until_identity_audit_exists() -> None:
