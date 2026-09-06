@@ -17,6 +17,7 @@
 - MuseTalk 接口：支持从视频/音频 Artifact 创建唇形同步任务，完成后可在成片编排中选择 `lip_synced_video`，原始片段可回退。
 - Windows GPU 主机运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查；参数按显存和实测结果调整，不绑定具体显卡型号。
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。
+- 运行日志：后台按时间回看任务状态、阶段尝试、错误码、安全运行上下文和 Artifact 摘要；不展示 Prompt、密钥或存储路径。
 - Redis Worker 异步任务、幂等、失败重试、批次编排和 Artifact Registry。
 - FFmpeg 多镜头拼接、旁白/BGM 混音、中文字幕烧录和临时下载。
 - 本地/Mock Artifact 浏览器预览：通过授权的 `/api/v1/artifacts/{artifact_id}/content` 读取图片、视频、音频和下载文件，支持 HTTP Range；资产列表默认优先展示真实图片/视频缩略图，预览失败时提供重试和签名 URL 回退，不暴露磁盘路径或内部存储 URI。
@@ -59,7 +60,7 @@ docker compose up -d --build frontend api worker
 curl http://127.0.0.1:8000/healthz
 ```
 
-打开 <http://127.0.0.1:3000> 查看创作者前台，API 地址为 <http://127.0.0.1:8000>。需要进入内部后台时，点击“进入制作后台”；也可以直接打开 `/?view=overview` 查看运行概览，或 `/?view=provider` 管理 Provider 配置。
+打开 <http://127.0.0.1:3000> 查看创作者前台，API 地址为 <http://127.0.0.1:8000>。需要进入内部后台时，点击“进入制作后台”；也可以直接打开 `/?view=overview` 查看运行概览、`/?view=logs` 查看运行日志，或 `/?view=provider` 管理 Provider 配置。
 
 查看日志：
 
@@ -146,7 +147,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `334 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `334 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

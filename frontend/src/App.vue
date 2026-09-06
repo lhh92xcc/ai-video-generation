@@ -7,16 +7,17 @@ import ArtifactLibrary from './components/ArtifactLibrary.vue'
 import SubtitleTaskView from './components/SubtitleTaskView.vue'
 import TaskCenter from './components/TaskCenter.vue'
 import ProductionQueue from './components/ProductionQueue.vue'
+import RunLog from './components/RunLog.vue'
 import ScriptAssetWorkbench from './components/ScriptAssetWorkbench.vue'
 import CreatorHome from './components/CreatorHome.vue'
 import { useProviderProfiles } from './composables/useProviderProfiles'
 
-type AppView = 'overview' | 'provider' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
+type AppView = 'overview' | 'provider' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench' | 'logs'
 type AppSurface = 'operator' | 'creator'
 
 const initialSurface = new URLSearchParams(window.location.search).get('surface')
 const initialViewParam = new URLSearchParams(window.location.search).get('view')
-const supportedViews: AppView[] = ['overview', 'provider', 'subtitle', 'tasks', 'queue', 'artifacts', 'workbench']
+const supportedViews: AppView[] = ['overview', 'provider', 'subtitle', 'tasks', 'queue', 'artifacts', 'workbench', 'logs']
 const initialView = supportedViews.includes(initialViewParam as AppView) ? initialViewParam as AppView : 'overview'
 const activeView = ref<AppView>(initialView)
 const activeSurface = ref<AppSurface>(initialSurface === 'creator' || (!initialSurface && !initialViewParam) ? 'creator' : 'operator')
@@ -88,7 +89,7 @@ const showHelp = ref(false)
 
 const configuredCount = computed(() => availableProfiles.value.length)
 const selectedProfileName = computed(() => selectedProfile.value?.label ?? '尚未选择')
-const activeViewLabel = computed(() => activeView.value === 'overview' ? '运行概览' : activeView.value === 'provider' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : '脚本与资产')
+const activeViewLabel = computed(() => activeView.value === 'overview' ? '运行概览' : activeView.value === 'provider' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : activeView.value === 'workbench' ? '脚本与资产' : '运行日志')
 
 async function refreshHealth() {
   healthLoading.value = true
@@ -173,10 +174,10 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
           <span class="nav-text">Provider 配置</span>
           <span v-if="activeView === 'provider'" class="nav-current">当前</span>
         </button>
-        <button class="nav-item nav-item-disabled" type="button" disabled aria-disabled="true" title="运行日志尚未开放">
+        <button class="nav-item" :class="{ active: activeView === 'logs' }" type="button" @click="setOperatorView('logs')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Zm0 2a7 7 0 1 1-7 7 7 7 0 0 1 7-7Zm-1 2v5.4l4 2.3 1-1.7-3-1.7V7h-2Z" /></svg>
           <span class="nav-text">运行日志</span>
-          <span class="nav-soon">即将</span>
+          <span v-if="activeView === 'logs'" class="nav-current">当前</span>
         </button>
       </nav>
 
@@ -221,6 +222,8 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
 
       <main class="main-content">
         <RuntimeOverview v-if="activeView === 'overview'" @open-view="setOperatorView" @open-creator="openCreatorSurface" />
+
+        <RunLog v-else-if="activeView === 'logs'" />
 
         <template v-else-if="activeView === 'provider'">
         <section class="page-header">
@@ -344,7 +347,7 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
           <article><span>02</span><div><strong>人工审核</strong><p>在资产、分镜、声音和字幕阶段确认结果，再提交视频片段和成片任务。</p></div></article>
           <article><span>03</span><div><strong>后台运维</strong><p>生产任务、远程队列、媒体资产和 Provider 配置仅供本地管理员使用。</p></div></article>
         </div>
-        <div class="operator-help-note"><span>i</span><p>运行日志入口目前暂未开放；耗时任务的进度、失败原因和重试入口可在“生产任务”中查看。</p></div>
+        <div class="operator-help-note"><span>i</span><p>运行日志会按时间汇总任务状态和阶段尝试；需要执行重试或创建批次时，请在“生产任务”中操作。</p></div>
         <div class="operator-modal-actions"><button class="secondary-button" type="button" @click="showHelp = false">关闭</button><button class="primary-button" type="button" @click="openHelpCreator">打开创作者前台 <span>↗</span></button></div>
       </section>
     </div>
