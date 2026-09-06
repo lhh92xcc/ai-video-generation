@@ -27,6 +27,7 @@
 - 作品集真实运动门禁：当前分集按镜头只读取最新的成功视频任务和对应 Artifact，拒绝 `mock`、`local_fixture`、`ffmpeg_motion`、未知 Provider 及静态/Fixture 元数据，避免历史重试产物污染正式样片判断。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
+- 自动生产 Run 完成态已闭环：Worker/scheduler 在推进 DAG 时只把 `created`/`reused` 任务视为下一波工作，不会把用于界面追踪的已完成任务 ID误判为新任务；最终 Assembly 成功后 Run 会稳定进入 `completed`。
 
 ## 流水线
 
@@ -147,7 +148,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `335 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `336 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

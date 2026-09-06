@@ -343,7 +343,12 @@ class ProductionOrchestrator:
                 await self._set_run_status(run_tasks, "blocked")
                 raise
 
-            next_task_ids = self._task_ids(response)
+            # A skipped response may intentionally carry the already-successful
+            # task ID so the UI can show what was completed between two planner
+            # calls. Those IDs are evidence, not work for the next wave. Only
+            # created/reused items should keep the Run active or be annotated
+            # as the next dependency-ready tasks.
+            next_task_ids = self._actionable_task_ids(response)
             if not next_task_ids and any(item.action.value == "blocked" for item in response.items):
                 await self._set_run_status(run_tasks, "blocked")
                 return response.model_copy(
@@ -518,4 +523,21 @@ class ProductionOrchestrator:
             ids.extend(item.task_ids)
         for batch in response.batches:
             ids.extend(batch.task_ids)
+        return list(dict.fromkeys(ids))
+
+    @staticmethod
+    def _actionable_task_ids(response: EpisodeTaskPlanResponse) -> list[UUID]:
+        """Return only task IDs that represent work for the next DAG wave.
+
+        The planner keeps successful task IDs on skipped items for observability
+        and client-side reconciliation. Automatic Run lifecycle decisions must
+        exclude those carry-forward IDs, otherwise a completed Run is mistaken
+        for a Run with more work to enqueue.
+        """
+
+        ids: list[UUID] = []
+        for item in response.items:
+            if item.action.value not in {"created", "reused"}:
+                continue
+            ids.extend(item.task_ids)
         return list(dict.fromkeys(ids))

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
+from dataclasses import replace
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import load_settings
@@ -13,6 +16,8 @@ from app.domain.models import (
     TaskError,
     TaskStatus,
 )
+from app.main import create_app
+from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer, RenderedVideo
 
 
 def wait_for_task(client: TestClient, task_id: str) -> dict:
@@ -162,3 +167,155 @@ def test_terminal_auto_run_failure_is_not_reported_as_active(client: TestClient)
     assert status == "failed"
     assert auto_advance is False
     assert "不可自动恢复" in message
+
+
+def test_production_run_reaches_completed_after_final_assembly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the complete media DAG without treating fixture media as a demo."""
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg and ffprobe are required for the media DAG regression")
+
+    monkeypatch.setenv("AI_VIDEO_TTS_PROVIDER", "mock")
+    monkeypatch.setenv("AI_VIDEO_VIDEO_PROVIDER", "local_fixture")
+    monkeypatch.setenv("AI_VIDEO_IMAGE_PROVIDER", "mock")
+    monkeypatch.setenv("AI_VIDEO_SUBTITLE_ALIGNMENT_PROVIDER", "mock_sentence")
+
+    class AssemblyProbeRenderer:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int, int]] = []
+
+        async def render(
+            self,
+            clips,
+            input_content_types=None,
+            *,
+            audio_tracks=None,
+            subtitles=None,
+            **kwargs,
+        ) -> RenderedVideo:
+            del kwargs
+            # The host test FFmpeg may not ship libass. Exercise real clip
+            # concatenation and audio mixing, while the renderer contract test
+            # separately covers the subtitle filter gate. The parsed subtitle
+            # count is retained so this test still verifies artifact handoff.
+            rendered = await FFmpegVideoRenderer(timeout_seconds=30).render(
+                clips,
+                input_content_types,
+                audio_tracks=audio_tracks,
+                subtitles=(),
+            )
+            rendered = replace(rendered, subtitle_count=len(subtitles or ()))
+            self.calls.append((len(clips), len(audio_tracks or ()), len(subtitles or ())))
+            return rendered
+
+    with TestClient(create_app()) as test_client:
+        renderer = AssemblyProbeRenderer()
+        test_client.app.state.video_assembly_task_service._renderer = renderer
+
+        project = test_client.post(
+            "/api/v1/novel-projects",
+            json={"title": "完整媒体 DAG 回归", "target_episode_count": 1},
+        )
+        assert project.status_code == 201, project.text
+        project_id = project.json()["id"]
+
+        source = test_client.post(
+            f"/api/v1/novel-projects/{project_id}/sources",
+            files={
+                "file": (
+                    "story.txt",
+                    "第一章\n雨夜里有人敲门。".encode("utf-8"),
+                    "text/plain",
+                )
+            },
+        )
+        assert source.status_code == 201, source.text
+        run = test_client.post(
+            f"/api/v1/novel-projects/{project_id}/production-runs",
+            json={
+                "target_episode_count": 1,
+                "include_reference_images": False,
+                "include_narration": True,
+                "include_subtitles": True,
+                "include_video": True,
+                "include_assembly": True,
+            },
+            headers={"Idempotency-Key": "complete-media-dag"},
+        )
+        assert run.status_code == 202, run.text
+
+        # Let the automatic content stages reach their asset gate first. This
+        # proves that the one-click command starts at the uploaded novel rather
+        # than requiring separate StoryBible/episode HTTP calls.
+        gate_deadline = time.monotonic() + 8
+        gate_state = None
+        while time.monotonic() < gate_deadline:
+            episodes = test_client.get(
+                f"/api/v1/novel-projects/{project_id}/episodes"
+            ).json()
+            latest_response = test_client.get(
+                f"/api/v1/novel-projects/{project_id}/production-runs/latest"
+            )
+            assert latest_response.status_code == 200, latest_response.text
+            gate_state = latest_response.json()
+            if episodes and gate_state["status"] == "blocked":
+                break
+            time.sleep(0.02)
+        assert episodes, "automatic Run did not create an episode"
+        assert gate_state is not None
+        assert gate_state["status"] == "blocked", gate_state
+
+        assets = test_client.post(f"/api/v1/novel-projects/{project_id}/assets/sync")
+        assert assets.status_code == 201, assets.text
+        for asset in assets.json():
+            review = test_client.post(
+                f"/api/v1/assets/{asset['id']}/reviews",
+                json={
+                    "status": "ready",
+                    "reviewer": "dag-regression",
+                    "comment": "Fixture-only automated gate test",
+                },
+            )
+            assert review.status_code == 201, review.text
+
+        deadline = time.monotonic() + 8
+        latest = None
+        while time.monotonic() < deadline:
+            latest_response = test_client.get(
+                f"/api/v1/novel-projects/{project_id}/production-runs/latest"
+            )
+            assert latest_response.status_code == 200, latest_response.text
+            latest = latest_response.json()
+            if latest["status"] in {"completed", "failed"}:
+                break
+            time.sleep(0.02)
+
+        assert latest is not None
+        assert latest["status"] == "completed", latest
+        assert latest["auto_advance"] is False
+        tasks = test_client.get(
+            f"/api/v1/tasks?project_id={project_id}&limit=200"
+        ).json()["items"]
+        kinds = {task["kind"] for task in tasks}
+        assert {
+            "novel_episode_script",
+            "novel_shot_list",
+            "audio_narration",
+            "subtitle_align",
+            "video_clip",
+            "video_assembly",
+        } <= kinds
+        assembly_tasks = [task for task in tasks if task["kind"] == "video_assembly"]
+        assert len(assembly_tasks) == 1
+        assembly = assembly_tasks[0]
+        assert assembly["status"] == "succeeded"
+        assert assembly["artifacts"][0]["type"] == "rendered_video"
+        assert assembly["artifacts"][0]["metadata"]["subtitle_count"] > 0
+        assert assembly["artifacts"][0]["metadata"]["audio_track_count"] == 1
+        assert renderer.calls
+        clip_count, audio_count, subtitle_count = renderer.calls[-1]
+        assert clip_count == len([task for task in tasks if task["kind"] == "video_clip"])
+        assert audio_count == 1
+        assert subtitle_count > 0
