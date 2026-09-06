@@ -7,6 +7,7 @@ param(
     [switch]$SkipOllama,
     [switch]$SkipComfyUI,
     [switch]$SkipMuseTalk,
+    [switch]$RequireMuseTalk,
     [switch]$SkipBuild
 )
 
@@ -144,6 +145,27 @@ try {
 }
 
 $checkScript = Join-Path $ProjectRoot "scripts\check-windows-gpu.ps1"
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $checkScript -ProjectRoot $ProjectRoot
+$healthArguments = @("-ProjectRoot", $ProjectRoot)
+if (-not $SkipOllama) {
+    $healthArguments += "-RequireOllamaModel"
+}
+if (-not $SkipComfyUI) {
+    $healthArguments += "-RequireComfyUI"
+    # A running ComfyUI endpoint is not enough to prove that the host can
+    # generate media.  When the installation root is known, validate the
+    # actual model files and custom-node directories as well.
+    if (-not [string]::IsNullOrWhiteSpace($ComfyUIRoot)) {
+        $healthArguments += @("-ComfyUIRoot", $ComfyUIRoot, "-ValidateComfyUIAssets")
+    } else {
+        Write-Warning "未提供 COMFYUI_ROOT，只能检查 ComfyUI API 和节点；无法检查宿主机模型文件。"
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($ComfyUIPython)) {
+    $healthArguments += @("-ComfyUIPython", $ComfyUIPython)
+}
+if ($RequireMuseTalk) {
+    $healthArguments += "-RequireMuseTalk"
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $checkScript @healthArguments
 $checkExitCode = $LASTEXITCODE
 exit $checkExitCode

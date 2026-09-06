@@ -4,6 +4,11 @@
 # 不包含任何模型、用户名或密钥。请根据目标 GPU 的显存和实测结果调整参数。
 # Windows 主机上的 Ollama / ComfyUI / MuseTalk bridge 通过
 # host.docker.internal 被 Docker API/Worker 访问。
+# 生成前可在 Windows 主机运行：
+# .\scripts\check-windows-gpu.ps1 -ComfyUIRoot $env:COMFYUI_ROOT
+# 增加 -ValidateComfyUIAssets -RequireOllamaModel 可检查实际模型和节点；
+# 需要把 MuseTalk 作为硬门禁时再增加 -RequireMuseTalk；
+# 检查器只读，不会下载或覆盖宿主机资源。
 
 [app]
 name = "ai-video-generation"

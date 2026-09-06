@@ -1,6 +1,15 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$ComfyUIRoot = $env:COMFYUI_ROOT,
+    [string]$ComfyUIPython = $env:COMFYUI_PYTHON,
+    [string]$PreflightPython = $env:PYTHON,
+    [string]$ComfyUIUrl = "http://127.0.0.1:8188",
+    [string]$OllamaUrl = "http://127.0.0.1:11434",
+    [string]$MuseTalkUrl = "http://127.0.0.1:8090",
+    [switch]$RequireComfyUI,
+    [switch]$ValidateComfyUIAssets,
+    [switch]$RequireOllamaModel,
     [switch]$RequireMuseTalk
 )
 
@@ -59,6 +68,56 @@ function Test-Command {
     return $ok
 }
 
+function Invoke-MediaPreflight {
+    $preflightScript = Join-Path $ProjectRoot "scripts\windows_runtime_preflight.py"
+    if (-not (Test-Path $preflightScript -PathType Leaf)) {
+        Add-Result -Name "Windows media preflight" -Ok $false `
+            -Message "找不到 $preflightScript" -Required $true
+        return
+    }
+
+    $python = $PreflightPython
+    if ([string]::IsNullOrWhiteSpace($python) -and -not [string]::IsNullOrWhiteSpace($ComfyUIPython)) {
+        $python = $ComfyUIPython
+    }
+    if ([string]::IsNullOrWhiteSpace($python)) {
+        $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+        if ($pythonCommand) {
+            $python = $pythonCommand.Source
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($python)) {
+        Add-Result -Name "Windows media preflight" -Ok $false `
+            -Message "找不到 Python；请通过 -PreflightPython、COMFYUI_PYTHON 或 PATH 指定" -Required $true
+        return
+    }
+
+    $arguments = @(
+        $preflightScript,
+        "--project-root", $ProjectRoot,
+        "--comfyui-url", $ComfyUIUrl,
+        "--ollama-url", $OllamaUrl,
+        "--musetalk-url", $MuseTalkUrl
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ComfyUIRoot)) {
+        $arguments += @("--comfyui-root", $ComfyUIRoot)
+    }
+    if ($RequireComfyUI) { $arguments += "--require-comfyui" }
+    if ($ValidateComfyUIAssets) { $arguments += "--validate-comfyui-assets" }
+    if ($RequireOllamaModel) { $arguments += "--require-ollama-model" }
+    if ($RequireMuseTalk) { $arguments += "--require-musetalk" }
+
+    & $python @arguments
+    $preflightExitCode = $LASTEXITCODE
+    $preflightMessage = if ($preflightExitCode -eq 0) {
+        "工作流、节点和宿主机依赖检查通过"
+    } else {
+        "请根据上方失败项修复后重试"
+    }
+    Add-Result -Name "Windows media preflight" -Ok ($preflightExitCode -eq 0) `
+        -Message $preflightMessage
+}
+
 Write-Host "AI Video Generation / Windows GPU 主机健康检查" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 Write-Host ""
@@ -85,9 +144,13 @@ $apiResponse = Test-HttpEndpoint -Name "API /healthz" -Uri "http://127.0.0.1:800
 $operationalResponse = Test-HttpEndpoint -Name "API /api/v1/system/health" `
     -Uri "http://127.0.0.1:8000/api/v1/system/health" -Required $true
 
-Test-HttpEndpoint -Name "Ollama" -Uri "http://127.0.0.1:11434/api/tags" -Required $false | Out-Null
-Test-HttpEndpoint -Name "ComfyUI" -Uri "http://127.0.0.1:8188/system_stats" -Required $false | Out-Null
-Test-HttpEndpoint -Name "MuseTalk bridge" -Uri "http://127.0.0.1:8090/healthz" -Required $RequireMuseTalk | Out-Null
+Test-HttpEndpoint -Name "Ollama" -Uri "$OllamaUrl/api/tags" -Required $false | Out-Null
+Test-HttpEndpoint -Name "ComfyUI" -Uri "$ComfyUIUrl/system_stats" -Required $RequireComfyUI | Out-Null
+Test-HttpEndpoint -Name "MuseTalk bridge" -Uri "$MuseTalkUrl/healthz" -Required $RequireMuseTalk | Out-Null
+
+if ($RequireComfyUI -or $ValidateComfyUIAssets -or $RequireOllamaModel -or $RequireMuseTalk) {
+    Invoke-MediaPreflight
+}
 
 if ($operationalResponse -ne $null) {
     try {

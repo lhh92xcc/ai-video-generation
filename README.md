@@ -203,9 +203,23 @@ Mac 端只维护代码、Prompt、配置和前端，不下载 Windows/CUDA 模�
 ```powershell
 $env:AI_VIDEO_PROFILE = "windows_gpu"
 $env:AI_VIDEO_CONFIG = "config/config.windows_gpu.toml"
+$env:COMFYUI_ROOT = "D:\AI\ComfyUI"
 .\scripts\start-windows-gpu.ps1 -ProjectRoot (Get-Location).Path
 ```
 
-启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次健康检查。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
+启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次媒体前置检查。前置检查除了端口，还会读取仓库中的三个 workflow JSON，核对必需节点/占位符，并在设置 `COMFYUI_ROOT` 后检查 Flux、Wan、PuLID、Wan 文本编码器、VAE、InsightFace 和 ComfyUI custom nodes 是否实际存在；检查过程只读，不会下载或覆盖模型。
+
+也可以单独执行严格检查：
+
+```powershell
+.\scripts\check-windows-gpu.ps1 `
+  -ProjectRoot (Get-Location).Path `
+  -ComfyUIRoot $env:COMFYUI_ROOT `
+  -RequireComfyUI `
+  -ValidateComfyUIAssets `
+  -RequireOllamaModel
+```
+
+如果要把 MuseTalk 作为正式对话镜头的必需依赖，再追加 `-RequireMuseTalk`；启动器也支持同名参数。如果暂时只检查 Docker/API 基础设施，可省略媒体检查参数。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
 
 远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue` 和 `POST /api/v1/system/cleanup`。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。
