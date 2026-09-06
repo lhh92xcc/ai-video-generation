@@ -719,3 +719,170 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   .creator-video-provider-inline .provider-selector { display: block; }
   .creator-video-provider-inline .field-hint { margin-top: 5px; }
 }
+
+/* 2026-09-07 creator-facing presentation pass.
+   The workflow stays information-dense, but primary and supporting copy must
+   remain readable at normal desktop scale. */
+.creator-shell {
+  background:
+    radial-gradient(circle at 82% -8%, rgba(113, 109, 224, 0.09), transparent 28%),
+    linear-gradient(180deg, #fafaff 0%, #f7f8fc 46%, #fbfbfd 100%);
+}
+.creator-header {
+  min-height: 76px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 0 rgba(36, 44, 70, 0.03), 0 8px 24px rgba(48, 57, 93, 0.035);
+  backdrop-filter: blur(16px);
+}
+.creator-nav a, .creator-nav button { font-size: 13px; }
+.creator-env-badge { font-size: 11px; }
+.creator-main { width: min(1240px, calc(100% - 64px)); }
+.creator-hero-description { font-size: 15px; line-height: 1.75; }
+.creator-primary-button, .creator-ghost-button { font-size: 12px; }
+.creator-trust-row { font-size: 11px; }
+.creator-metrics small { font-size: 11px; }
+.creator-metric-note { font-size: 10px; }
+.creator-section-heading h2 { font-size: 26px; }
+.creator-section-heading p:not(.creator-eyebrow) { font-size: 12px; }
+.creator-workflow-card { min-height: 232px; padding: 23px; }
+.creator-workflow-card strong { font-size: 16px; }
+.creator-workflow-card p { font-size: 12px; line-height: 1.7; }
+.creator-card-link, .creator-coming-soon { font-size: 11px; }
+.creator-panel { padding: 24px; }
+.creator-panel-heading h2 { font-size: 19px; }
+.creator-empty { font-size: 12px; }
+.creator-empty strong { font-size: 14px; }
+.creator-project-row strong, .creator-task-row strong { font-size: 12px; }
+.creator-project-row small, .creator-task-row small { font-size: 10px; }
+.creator-project-status, .creator-task-status { font-size: 10px; }
+.creator-workspace-section { padding: 30px; }
+.creator-workspace-heading h2 { font-size: 32px; }
+.creator-workspace-heading p:not(.creator-eyebrow) { font-size: 13px; }
+.creator-workspace-status, .creator-card-state, .creator-activity-count { font-size: 10px; }
+.creator-phase-strip > button { padding: 13px 14px; }
+.creator-phase-strip span { font-size: 9px; }
+.creator-phase-strip strong { font-size: 12px; }
+.creator-phase-strip small, .creator-phase-strip em { font-size: 10px; }
+.creator-workflow-summary { padding: 17px 18px; }
+.creator-workflow-summary h3 { font-size: 18px; }
+.creator-workflow-summary-main p:last-child { font-size: 11px; }
+.creator-workflow-summary-metric small, .creator-workflow-summary-metric span, .creator-workflow-summary-metric em { font-size: 10px; }
+.creator-workflow-summary-metric strong { font-size: 22px; }
+.creator-workflow-summary .creator-primary-button { font-size: 11px; }
+.creator-route-guide-label { font-size: 9px; }
+.creator-route-guide strong { font-size: 12px; }
+.creator-route-guide small, .creator-route-guide p { font-size: 10px; }
+.creator-pipeline-step strong { font-size: 11px; }
+.creator-pipeline-step small { font-size: 10px; }
+.creator-detail-workflow summary, .creator-advanced-section summary, .creator-optional-section summary { font-size: 12px; }
+.creator-detail-workflow summary small, .creator-advanced-section summary small, .creator-optional-section summary small { font-size: 10px; }
+.creator-workspace-card { padding: 22px; }
+.creator-workspace-card-heading h3 { font-size: 18px; }
+.creator-workspace-card-heading p:not(.creator-eyebrow) { font-size: 12px; }
+.creator-workspace-actions .creator-primary-button, .creator-workspace-actions .creator-ghost-button { font-size: 11px; }
+.creator-asset-gate-summary strong { font-size: 18px; }
+.creator-asset-gate-summary small { font-size: 10px; }
+.creator-production-note, .creator-asset-gate-success { font-size: 11px; }
+.creator-production-note p { font-size: 11px; }
+.creator-step-callout strong, .creator-plan-summary strong, .creator-script-empty strong { font-size: 12px; }
+.creator-step-callout small, .creator-plan-summary small, .creator-script-empty small { font-size: 10px; }
+.creator-episode-picker strong { font-size: 12px; }
+.creator-episode-picker small { font-size: 10px; }
+.creator-script-stats span { font-size: 10px; }
+.creator-script-hook strong, .creator-script-hook span { font-size: 11px; }
+.creator-scene-preview strong { font-size: 11px; }
+.creator-scene-preview small { font-size: 10px; }
+.creator-audio-field > span { font-size: 11px; }
+.creator-audio-field textarea { font-size: 12px; line-height: 1.75; }
+.creator-audio-artifact strong, .creator-subtitle-source strong, .creator-subtitle-artifact strong, .creator-bgm-artifact strong { font-size: 11px; }
+.creator-audio-artifact small, .creator-subtitle-source small, .creator-subtitle-artifact small, .creator-bgm-artifact small { font-size: 10px; }
+.creator-subtitle-mode-switch button { font-size: 10px; }
+.creator-subtitle-note strong { font-size: 10px; }
+.creator-subtitle-note select { font-size: 10px; }
+.creator-subtitle-note small, .creator-subtitle-note p, .creator-bgm-guide p { font-size: 9px; }
+.creator-bgm-form label > span { font-size: 10px; }
+.creator-bgm-form input, .creator-bgm-form select { font-size: 10px; }
+.creator-status-list strong { font-size: 11px; }
+.creator-status-list small { font-size: 10px; }
+.creator-activity-list strong { font-size: 10px; }
+.creator-activity-list small { font-size: 9px; }
+.creator-help-card h3 { font-size: 13px; }
+.creator-help-card p { font-size: 10px; }
+.creator-stage-nav-row strong { font-size: 11px; }
+.creator-stage-nav-row small { font-size: 9px; }
+.creator-next-step-card > strong { font-size: 12px; }
+.creator-next-step-card > p { font-size: 9px; }
+.creator-shot-card-heading span { font-size: 9px; }
+.creator-shot-card-heading strong { font-size: 12px; }
+.creator-shot-card-heading em { font-size: 9px; }
+.creator-shot-prompt-details summary { font-size: 10px; }
+.creator-shot-prompt-details p { font-size: 10px; }
+.creator-shot-meta span { font-size: 9px; }
+.creator-shot-warning { font-size: 10px; }
+.creator-video-artifact strong { font-size: 10px; }
+.creator-video-artifact small { font-size: 9px; }
+.creator-shot-actions .creator-primary-button, .creator-shot-actions .creator-ghost-button { font-size: 10px; }
+.creator-shot-toolbar strong { font-size: 11px; }
+.creator-shot-toolbar small { font-size: 9px; }
+.creator-shot-filters button { font-size: 9px; }
+.creator-shot-controls input { font-size: 10px; }
+.creator-shot-empty { font-size: 10px; }
+.creator-shot-empty strong { font-size: 12px; }
+.creator-inline-action { font-size: 9px; }
+.creator-assembly-summary strong { font-size: 14px; }
+.creator-assembly-summary small { font-size: 9px; }
+.creator-assembly-clip-list strong { font-size: 10px; }
+.creator-assembly-clip-list small { font-size: 9px; }
+.creator-assembly-source { font-size: 9px; }
+.creator-assembly-options strong { font-size: 10px; }
+.creator-assembly-options small { font-size: 9px; }
+.creator-assembly-artifact strong { font-size: 10px; }
+.creator-assembly-artifact small { font-size: 9px; }
+.creator-assembly-preview-loading { font-size: 10px; }
+.creator-assembly-preview-actions { font-size: 9px; }
+.creator-auto-run-panel strong { font-size: 12px; }
+.creator-auto-run-panel small { font-size: 10px; }
+.creator-auto-run-panel .creator-primary-button { font-size: 10px; }
+.creator-auto-run-status strong { font-size: 10px; }
+.creator-auto-run-status small { font-size: 9px; }
+.creator-quality-section summary { font-size: 12px; }
+.creator-quality-section summary small { font-size: 9px; }
+.creator-provider-panel-heading h4 { font-size: 12px; }
+.creator-provider-panel-heading p:not(.creator-eyebrow) { font-size: 10px; }
+.creator-provider-panel-heading > span { font-size: 9px; }
+.creator-provider-grid .field-label, .creator-video-provider-inline .field-label { font-size: 10px; }
+.creator-provider-grid .provider-select, .creator-video-provider-inline .provider-select { font-size: 10px; }
+.creator-provider-grid .field-hint, .creator-video-provider-inline .field-hint { font-size: 9px; }
+.creator-provider-status { font-size: 9px; }
+.creator-shot-keyframe-control strong { font-size: 11px; }
+.creator-shot-keyframe-control small { font-size: 10px; }
+.creator-shot-keyframe-control select { font-size: 10px; }
+.visual-quality-selector { padding: 16px; }
+.visual-quality-eyebrow { font-size: 9px; }
+.visual-quality-selector .field-label { font-size: 13px; }
+.visual-quality-caption { font-size: 10px; }
+.visual-quality-current-badge { font-size: 10px; }
+.visual-quality-options { gap: 11px; margin-top: 14px; }
+.visual-quality-option { padding: 13px; }
+.visual-quality-option-index { width: 25px; height: 25px; flex-basis: 25px; font-size: 9px; }
+.visual-quality-option-title strong { font-size: 12px; }
+.visual-quality-option-title small { font-size: 9px; }
+.visual-quality-option-check { font-size: 11px; }
+.visual-quality-option-recommended { font-size: 10px; }
+.visual-quality-option-metrics span, .visual-quality-option-metrics b { font-size: 9px; }
+.visual-quality-option-description { font-size: 10px; line-height: 1.55; }
+.visual-quality-selected-summary strong { font-size: 10px; }
+.visual-quality-selected-summary p { font-size: 9px; }
+.visual-quality-selected-summary > small { font-size: 9px; }
+.creator-visual-quality-note strong { font-size: 11px; }
+.creator-visual-quality-note p, .creator-visual-quality-note small { font-size: 9px; }
+
+@media (max-width: 720px) {
+  .creator-main { width: calc(100% - 32px); }
+  .creator-workspace-section { padding: 20px; }
+  .creator-workspace-card { padding: 18px; }
+  .creator-workflow-card { min-height: 0; }
+  .creator-hero-description { font-size: 14px; }
+  .creator-section-heading h2 { font-size: 23px; }
+  .visual-quality-selector { padding: 13px; }
+}

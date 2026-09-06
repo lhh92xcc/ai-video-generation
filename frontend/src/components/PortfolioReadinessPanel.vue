@@ -354,4 +354,27 @@ function locate(gate: ReadinessGate) {
 .portfolio-review-item { display: flex; align-items: flex-start; gap: 9px; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; background: #fff; cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }.portfolio-review-item:hover { border-color: #d2d4f4; }.portfolio-review-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }.portfolio-review-item.checked { border-color: #cde9da; background: #f8fdf9; }.portfolio-review-item.checked .portfolio-review-mark { color: #fff; background: #4aa77d; }.portfolio-review-item > span:last-child { min-width: 0; }.portfolio-review-item strong, .portfolio-review-item small { display: block; }.portfolio-review-item strong { color: #5b657a; font-size: 10px; }.portfolio-review-item small { margin-top: 4px; color: #99a1b0; font-size: 9px; line-height: 1.5; }
 .portfolio-readiness-blockers, .portfolio-readiness-success { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; border-radius: 9px; padding: 10px 11px; font-size: 10px; line-height: 1.55; }.portfolio-readiness-blockers { color: #806831; background: #fff9e9; }.portfolio-readiness-success { color: #397958; background: #effaf4; }.portfolio-readiness-blockers > span, .portfolio-readiness-success > span { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: inherit; background: rgba(255,255,255,.72); font-weight: 800; }.portfolio-readiness-blockers p, .portfolio-readiness-success p { margin: 0; }
 @media (max-width: 860px) { .portfolio-readiness-heading { flex-direction: column; gap: 9px; }.portfolio-readiness-columns { grid-template-columns: 1fr; } }
+
+/* Keep the readiness panel legible when used as the final portfolio gate. */
+.portfolio-readiness-card { padding: 22px; background: radial-gradient(circle at 100% 0%, rgba(119,121,220,.12), transparent 34%), linear-gradient(145deg, #fafaff 0%, #fff 63%); box-shadow: 0 16px 38px rgba(79, 82, 157, .07); }
+.portfolio-readiness-heading h3 { font-size: 19px; }
+.portfolio-readiness-heading p:last-child { font-size: 12px; line-height: 1.7; }
+.portfolio-readiness-badge { font-size: 11px; }
+.portfolio-readiness-progress { margin-top: 18px; padding: 13px 14px; }
+.portfolio-readiness-progress-copy strong { font-size: 22px; }
+.portfolio-readiness-progress-copy span { font-size: 10px; }
+.portfolio-readiness-progress-track { height: 7px; margin-top: 10px; }
+.portfolio-readiness-columns { gap: 15px; margin-top: 16px; }
+.portfolio-readiness-section { padding: 16px; }
+.portfolio-readiness-section-heading strong { font-size: 12px; }
+.portfolio-readiness-section-heading small { font-size: 10px; }
+.portfolio-readiness-section-heading > span { font-size: 12px; }
+.portfolio-reset-button { font-size: 10px; }
+.portfolio-gate, .portfolio-review-item { padding: 11px; }
+.portfolio-gate-copy strong, .portfolio-review-item strong { font-size: 11px; }
+.portfolio-gate-copy small, .portfolio-review-item small { font-size: 10px; }
+.portfolio-gate-copy em { font-size: 9px; }
+.portfolio-gate > b { font-size: 10px; }
+.portfolio-readiness-blockers, .portfolio-readiness-success { font-size: 11px; }
+@media (max-width: 860px) { .portfolio-readiness-card { padding: 18px; } }
 </style>
