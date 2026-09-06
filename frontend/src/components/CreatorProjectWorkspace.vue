@@ -36,12 +36,18 @@ import type {
 } from '../types/task'
 
 type SubtitleMode = 'asr' | 'align'
+type ShotFilter = 'all' | 'ready' | 'failed' | 'succeeded' | 'blocked'
 
 type AssemblyClipSelection = {
   shotIndex: number
   task: GenerationTaskRecord
   artifact: ArtifactSummary
   source: 'video_clip' | 'lip_sync'
+}
+
+type RecentTaskGroup = {
+  task: GenerationTaskRecord
+  count: number
 }
 
 const props = defineProps<{ project: NovelProjectRecord }>()
@@ -79,6 +85,8 @@ const assemblyUseBgm = ref(true)
 const assemblyUseSubtitles = ref(true)
 const assemblyBgmVolume = ref(0.18)
 const assemblyUseLipSyncByShot = ref<Record<number, boolean>>({})
+const shotFilter = ref<ShotFilter>('all')
+const shotSearch = ref('')
 const renderedVideoArtifactRecord = ref<ArtifactRecord | null>(null)
 const renderedVideoArtifactLoading = ref(false)
 const selectedFile = ref<File | null>(null)
@@ -128,6 +136,38 @@ const successfulVideoClipTasks = computed(() => {
   return [...taskByShot.values()].sort((left, right) => Number(left.input_data.shot_index) - Number(right.input_data.shot_index))
 })
 const videoClipSucceededCount = computed(() => successfulVideoClipTasks.value.length)
+const shotTotalCount = computed(() => selectedShotList.value?.shots.length ?? 0)
+const shotFailedCount = computed(() => selectedShotList.value?.shots.filter((shot) => latestVideoClipTask(shot.shot_index)?.status === 'failed').length ?? 0)
+const shotSucceededCount = computed(() => selectedShotList.value?.shots.filter((shot) => {
+  const task = latestVideoClipTask(shot.shot_index)
+  return task?.status === 'succeeded' && Boolean(task.artifacts.some((artifact) => artifact.type === 'video_clip'))
+}).length ?? 0)
+const shotBlockedCount = computed(() => selectedShotList.value?.shots.filter((shot) => !isShotReady(shot)).length ?? 0)
+const shotFilterOptions = computed(() => [
+  { key: 'all' as ShotFilter, label: '全部', count: shotTotalCount.value },
+  { key: 'ready' as ShotFilter, label: '待生成', count: Math.max(0, videoClipReadyCount.value - shotSucceededCount.value) },
+  { key: 'failed' as ShotFilter, label: '生成失败', count: shotFailedCount.value },
+  { key: 'succeeded' as ShotFilter, label: '已完成', count: shotSucceededCount.value },
+  { key: 'blocked' as ShotFilter, label: '需补资产', count: shotBlockedCount.value },
+])
+const filteredShots = computed(() => {
+  const query = shotSearch.value.trim().toLowerCase()
+  return (selectedShotList.value?.shots ?? []).filter((shot) => {
+    const task = latestVideoClipTask(shot.shot_index)
+    const hasArtifact = Boolean(videoClipArtifact(shot.shot_index))
+    const matchesFilter = shotFilter.value === 'all'
+      || (shotFilter.value === 'ready' && isShotReady(shot) && !hasArtifact && task?.status !== 'failed')
+      || (shotFilter.value === 'failed' && task?.status === 'failed')
+      || (shotFilter.value === 'succeeded' && task?.status === 'succeeded' && hasArtifact)
+      || (shotFilter.value === 'blocked' && !isShotReady(shot))
+    if (!matchesFilter) return false
+    if (!query) return true
+    return [shot.shot_index, shot.scene_index, shot.shot_size, shot.camera_movement, shot.visual_prompt]
+      .join(' ')
+      .toLowerCase()
+      .includes(query)
+  })
+})
 const assemblyLipSyncCandidates = computed(() => {
   const lipSyncByVideoArtifact = new Map<string, { task: GenerationTaskRecord; artifact: ArtifactSummary }>()
   for (const task of tasks.value) {
@@ -176,6 +216,18 @@ const audioDurationSeconds = computed(() => positiveNumber(audioArtifact.value?.
 const scriptReady = computed(() => Boolean(selectedScript.value) || selectedScriptTask.value?.status === 'succeeded')
 const selectedScriptTask = computed(() => scriptTask.value)
 const activeTaskCount = computed(() => tasks.value.filter((task) => isActive(task.status)).length)
+const recentTaskGroups = computed<RecentTaskGroup[]>(() => {
+  const groups = new Map<string, RecentTaskGroup>()
+  const orderedTasks = [...tasks.value].sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+  for (const task of orderedTasks) {
+    const errorCode = task.error?.code ?? ''
+    const key = `${task.kind}:${task.status}:${errorCode}`
+    const existing = groups.get(key)
+    if (existing) existing.count += 1
+    else groups.set(key, { task, count: 1 })
+  }
+  return [...groups.values()].slice(0, 6)
+})
 const workflowStageKey = computed(() => {
   if (!sourceReady.value || !storyBibleReady.value || !episodesReady.value) return 'content'
   if (!selectedEpisode.value || !scriptReady.value || shotTask.value?.status !== 'succeeded') return 'script'
@@ -256,6 +308,18 @@ const workflowBlocker = computed(() => {
   if (videoClipSucceededCount.value < videoClipReadyCount.value) return `还有 ${videoClipReadyCount.value - videoClipSucceededCount.value} 个视频片段未完成。`
   if (videoAssemblyTask.value?.status !== 'succeeded') return assemblyClipSelections.value.length >= 2 ? '媒体已就绪，可以提交成片合成。' : '等待至少两个成功的视频片段。'
   return '当前核心流程已完成，可预览并下载成片。'
+})
+const failedTaskCount = computed(() => {
+  const episodeId = selectedEpisode.value?.id
+  if (!episodeId) return 0
+  return tasks.value.filter((task) => task.status === 'failed' && String(task.input_data.episode_id ?? '') === episodeId).length
+})
+const workspaceStatus = computed(() => {
+  if (failedTaskCount.value > 0) return { label: `${selectedEpisode.value ? '本集 ' : ''}${failedTaskCount.value} 个任务需处理`, className: 'attention' }
+  if (videoAssemblyTask.value?.status === 'succeeded') return { label: '成片已就绪', className: 'ready' }
+  if (activeTaskCount.value > 0) return { label: '正在生产', className: 'analyzing' }
+  if (workflowStageKey.value === 'content') return { label: '等待内容', className: 'pending' }
+  return { label: '制作进行中', className: 'pending' }
 })
 const nextWorkflowStep = computed(() => {
   if (!sourceReady.value) return { label: '上传小说', target: 'creator-step-source' }
@@ -373,6 +437,12 @@ function positiveNumber(value: unknown) {
 
 function scrollToWorkflowStep(target: string) {
   document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function focusFailedShots() {
+  shotFilter.value = 'failed'
+  shotSearch.value = ''
+  scrollToWorkflowStep('creator-step-video')
 }
 
 function subtitleTextFromAudioTask() {
@@ -782,6 +852,8 @@ function selectEpisode(episodeId: string) {
   assemblyUseSubtitles.value = true
   assemblyBgmVolume.value = 0.18
   assemblyUseLipSyncByShot.value = {}
+  shotFilter.value = 'all'
+  shotSearch.value = ''
   resetBgmForm(episodes.value.find((episode) => episode.id === episodeId) ?? null)
   void loadSelectedScript(episodeId).catch((error) => {
     errorMessage.value = displayError(error)
@@ -822,7 +894,7 @@ onUnmounted(() => {
         <p>从原文到剧本，再到分镜任务。每一步都可以查看状态，失败后可重试。</p>
       </div>
       <div class="creator-workspace-heading-actions">
-        <span class="creator-workspace-status" :class="projectData.status">{{ projectData.status === 'ready' ? '项目已就绪' : projectData.status === 'analyzing' ? '正在分析' : '等待内容' }}</span>
+        <span class="creator-workspace-status" :class="workspaceStatus.className">{{ workspaceStatus.label }}</span>
         <button class="creator-ghost-button" type="button" @click="emit('openOperator')">进入制作后台 <span>↗</span></button>
       </div>
     </div>
@@ -951,11 +1023,16 @@ onUnmounted(() => {
 
         <section v-if="selectedShotList" id="creator-step-video" class="creator-workspace-card creator-video-clips-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 09 · VIDEO CLIPS</p><h3>生成单镜头视频片段</h3><p>只对已审核、资产绑定完整的镜头提交任务。每个镜头独立生成，失败后可以单独重试，不会重新生成整集。</p></div><span class="creator-card-state" :class="{ ready: videoClipReadyCount === selectedShotList.shots.length }">{{ videoClipReadyCount }}/{{ selectedShotList.shots.length }} 可生成</span></div>
-          <div class="creator-production-note"><span>i</span><p>视频生成门禁由服务端再次校验。若镜头存在未解决资产需求、绑定警告或非 ready 资产，请进入制作后台处理后再回来提交。</p></div>
-          <div class="creator-shot-list">
-            <article v-for="shot in selectedShotList.shots" :key="shot.shot_index" class="creator-shot-card" :class="{ ready: isShotReady(shot) }">
+          <div class="creator-production-note"><span>i</span><p>视频生成门禁由服务端再次校验。若镜头存在未解决资产需求、绑定警告或非 ready 资产，请进入制作后台处理后再回来提交。</p><button v-if="shotFailedCount" class="creator-inline-action" type="button" @click="focusFailedShots">只看失败镜头</button></div>
+          <div class="creator-shot-toolbar">
+            <div><strong>镜头清单</strong><small>显示 {{ filteredShots.length }}/{{ shotTotalCount }} · 已完成 {{ shotSucceededCount }} · 失败 {{ shotFailedCount }} · 需补资产 {{ shotBlockedCount }}</small></div>
+            <div class="creator-shot-controls"><div class="creator-shot-filters"><button v-for="filter in shotFilterOptions" :key="filter.key" type="button" :class="{ active: shotFilter === filter.key }" @click="shotFilter = filter.key">{{ filter.label }} <b>{{ filter.count }}</b></button></div><input v-model="shotSearch" type="search" placeholder="搜索镜头或提示词" aria-label="搜索镜头或提示词" /></div>
+          </div>
+          <div v-if="!filteredShots.length" class="creator-shot-empty"><strong>没有匹配的镜头</strong><span>尝试切换筛选条件或清空搜索。</span><button class="creator-small-button" type="button" @click="shotFilter = 'all'; shotSearch = ''">显示全部镜头</button></div>
+          <div v-else class="creator-shot-list">
+            <article v-for="shot in filteredShots" :key="shot.shot_index" class="creator-shot-card" :class="{ ready: isShotReady(shot), failed: latestVideoClipTask(shot.shot_index)?.status === 'failed', completed: latestVideoClipTask(shot.shot_index)?.status === 'succeeded' && Boolean(videoClipArtifact(shot.shot_index)), blocked: !isShotReady(shot) }">
               <div class="creator-shot-card-heading"><div><span>SHOT {{ String(shot.shot_index).padStart(2, '0') }} · SCENE {{ shot.scene_index }}</span><strong>{{ shot.shot_size }} · {{ shot.camera_movement }}</strong></div><em :class="{ ready: isShotReady(shot) }">{{ formatShotGate(shot) }}</em></div>
-              <p class="creator-shot-prompt">{{ shot.visual_prompt }}</p>
+              <details class="creator-shot-prompt-details"><summary>查看画面提示词</summary><p>{{ shot.visual_prompt }}</p></details>
               <div class="creator-shot-meta"><span>{{ shot.duration_seconds }} 秒</span><span>{{ shot.asset_refs.length }} 个资产</span><span v-if="shot.continuity_notes">有连续性备注</span></div>
               <div v-if="shot.unresolved_asset_requirements.length || shot.asset_binding_warnings.length" class="creator-shot-warning"><strong>暂不可生成</strong><span>{{ [...shot.unresolved_asset_requirements, ...shot.asset_binding_warnings].join('；') }}</span></div>
               <div v-if="latestVideoClipTask(shot.shot_index)?.status === 'failed'" class="creator-audio-error"><strong>片段任务失败</strong><span>{{ latestVideoClipTask(shot.shot_index)?.error?.message ?? '任务失败，请重试。' }}</span></div>
@@ -984,15 +1061,17 @@ onUnmounted(() => {
           <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!assemblyCanSubmit" @click="startVideoAssembly">{{ action === 'video-assembly' ? '提交中…' : videoAssemblyTask?.status === 'succeeded' ? '重新生成成片' : '生成成片' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator')">查看任务与 Artifact <span>↗</span></button></div>
         </section>
 
-        <ProductionQualityPanel
-          v-if="selectedEpisode"
-          :project-id="projectData.id"
-          :episode="selectedEpisode"
-          :script="selectedScript"
-          :audio-artifact="audioArtifact"
-          :tasks="tasks"
-          @changed="refreshWorkspace"
-        />
+        <details v-if="selectedEpisode" class="creator-quality-section">
+          <summary><span>质量审核与声音资产</span><small>身份初审、失败重试、多角色配音与 MuseTalk</small></summary>
+          <ProductionQualityPanel
+            :project-id="projectData.id"
+            :episode="selectedEpisode"
+            :script="selectedScript"
+            :audio-artifact="audioArtifact"
+            :tasks="tasks"
+            @changed="refreshWorkspace"
+          />
+        </details>
       </main>
 
       <aside class="creator-workspace-sidebar">
@@ -1005,7 +1084,7 @@ onUnmounted(() => {
           </div>
           <div class="creator-next-step-card"><span>下一步</span><strong>{{ nextWorkflowStep.label }}</strong><p>{{ workflowBlocker }}</p><button class="creator-small-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">定位到操作区 <span>↓</span></button></div>
         </section>
-        <section class="creator-workspace-card creator-activity-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">RECENT TASKS</p><h3>任务记录</h3></div><span class="creator-activity-count">{{ activeTaskCount ? `${activeTaskCount} 个处理中` : '已同步' }}</span></div><div v-if="loading" class="creator-activity-empty"><span class="spinner" />读取任务…</div><div v-else-if="!tasks.length" class="creator-activity-empty">完成上一步后，任务会显示在这里。</div><div v-else class="creator-activity-list"><div v-for="task in tasks.slice(0, 6)" :key="task.id"><span class="creator-activity-mark" :class="task.status">{{ task.status === 'succeeded' ? '✓' : task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(task.kind) }}</strong><small>{{ formatStatus(task.status) }} · {{ formatTime(task.updated_at) }}</small></div></div></div></section>
+        <section class="creator-workspace-card creator-activity-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">RECENT TASKS</p><h3>任务记录</h3></div><span class="creator-activity-count">{{ activeTaskCount ? `${activeTaskCount} 个处理中` : '已同步' }}</span></div><div v-if="loading" class="creator-activity-empty"><span class="spinner" />读取任务…</div><div v-else-if="!tasks.length" class="creator-activity-empty">完成上一步后，任务会显示在这里。</div><div v-else class="creator-activity-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`"><span class="creator-activity-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ formatStatus(group.task.status) }}<span v-if="group.task.error?.code"> · {{ group.task.error.code }}</span> · {{ formatTime(group.task.updated_at) }}</small></div></div></div></section>
         <section class="creator-workspace-card creator-help-card"><span class="creator-help-icon">?</span><h3>需要人工审核</h3><p>AI 负责拆解和生成，创作者仍可以在每个阶段修改剧本、审核资产，并决定是否进入下一步。</p><button class="creator-small-link" type="button" @click="emit('openOperator')">了解制作后台 <span>→</span></button></section>
       </aside>
     </div>

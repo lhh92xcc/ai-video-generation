@@ -29,6 +29,16 @@ const activeTasks = computed(() => tasks.value.filter((task) => ['created', 'que
 const completedTasks = computed(() => tasks.value.filter((task) => task.status === 'succeeded').length)
 const currentProject = computed(() => projects.value[0] ?? null)
 const activeProject = computed(() => projects.value.find((project) => project.id === activeProjectId.value) ?? null)
+const recentTaskGroups = computed(() => {
+  const groups = new Map<string, { task: GenerationTaskRecord; count: number }>()
+  for (const task of [...tasks.value].sort((left, right) => right.updated_at.localeCompare(left.updated_at))) {
+    const key = `${task.kind}:${task.status}:${task.error?.code ?? ''}`
+    const existing = groups.get(key)
+    if (existing) existing.count += 1
+    else groups.set(key, { task, count: 1 })
+  }
+  return [...groups.values()].slice(0, 4)
+})
 const canCreate = computed(() => Boolean(title.value.trim()) && rightsConfirmed.value && !creating.value && sourceMode.value === 'novel')
 
 const taskLabels: Record<string, string> = {
@@ -214,7 +224,7 @@ onMounted(refreshDashboard)
           <div class="creator-panel-heading"><div><p class="creator-eyebrow">LIVE PIPELINE</p><h2>制作进度</h2></div><button class="creator-small-link" type="button" @click="emit('openOperator')">查看全部 <span>→</span></button></div>
           <div v-if="loading" class="creator-empty"><span class="spinner" />正在读取任务…</div>
           <div v-else-if="tasks.length === 0" class="creator-empty"><strong>暂无制作任务</strong><span>创建项目后，任务进度会显示在这里。</span></div>
-          <div v-else class="creator-task-list"><div v-for="task in tasks.slice(0, 4)" :key="task.id" class="creator-task-row"><span class="creator-task-mark" :class="task.status">{{ task.status === 'succeeded' ? '✓' : '↻' }}</span><div><strong>{{ formatTaskKind(task.kind) }}</strong><small>{{ formatTime(task.updated_at) }}</small></div><span class="creator-task-status" :class="task.status">{{ formatStatus(task.status) }}</span></div></div>
+          <div v-else class="creator-task-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`" class="creator-task-row"><span class="creator-task-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ group.task.error?.code ? `${group.task.error.code} · ` : '' }}{{ formatTime(group.task.updated_at) }}</small></div><span class="creator-task-status" :class="group.task.status">{{ formatStatus(group.task.status) }}</span></div></div>
         </article>
       </section>
 

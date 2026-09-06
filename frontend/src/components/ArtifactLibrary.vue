@@ -20,6 +20,11 @@ const typeLabels: Record<string, string> = {
   all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图', script_json: '脚本 JSON', story_bible_json: 'StoryBible', episode_outline_json: '分集大纲', episode_script_json: '分场剧本', shot_list_json: '分镜 JSON',
 }
 const selectedArtifact = computed(() => artifacts.value.find((item) => item.id === selectedArtifactId.value) ?? null)
+const artifactCounts = computed(() => ({
+  video: artifacts.value.filter(isVideoArtifact).length,
+  image: artifacts.value.filter((artifact) => artifact.type === 'reference_image').length,
+  audio: artifacts.value.filter(isAudioArtifact).length,
+}))
 const filteredArtifacts = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return artifacts.value
@@ -115,6 +120,13 @@ function selectArtifact(artifactId: string) {
   selectedArtifactId.value = artifactId
 }
 
+function preferredArtifactId(items: ArtifactRecord[]): string | null {
+  const preferredTypes = ['rendered_video', 'lip_synced_video', 'video_clip', 'reference_image', 'audio_narration', 'audio_bgm']
+  return preferredTypes.reduce<string | null>((selected, type) => selected ?? items.find((artifact) => artifact.type === type)?.id ?? null, null)
+    ?? items[0]?.id
+    ?? null
+}
+
 async function loadProjects() {
   loadingProjects.value = true
   try {
@@ -138,7 +150,8 @@ async function loadArtifacts() {
       expiresInSeconds: 3600,
     })
     artifacts.value = response.items
-    if (response.items[0]) selectArtifact(response.items[0].id)
+    const initialArtifactId = preferredArtifactId(response.items)
+    if (initialArtifactId) selectArtifact(initialArtifactId)
   } catch (error) {
     artifacts.value = []
     errorMessage.value = displayError(error)
@@ -168,7 +181,7 @@ onMounted(async () => {
     <label class="form-field"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects"><option value="">全部项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
     <label class="form-field"><span>资产类型</span><select v-model="artifactType"><option v-for="(label, value) in typeLabels" :key="value" :value="value">{{ label }}</option></select></label>
     <label class="form-field artifact-search-field"><span>搜索资产</span><input v-model="searchQuery" type="search" placeholder="类型、Provider 或 Artifact ID" /></label>
-    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>预览优先走同源授权接口，签名链接仅作为回退；不会暴露磁盘路径。</span></div>
+      <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>预览优先走同源授权接口，签名链接仅作为回退；不会暴露磁盘路径。视频 {{ artifactCounts.video }} · 图片 {{ artifactCounts.image }} · 音频 {{ artifactCounts.audio }}</span></div>
   </section>
 
   <div v-if="errorMessage" class="alert-card error-card"><div><strong>媒体资产读取失败</strong><p>{{ errorMessage }}</p></div><button class="secondary-button" type="button" @click="loadArtifacts">重试</button></div>

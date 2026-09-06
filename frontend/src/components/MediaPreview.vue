@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getArtifactContentUrl } from '../api/tasks'
 
 type PreviewArtifact = {
@@ -15,17 +15,22 @@ const props = withDefaults(defineProps<{
   controls?: boolean
   showDownload?: boolean
   alt?: string
+  lazy?: boolean
 }>(), {
   variant: 'panel',
   controls: true,
   showDownload: false,
   alt: '媒体资产预览',
+  lazy: undefined,
 })
 
+const previewRoot = ref<HTMLElement | null>(null)
 const fallbackUsed = ref(false)
 const loadFailed = ref(false)
 const mediaLoaded = ref(false)
 const reloadKey = ref(0)
+const inViewport = ref(props.lazy !== true && props.variant !== 'thumb')
+let intersectionObserver: IntersectionObserver | null = null
 
 const storageKey = computed(() => {
   const value = props.artifact.metadata.storage_key
@@ -52,7 +57,9 @@ const mediaKind = computed<'image' | 'video' | 'audio' | 'document'>(() => {
   return 'document'
 })
 
-const canPreview = computed(() => Boolean(previewUrl.value) && mediaKind.value !== 'document')
+const lazyPreview = computed(() => props.lazy ?? props.variant === 'thumb')
+const deferred = computed(() => lazyPreview.value && !inViewport.value && mediaKind.value !== 'document')
+const canPreview = computed(() => Boolean(previewUrl.value) && mediaKind.value !== 'document' && !deferred.value)
 const isThumb = computed(() => props.variant === 'thumb')
 
 function resetPreview() {
@@ -60,6 +67,24 @@ function resetPreview() {
   loadFailed.value = false
   mediaLoaded.value = false
   reloadKey.value += 1
+}
+
+function observePreview() {
+  intersectionObserver?.disconnect()
+  intersectionObserver = null
+  inViewport.value = !lazyPreview.value
+  if (!lazyPreview.value || !previewRoot.value || typeof IntersectionObserver === 'undefined') {
+    inViewport.value = true
+    return
+  }
+  intersectionObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) {
+      inViewport.value = true
+      intersectionObserver?.disconnect()
+      intersectionObserver = null
+    }
+  }, { rootMargin: '160px' })
+  intersectionObserver.observe(previewRoot.value)
 }
 
 function onLoaded() {
@@ -81,11 +106,17 @@ function onError() {
   loadFailed.value = true
 }
 
-watch(() => props.artifact.id, resetPreview)
+watch(() => props.artifact.id, () => {
+  resetPreview()
+  observePreview()
+})
+watch(() => [props.lazy, props.variant], observePreview)
+onMounted(observePreview)
+onUnmounted(() => intersectionObserver?.disconnect())
 </script>
 
 <template>
-  <div class="media-preview" :class="[`media-preview-${variant}`, `media-preview-${mediaKind}`, { 'is-loading': canPreview && !mediaLoaded && !loadFailed, 'is-failed': loadFailed }]">
+  <div ref="previewRoot" class="media-preview" :class="[`media-preview-${variant}`, `media-preview-${mediaKind}`, { 'is-loading': canPreview && !mediaLoaded && !loadFailed, 'is-failed': loadFailed, 'is-deferred': deferred }]">
     <template v-if="canPreview && !loadFailed">
       <video
         v-if="mediaKind === 'video'"
@@ -96,7 +127,7 @@ watch(() => props.artifact.id, resetPreview)
         :muted="isThumb"
         playsinline
         :aria-label="alt"
-        @loadedmetadata="onLoaded"
+        @loadeddata="onLoaded"
         @error="onError"
       />
       <audio
@@ -114,17 +145,25 @@ watch(() => props.artifact.id, resetPreview)
         :key="`${props.artifact.id}-${reloadKey}`"
         :src="previewUrl"
         :alt="alt"
+        :loading="isThumb ? 'lazy' : 'eager'"
+        decoding="async"
         @load="onLoaded"
         @error="onError"
       />
       <span v-if="!mediaLoaded" class="media-preview-spinner spinner" aria-label="正在加载预览" />
     </template>
 
+    <div v-else-if="deferred" class="media-preview-message">
+      <span class="media-preview-message-icon">◌</span>
+      <strong>滚动后加载预览</strong>
+      <small>仅加载当前可见的媒体，避免一次请求全部文件</small>
+    </div>
+
     <div v-else-if="loadFailed" class="media-preview-message">
       <span class="media-preview-message-icon">!</span>
       <strong>预览暂时失败</strong>
       <small>已尝试服务端安全通道和临时链接</small>
-      <button type="button" @click="resetPreview">重新加载</button>
+      <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
     </div>
 
     <div v-else-if="mediaKind === 'document'" class="media-preview-message">
