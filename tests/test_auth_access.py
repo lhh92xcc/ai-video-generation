@@ -402,6 +402,20 @@ def test_artifact_routes_require_project_access_before_download_url() -> None:
         assert denied_get.status_code == 403
         assert denied_get.json()["error"]["code"] == "PROJECT_PERMISSION_DENIED"
 
+        content_path = f"/api/v1/artifacts/{artifact_id}/content"
+        denied_content = signed_client.get(
+            content_path,
+            headers=sign_identity_headers(
+                secret="artifact-access-test-secret",
+                method="GET",
+                path=content_path,
+                actor_id="signed-outsider",
+                actor_name="Signed Outsider",
+            ),
+        )
+        assert denied_content.status_code == 403
+        assert denied_content.json()["error"]["code"] == "PROJECT_PERMISSION_DENIED"
+
         artifact_list_path = "/api/v1/artifacts"
         denied_list = signed_client.get(
             artifact_list_path,

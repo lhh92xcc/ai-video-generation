@@ -13,6 +13,15 @@ class ArtifactNotFoundError(Exception):
     """Raised when an Artifact Registry record does not exist."""
 
 
+class ArtifactContentUnavailableError(Exception):
+    """Raised when an Artifact Registry record has no readable binary content."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(code, message)
+
+
 class ArtifactService:
     def __init__(
         self,
@@ -68,3 +77,52 @@ class ArtifactService:
         except StorageError as exc:
             if exc.code != "STORAGE_DOWNLOAD_UNSUPPORTED":
                 raise
+
+    async def read_content(self, artifact: ArtifactRecord) -> tuple[bytes, str]:
+        """Read an Artifact through the configured storage adapter.
+
+        Local and Mock storage intentionally do not expose their internal URI as
+        a browser URL.  The API content route uses this method after performing
+        project authorization, keeping storage paths and credentials private.
+        """
+
+        storage_key = artifact.metadata.get("storage_key")
+        if not isinstance(storage_key, str) or not storage_key.strip():
+            raise ArtifactContentUnavailableError(
+                "ARTIFACT_CONTENT_UNAVAILABLE",
+                "This Artifact does not contain readable binary content",
+            )
+
+        try:
+            content = await self._artifact_storage.get_bytes(storage_key)
+        except ValueError as exc:
+            raise ArtifactContentUnavailableError(
+                "ARTIFACT_CONTENT_UNAVAILABLE",
+                "This Artifact has an invalid storage reference",
+            ) from exc
+
+        return content, self._content_type(artifact)
+
+    @staticmethod
+    def _content_type(artifact: ArtifactRecord) -> str:
+        configured = artifact.metadata.get("content_type")
+        if isinstance(configured, str) and configured.strip() and not any(
+            character in configured for character in "\r\n"
+        ):
+            return configured.strip()
+
+        fallback_types = {
+            "reference_image": "image/png",
+            "video_clip": "video/mp4",
+            "lip_synced_video": "video/mp4",
+            "rendered_video": "video/mp4",
+            "audio_narration": "audio/mpeg",
+            "audio_bgm": "audio/mpeg",
+            "subtitle_srt": "application/x-subrip; charset=utf-8",
+            "script_json": "application/json; charset=utf-8",
+            "story_bible_json": "application/json; charset=utf-8",
+            "episode_outline_json": "application/json; charset=utf-8",
+            "episode_script_json": "application/json; charset=utf-8",
+            "shot_list_json": "application/json; charset=utf-8",
+        }
+        return fallback_types.get(artifact.type, "application/octet-stream")

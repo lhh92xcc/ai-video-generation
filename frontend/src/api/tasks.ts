@@ -67,3 +67,11 @@ export function getArtifact(
   const query = new URLSearchParams({ expires_in_seconds: String(expiresInSeconds) })
   return apiRequest<ArtifactRecord>(`/api/v1/artifacts/${artifactId}?${query.toString()}`)
 }
+
+/**
+ * Browser-safe Artifact content endpoint.  Local storage has no public URL,
+ * so media previews and downloads use this authorized API fallback.
+ */
+export function getArtifactContentUrl(artifactId: string, download = false): string {
+  return `/api/v1/artifacts/${artifactId}/content${download ? '?download=true' : ''}`
+}

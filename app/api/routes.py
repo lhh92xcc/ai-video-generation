@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import PurePosixPath
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Header, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
+from fastapi.responses import Response
 
 from app.api.errors import ApiError
 from app.domain.models import (
@@ -86,7 +89,11 @@ from app.services.asset_service import (
     AssetService,
     AssetVersionConflictError,
 )
-from app.services.artifact_service import ArtifactNotFoundError, ArtifactService
+from app.services.artifact_service import (
+    ArtifactContentUnavailableError,
+    ArtifactNotFoundError,
+    ArtifactService,
+)
 from app.services.audit_service import AuditService
 from app.services.access_service import (
     ProjectAccessNotFoundError,
@@ -614,6 +621,67 @@ async def resume_task_batch(request: Request, batch_id: UUID) -> TaskBatchResume
 
 
 @router.get(
+    "/api/v1/artifacts/{artifact_id}/content",
+    tags=["artifacts"],
+)
+async def get_artifact_content(
+    request: Request,
+    artifact_id: UUID,
+    download: bool = False,
+    range_header: Annotated[str | None, Header(alias="Range")] = None,
+) -> Response:
+    """Serve an authorized Artifact for local/Mock browser preview and download."""
+
+    try:
+        artifact_service = _artifact_service(request)
+        artifact = await artifact_service.get_artifact(
+            artifact_id,
+            include_download_url=False,
+        )
+        await _require_artifact_read_permission(request, artifact.project_id)
+        content, content_type = await artifact_service.read_content(artifact)
+    except ArtifactNotFoundError as exc:
+        raise ApiError(404, "ARTIFACT_NOT_FOUND", "Artifact was not found") from exc
+    except ArtifactContentUnavailableError as exc:
+        raise ApiError(404, exc.code, exc.message) from exc
+    except StorageError as exc:
+        raise ApiError(_storage_error_status(exc.code), exc.code, exc.message) from exc
+
+    filename = _artifact_content_filename(artifact, content_type)
+    disposition = "attachment" if download else "inline"
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, max-age=300",
+        "Content-Disposition": f'{disposition}; filename="{filename}"',
+    }
+
+    start, end = _parse_byte_range(range_header, len(content))
+    if range_header and (start is None or end is None):
+        return Response(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            headers={**headers, "Content-Range": f"bytes */{len(content)}"},
+        )
+
+    if start is not None and end is not None:
+        body = content[start : end + 1]
+        headers.update(
+            {
+                "Content-Length": str(len(body)),
+                "Content-Range": f"bytes {start}-{end}/{len(content)}",
+            }
+        )
+        return Response(
+            content=body,
+            media_type=content_type,
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            headers=headers,
+        )
+
+    headers["Content-Length"] = str(len(content))
+    return Response(content=content, media_type=content_type, headers=headers)
+
+
+@router.get(
     "/api/v1/artifacts/{artifact_id}",
     response_model=ArtifactRecord,
     tags=["artifacts"],
@@ -706,6 +774,53 @@ def _storage_error_status(code: str) -> int:
     if code == "STORAGE_INVALID_REQUEST":
         return 400
     return 500
+
+
+def _artifact_content_filename(artifact: ArtifactRecord, content_type: str) -> str:
+    storage_key = artifact.metadata.get("storage_key")
+    raw_name = PurePosixPath(storage_key).name if isinstance(storage_key, str) else ""
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_name).strip(".-")
+    if not filename:
+        filename = f"artifact-{artifact.id}"
+    if "." not in filename:
+        suffixes = {
+            "image/": ".png",
+            "video/": ".mp4",
+            "audio/": ".mp3",
+            "application/x-subrip": ".srt",
+            "application/json": ".json",
+        }
+        filename += next(
+            (suffix for prefix, suffix in suffixes.items() if content_type.startswith(prefix)),
+            ".bin",
+        )
+    return filename[:180]
+
+
+def _parse_byte_range(value: str | None, size: int) -> tuple[int | None, int | None]:
+    if not value:
+        return None, None
+    if size <= 0 or not value.lower().startswith("bytes="):
+        return None, None
+    specification = value[6:].strip()
+    if not specification or "," in specification or "-" not in specification:
+        return None, None
+    start_text, end_text = specification.split("-", 1)
+    try:
+        if not start_text:
+            suffix_length = int(end_text)
+            if suffix_length <= 0:
+                return None, None
+            return max(size - suffix_length, 0), size - 1
+        start = int(start_text)
+        if start < 0 or start >= size:
+            return None, None
+        end = int(end_text) if end_text else size - 1
+        if end < start:
+            return None, None
+        return start, min(end, size - 1)
+    except ValueError:
+        return None, None
 
 
 @router.post(

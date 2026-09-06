@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ApiClientError } from '../api/client'
 import { getNovelProjects } from '../api/novels'
-import { getArtifacts } from '../api/tasks'
+import { getArtifactContentUrl, getArtifacts } from '../api/tasks'
 import type { ArtifactRecord, NovelProjectRecord } from '../types/task'
 
 const projects = ref<NovelProjectRecord[]>([])
@@ -13,12 +13,14 @@ const artifactType = ref('all')
 const loading = ref(false)
 const loadingProjects = ref(false)
 const errorMessage = ref<string | null>(null)
+const previewFallbackUsed = ref(false)
+const previewLoadFailed = ref(false)
 
 const typeLabels: Record<string, string> = {
-  all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图',
+  all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图',
 }
 const selectedArtifact = computed(() => artifacts.value.find((item) => item.id === selectedArtifactId.value) ?? null)
-const selectedIsVideo = computed(() => selectedArtifact.value?.type === 'rendered_video' || selectedArtifact.value?.type === 'video_clip')
+const selectedIsVideo = computed(() => selectedArtifact.value?.type === 'rendered_video' || selectedArtifact.value?.type === 'video_clip' || selectedArtifact.value?.type === 'lip_synced_video')
 const selectedIsAudio = computed(() => selectedArtifact.value?.type === 'audio_narration' || selectedArtifact.value?.type === 'audio_bgm')
 const selectedIsImage = computed(() => selectedArtifact.value?.type === 'reference_image')
 const selectedIsSubtitle = computed(() => selectedArtifact.value?.type === 'subtitle_srt')
@@ -28,6 +30,21 @@ const selectedIdentityAudit = computed<Record<string, unknown> | null>(() => {
   return value as Record<string, unknown>
 })
 const selectedIdentityStatus = computed(() => String(selectedIdentityAudit.value?.status ?? 'unknown'))
+const selectedArtifactContentUrl = computed(() => {
+  const artifact = selectedArtifact.value
+  return artifact?.metadata.storage_key ? getArtifactContentUrl(artifact.id) : ''
+})
+const selectedArtifactPreviewUrl = computed(() => {
+  const artifact = selectedArtifact.value
+  if (!artifact) return ''
+  if (previewFallbackUsed.value || !artifact.download_url) return selectedArtifactContentUrl.value
+  return artifact.download_url
+})
+const selectedArtifactDownloadUrl = computed(() => {
+  const artifact = selectedArtifact.value
+  if (!artifact) return ''
+  return artifact.download_url || (artifact.metadata.storage_key ? getArtifactContentUrl(artifact.id, true) : '')
+})
 
 function displayError(error: unknown) {
   if (error instanceof ApiClientError) return `${error.message} · ${error.code}`
@@ -37,6 +54,44 @@ function displayError(error: unknown) {
 function metadataText(artifact: ArtifactRecord, key: string, fallback = '—') {
   const value = artifact.metadata[key]
   return value === undefined || value === null || value === '' ? fallback : String(value)
+}
+
+function isVideoArtifact(artifact: ArtifactRecord) {
+  return artifact.type === 'rendered_video' || artifact.type === 'video_clip' || artifact.type === 'lip_synced_video'
+}
+
+function isAudioArtifact(artifact: ArtifactRecord) {
+  return artifact.type === 'audio_narration' || artifact.type === 'audio_bgm'
+}
+
+function isImageArtifact(artifact: ArtifactRecord) {
+  return artifact.type === 'reference_image'
+}
+
+function artifactContentUrl(artifact: ArtifactRecord) {
+  return artifact.download_url || (artifact.metadata.storage_key ? getArtifactContentUrl(artifact.id) : '')
+}
+
+function artifactIcon(artifact: ArtifactRecord) {
+  if (isVideoArtifact(artifact)) return 'V'
+  if (isImageArtifact(artifact)) return '图'
+  if (artifact.type === 'subtitle_srt') return '字'
+  if (isAudioArtifact(artifact)) return '声'
+  return '文'
+}
+
+function formatBytes(value: unknown) {
+  const size = Number(value)
+  if (!Number.isFinite(size) || size < 0) return '—'
+  if (size < 1024) return `${Math.round(size)} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
+function formatDuration(value: unknown) {
+  const seconds = Number(value)
+  return Number.isFinite(seconds) && seconds > 0 ? `${seconds.toFixed(1)} 秒` : '—'
 }
 
 function identityAuditLabel(status: string) {
@@ -80,6 +135,21 @@ function formatTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function selectArtifact(artifactId: string) {
+  selectedArtifactId.value = artifactId
+  previewFallbackUsed.value = false
+  previewLoadFailed.value = false
+}
+
+function handlePreviewError() {
+  const artifact = selectedArtifact.value
+  if (artifact?.download_url && selectedArtifactContentUrl.value && !previewFallbackUsed.value) {
+    previewFallbackUsed.value = true
+    return
+  }
+  previewLoadFailed.value = true
+}
+
 async function loadProjects() {
   loadingProjects.value = true
   try {
@@ -95,6 +165,8 @@ async function loadArtifacts() {
   loading.value = true
   errorMessage.value = null
   selectedArtifactId.value = null
+  previewFallbackUsed.value = false
+  previewLoadFailed.value = false
   try {
     const response = await getArtifacts({
       projectId: projectId.value || undefined,
@@ -103,7 +175,7 @@ async function loadArtifacts() {
       expiresInSeconds: 3600,
     })
     artifacts.value = response.items
-    selectedArtifactId.value = response.items[0]?.id ?? null
+    if (response.items[0]) selectArtifact(response.items[0].id)
   } catch (error) {
     artifacts.value = []
     errorMessage.value = displayError(error)
@@ -132,7 +204,7 @@ onMounted(async () => {
   <section class="card artifact-toolbar">
     <label class="form-field"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects"><option value="">全部项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
     <label class="form-field"><span>资产类型</span><select v-model="artifactType"><option v-for="(label, value) in typeLabels" :key="value" :value="value">{{ label }}</option></select></label>
-    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>下载链接为临时签名 URL，默认 1 小时后失效。</span></div>
+    <div class="artifact-toolbar-note"><span class="note-icon">✓</span><span>对象存储使用临时签名 URL；本地存储通过服务端安全通道预览，不暴露磁盘路径。</span></div>
   </section>
 
   <div v-if="errorMessage" class="alert-card error-card"><div><strong>媒体资产读取失败</strong><p>{{ errorMessage }}</p></div><button class="secondary-button" type="button" @click="loadArtifacts">重试</button></div>
@@ -143,9 +215,13 @@ onMounted(async () => {
       <div v-if="loading" class="task-empty"><span class="spinner" />正在读取媒体资产…</div>
       <div v-else-if="artifacts.length === 0" class="task-empty"><strong>暂无可预览资产</strong><span>完成视频、音频或参考图任务后，产物会出现在这里。</span></div>
       <div v-else class="artifact-list">
-        <button v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectedArtifactId = artifact.id">
-          <span class="artifact-type-icon" :class="artifact.type">{{ artifact.type === 'rendered_video' || artifact.type === 'video_clip' ? 'V' : artifact.type === 'reference_image' ? '图' : artifact.type === 'subtitle_srt' ? '字' : '声' }}</span>
-          <span class="artifact-list-copy"><strong>{{ typeLabels[artifact.type] || artifact.type }}</strong><small>{{ artifact.provider }} · {{ formatTime(artifact.created_at) }}</small></span>
+        <button v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectArtifact(artifact.id)">
+          <span class="artifact-list-thumb" :class="artifact.type">
+            <img v-if="isImageArtifact(artifact) && artifactContentUrl(artifact)" :src="artifactContentUrl(artifact)" alt="" loading="lazy" />
+            <video v-else-if="isVideoArtifact(artifact) && artifactContentUrl(artifact)" :src="artifactContentUrl(artifact)" muted playsinline preload="metadata" aria-hidden="true" />
+            <span v-else class="artifact-type-icon" :class="artifact.type">{{ artifactIcon(artifact) }}</span>
+          </span>
+          <span class="artifact-list-copy"><strong>{{ typeLabels[artifact.type] || artifact.type }}</strong><small>{{ artifact.provider }} · {{ isVideoArtifact(artifact) || isAudioArtifact(artifact) ? formatDuration(artifact.metadata.duration_seconds) : formatTime(artifact.created_at) }}</small></span>
           <span class="artifact-list-arrow">›</span>
         </button>
       </div>
@@ -155,20 +231,21 @@ onMounted(async () => {
       <div v-if="selectedArtifact" class="artifact-preview-content">
         <div class="artifact-preview-heading"><div><span class="page-kicker">SELECTED ARTIFACT</span><h2>{{ typeLabels[selectedArtifact.type] || selectedArtifact.type }}</h2><p>{{ selectedArtifact.provider }} · {{ selectedArtifact.id }}</p></div><span class="configured-tag">已完成</span></div>
         <div class="media-preview-box">
-          <video v-if="selectedIsVideo && selectedArtifact.download_url" controls preload="metadata" :src="selectedArtifact.download_url" />
-          <audio v-else-if="selectedIsAudio && selectedArtifact.download_url" controls :src="selectedArtifact.download_url" />
-          <img v-else-if="selectedIsImage && selectedArtifact.download_url" :src="selectedArtifact.download_url" alt="参考图 Artifact 预览" />
+          <video v-if="selectedIsVideo && selectedArtifactPreviewUrl && !previewLoadFailed" controls preload="metadata" :src="selectedArtifactPreviewUrl" @error="handlePreviewError" />
+          <audio v-else-if="selectedIsAudio && selectedArtifactPreviewUrl && !previewLoadFailed" controls :src="selectedArtifactPreviewUrl" @error="handlePreviewError" />
+          <img v-else-if="selectedIsImage && selectedArtifactPreviewUrl && !previewLoadFailed" :src="selectedArtifactPreviewUrl" alt="参考图 Artifact 预览" @error="handlePreviewError" />
           <div v-else-if="selectedIsSubtitle" class="subtitle-preview-placeholder"><span class="quality-icon">字</span><strong>SRT 字幕文件</strong><p>字幕文件可以下载后进行人工复核，质量报告保存在 Artifact metadata 中。</p></div>
-          <div v-else class="subtitle-preview-placeholder"><span class="quality-icon">i</span><strong>浏览器预览暂不可用</strong><p>当前存储后端没有提供浏览器下载 URL，但 Worker 仍可读取该 Artifact。</p></div>
+          <div v-else-if="previewLoadFailed" class="subtitle-preview-placeholder"><span class="quality-icon">!</span><strong>媒体内容读取失败</strong><p>安全预览通道没有返回可播放内容，请刷新后重试并检查存储服务状态。</p></div>
+          <div v-else class="subtitle-preview-placeholder"><span class="quality-icon">i</span><strong>该 Artifact 没有可读文件</strong><p>这是任务快照或结构化 metadata，没有可供浏览器读取的二进制内容。</p></div>
         </div>
         <div v-if="selectedIdentityAudit" class="artifact-identity-audit" :class="identityAuditClass(selectedIdentityStatus)">
           <div class="artifact-identity-audit-heading"><div><strong>角色身份一致性初审</strong><span>InsightFace 抽样结果 · 不是最终人工验收</span></div><span class="identity-audit-pill" :class="identityAuditClass(selectedIdentityStatus)">{{ identityAuditLabel(selectedIdentityStatus) }}</span></div>
           <p>{{ identityAuditMessage(selectedIdentityStatus) }}</p>
           <div v-if="selectedIdentityStatus !== 'not_applicable'" class="artifact-identity-audit-metrics"><span>最低相似度 <strong>{{ identityAuditMetric('min_similarity') }}</strong></span><span>平均相似度 <strong>{{ identityAuditMetric('mean_similarity') }}</strong></span><span>抽样帧 <strong>{{ identityAuditText('sampled_frame_count') }}</strong></span></div>
         </div>
-        <dl class="artifact-meta-grid"><div><dt>项目 ID</dt><dd>{{ selectedArtifact.project_id }}</dd></div><div><dt>文件类型</dt><dd>{{ metadataText(selectedArtifact, 'content_type', selectedArtifact.type) }}</dd></div><div><dt>时长</dt><dd>{{ metadataText(selectedArtifact, 'duration_seconds', metadataText(selectedArtifact, 'duration_ms')) }}</dd></div><div><dt>文件大小</dt><dd>{{ metadataText(selectedArtifact, 'size_bytes') }}</dd></div><div><dt>SHA-256</dt><dd>{{ metadataText(selectedArtifact, 'sha256') }}</dd></div><div><dt>生成时间</dt><dd>{{ formatTime(selectedArtifact.created_at) }}</dd></div></dl>
+        <dl class="artifact-meta-grid"><div><dt>项目 ID</dt><dd>{{ selectedArtifact.project_id }}</dd></div><div><dt>文件类型</dt><dd>{{ metadataText(selectedArtifact, 'content_type', selectedArtifact.type) }}</dd></div><div><dt>时长</dt><dd>{{ formatDuration(selectedArtifact.metadata.duration_seconds) }}</dd></div><div><dt>文件大小</dt><dd>{{ formatBytes(selectedArtifact.metadata.size_bytes) }}</dd></div><div><dt>SHA-256</dt><dd>{{ metadataText(selectedArtifact, 'sha256') }}</dd></div><div><dt>生成时间</dt><dd>{{ formatTime(selectedArtifact.created_at) }}</dd></div></dl>
         <div v-if="selectedArtifact.metadata.quality" class="artifact-quality-note"><strong>质量复核 metadata</strong><span>{{ JSON.stringify(selectedArtifact.metadata.quality) }}</span></div>
-        <div class="artifact-actions"><a v-if="selectedArtifact.download_url" class="primary-button artifact-download" :href="selectedArtifact.download_url" target="_blank" rel="noopener" download>下载文件</a><span v-else class="field-hint">当前 Artifact 没有可用的浏览器下载链接。</span></div>
+        <div class="artifact-actions"><a v-if="selectedArtifactDownloadUrl" class="primary-button artifact-download" :href="selectedArtifactDownloadUrl" target="_blank" rel="noopener" download>下载文件</a><span v-else class="field-hint">该 Artifact 只有结构化快照，没有可下载的二进制文件。</span></div>
       </div>
       <div v-else class="task-empty"><strong>选择一个 Artifact</strong><span>右侧会显示可用的预览和安全 metadata。</span></div>
     </article>
@@ -176,6 +253,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.artifact-list-thumb { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; overflow: hidden; border: 1px solid #e8eaf2; border-radius: 9px; background: #f6f7fb; }
+.artifact-list-thumb img, .artifact-list-thumb video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.artifact-list-thumb.video_clip, .artifact-list-thumb.lip_synced_video, .artifact-list-thumb.rendered_video { background: #eef0ff; }
+.artifact-list-thumb.audio_narration, .artifact-list-thumb.audio_bgm { background: #eefaf4; }
+.artifact-list-thumb.reference_image { background: #fff8e9; }
 .artifact-identity-audit { display: grid; gap: 8px; margin: 14px 0; border: 1px solid #efd2a5; border-radius: 10px; padding: 12px 13px; color: #805817; background: #fffaf0; font-size: 10px; line-height: 1.5; }
 .artifact-identity-audit.passed { border-color: #b9e3cf; color: #246746; background: #f2fbf6; }
 .artifact-identity-audit.not-applicable { border-color: #d8deea; color: var(--text-muted); background: #f8f9fc; }

@@ -18,6 +18,7 @@
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。
 - Redis Worker 异步任务、幂等、失败重试、批次编排和 Artifact Registry。
 - FFmpeg 多镜头拼接、旁白/BGM 混音、中文字幕烧录和临时下载。
+- 本地/Mock Artifact 浏览器预览：通过授权的 `/api/v1/artifacts/{artifact_id}/content` 读取图片、视频、音频和下载文件，支持 HTTP Range，不暴露磁盘路径或内部存储 URI。
 - Vue 创作者前台与内部制作后台。
 
 ## 流水线
@@ -103,7 +104,9 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `296 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `298 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+
+创作者前台将流程分为四个阶段：内容理解、剧本与分镜、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁。
 
 ## 当前边界
 
