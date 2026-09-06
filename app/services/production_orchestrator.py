@@ -322,12 +322,16 @@ class ProductionOrchestrator:
 
     @staticmethod
     def _markers(run_id: UUID | str, plan: dict[str, Any]) -> dict[str, Any]:
-        return {
+        markers = {
             AUTO_RUN_ID: str(run_id),
             AUTO_RUN_PLAN: plan,
             AUTO_RUN_ENABLED: True,
             AUTO_RUN_STATUS: "active",
         }
+        quality_profile_id = plan.get("visual_quality_profile_id")
+        if isinstance(quality_profile_id, str) and quality_profile_id:
+            markers["visual_quality_profile_id"] = quality_profile_id
+        return markers
 
     async def _set_run_status(
         self,
@@ -359,6 +363,14 @@ class ProductionOrchestrator:
         return ProductionRunResponse(
             project_id=project_id,
             run_id=run_id,
+            visual_quality_profile_id=next(
+                (
+                    str(task.input_data.get("visual_quality_profile_id"))
+                    for task in tasks
+                    if task.input_data.get("visual_quality_profile_id")
+                ),
+                None,
+            ),
             status=self._public_status(status),
             stage=latest.kind.value,
             task_ids=[task.id for task in tasks],

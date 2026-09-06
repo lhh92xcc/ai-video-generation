@@ -11,6 +11,11 @@ api_port = 8000
 frontend_origin = "http://localhost:5173"
 log_level = "INFO"
 
+[visual_quality]
+# 运行时质量档案会写入每个新任务的快照；可在前台下拉框中覆盖。
+# local_safe 适合首次联调，local_balanced 适合目标 Windows GPU 主机验收。
+default_profile = "local_safe"
+
 [auth]
 # local 仅用于本机开发；生产环境使用 signed_header，并由可信网关注入签名身份。
 mode = "local"

@@ -59,6 +59,21 @@ def test_visual_provider_profile_lists_are_safe_for_frontend_dropdown(client: Te
         assert all("api_key" not in item for item in body["items"])
 
 
+def test_visual_quality_profile_list_is_safe_for_frontend_dropdown(client: TestClient) -> None:
+    response = client.get("/api/v1/visual-quality-profiles")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert body["default_profile_id"] == "local_safe"
+    assert {item["profile_id"] for item in body["items"]} == {
+        "local_safe",
+        "local_balanced",
+        "high_quality",
+    }
+    assert all("api_key" not in item for item in body["items"])
+
+
 def test_create_and_list_project(client: TestClient) -> None:
     payload = {
         "title": "露营装备推荐",

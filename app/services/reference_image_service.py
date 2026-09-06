@@ -84,10 +84,22 @@ class ReferenceImageTaskService:
             )
 
         provider_profile_id: str | None = None
+        visual_quality_profile_id: str | None = None
+        visual_quality_snapshot: dict[str, object] | None = None
         if self._provider_registry is not None:
             profile = self._provider_registry.resolve("image", request.provider_profile_id)
             self._provider_registry.ensure_configured(profile)
             provider_profile_id = profile.profile_id
+            quality = self._provider_registry.resolve_quality_profile(
+                request.visual_quality_profile_id
+            )
+            visual_quality_profile_id = quality.profile_id
+            visual_quality_snapshot = quality.as_snapshot()
+        elif request.visual_quality_profile_id is not None:
+            raise VisualProviderProfileError(
+                "VISUAL_QUALITY_SELECTION_UNAVAILABLE",
+                "Visual quality profile selection is not enabled for this service",
+            )
         elif request.provider_profile_id is not None:
             raise VisualProviderProfileError(
                 "PROVIDER_PROFILE_SELECTION_UNAVAILABLE",
@@ -102,8 +114,16 @@ class ReferenceImageTaskService:
                 "IMAGE_IDENTITY_PROVIDER_NOT_CONFIGURED",
                 "An identity-locked character image requires a configured identity image Provider",
             )
-        width = request.width or self._default_width
-        height = request.height or self._default_height
+        width = request.width or (
+            int(visual_quality_snapshot["image_width"])
+            if visual_quality_snapshot is not None
+            else self._default_width
+        )
+        height = request.height or (
+            int(visual_quality_snapshot["image_height"])
+            if visual_quality_snapshot is not None
+            else self._default_height
+        )
         style = request.style or self._default_style
         negative_prompt = request.negative_prompt or self._default_negative_prompt
         prompt = request.prompt_override or self._build_prompt(asset, style)
@@ -120,6 +140,14 @@ class ReferenceImageTaskService:
                 "reference_image_id": str(reference_image_id),
                 "width": width,
                 "height": height,
+                **(
+                    {
+                        "visual_quality_profile_id": visual_quality_profile_id,
+                        "visual_quality_profile": visual_quality_snapshot,
+                    }
+                    if visual_quality_profile_id is not None
+                    else {}
+                ),
                 **(
                     {"identity_reference_image_id": str(identity_reference_image_id)}
                     if identity_reference_image_id is not None
@@ -225,13 +253,24 @@ class ReferenceImageTaskService:
             provider = self._provider
             identity_provider = self._identity_provider
             selected_profile_id = task.input_data.get("provider_profile_id")
-            if self._provider_registry is not None and selected_profile_id:
+            quality_profile_id = task.input_data.get("visual_quality_profile_id")
+            quality_snapshot = task.input_data.get("visual_quality_profile")
+            quality_settings = None
+            if self._provider_registry is not None:
+                quality_settings = self._provider_registry.settings_for_quality(
+                    str(quality_profile_id) if quality_profile_id else None,
+                    quality_snapshot,
+                )
                 provider = await self._provider_registry.get_image_provider(
-                    str(selected_profile_id)
+                    str(selected_profile_id) if selected_profile_id else None,
+                    quality_profile_id=str(quality_profile_id) if quality_profile_id else None,
+                    quality_snapshot=quality_snapshot,
                 )
                 if identity_reference_image_id is not None:
                     identity_provider = await self._provider_registry.get_identity_image_provider(
-                        str(selected_profile_id)
+                        str(selected_profile_id) if selected_profile_id else None,
+                        quality_profile_id=str(quality_profile_id) if quality_profile_id else None,
+                        quality_snapshot=quality_snapshot,
                     )
             if identity_reference_image_id is not None:
                 if identity_provider is None:
@@ -250,6 +289,13 @@ class ReferenceImageTaskService:
                     negative_prompt=reference_image.negative_prompt,
                     width=reference_image.width,
                     height=reference_image.height,
+                    steps=quality_settings.image_steps if quality_settings is not None else None,
+                    guidance=quality_settings.image_guidance if quality_settings is not None else None,
+                    identity_weight=(
+                        quality_settings.image_identity_weight
+                        if quality_settings is not None
+                        else None
+                    ),
                     identity_image_bytes=identity_image_bytes,
                     identity_image_mime_type=identity_image_mime_type,
                 )
@@ -298,6 +344,12 @@ class ReferenceImageTaskService:
                         "output_uri": reference_image.output_uri,
                         "identity_anchor": is_identity_anchor,
                         "provider_profile_id": task.input_data.get("provider_profile_id"),
+                        "visual_quality_profile_id": task.input_data.get(
+                            "visual_quality_profile_id"
+                        ),
+                        "visual_quality_profile": task.input_data.get(
+                            "visual_quality_profile"
+                        ),
                         "reference_role": reference_image.metadata.get(
                             "reference_role", "candidate_reference"
                         ),

@@ -20,6 +20,7 @@ class Settings:
     app_name: str
     app_version: str
     runtime_profile: str
+    visual_quality_profile: str
     environment: str
     api_host: str
     api_port: int
@@ -213,6 +214,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     subtitle_alignment_config = raw_config.get("subtitle_alignment", {})
     asr_config = raw_config.get("asr", {})
     worker_config = raw_config.get("worker", {})
+    visual_quality_config = raw_config.get("visual_quality", {})
 
     def setting(section: dict[str, object], key: str, env_name: str, default: object) -> object:
         environment_value = os.getenv(env_name)
@@ -249,6 +251,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
         app_name=str(app_config.get("name", "ai-video-generation")),
         app_version="0.1.0",
         runtime_profile=str(setting(app_config, "profile", "AI_VIDEO_PROFILE", "default")),
+        visual_quality_profile=str(
+            setting(
+                visual_quality_config,
+                "default_profile",
+                "AI_VIDEO_VISUAL_QUALITY_PROFILE",
+                "local_safe",
+            )
+        ),
         environment=str(app_config.get("environment", "local")),
         api_host=str(app_config.get("api_host", "0.0.0.0")),
         api_port=int(app_config.get("api_port", 8000)),

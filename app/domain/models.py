@@ -896,12 +896,13 @@ class ReferenceImageCreateRequest(BaseModel):
     width: int | None = Field(default=None, ge=256, le=2048)
     height: int | None = Field(default=None, ge=256, le=2048)
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     identity_reference_image_id: UUID | None = Field(
         default=None,
         description="Optional succeeded reference image used by an identity adapter workflow.",
     )
 
-    @field_validator("style", "negative_prompt", "provider_profile_id")
+    @field_validator("style", "negative_prompt", "provider_profile_id", "visual_quality_profile_id")
     @classmethod
     def strip_reference_image_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -927,6 +928,9 @@ class ReferenceImageGenerationRequest(BaseModel):
     negative_prompt: str = Field(min_length=1, max_length=1000)
     width: int = Field(ge=256, le=2048)
     height: int = Field(ge=256, le=2048)
+    steps: int | None = Field(default=None, ge=1, le=50)
+    guidance: float | None = Field(default=None, ge=0, le=20)
+    identity_weight: float | None = Field(default=None, ge=0, le=1.5)
     identity_image_bytes: bytes | None = Field(default=None, exclude=True)
     identity_image_mime_type: str | None = Field(default=None, max_length=100, exclude=True)
 
@@ -948,8 +952,9 @@ class VideoClipCreateRequest(BaseModel):
     reference_image_id: UUID | None = None
     negative_prompt: str | None = Field(default=None, max_length=1000)
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
 
-    @field_validator("prompt_override", "negative_prompt", "provider_profile_id")
+    @field_validator("prompt_override", "negative_prompt", "provider_profile_id", "visual_quality_profile_id")
     @classmethod
     def strip_video_prompt(cls, value: str | None) -> str | None:
         if value is None:
@@ -969,6 +974,12 @@ class VideoClipGenerationRequest(BaseModel):
     keyframe_bytes: bytes | None = None
     keyframe_mime_type: str | None = Field(default=None, max_length=100)
     generation_attempt: int = Field(default=1, ge=1, le=100)
+    width: int | None = Field(default=None, ge=64, le=2048)
+    height: int | None = Field(default=None, ge=64, le=2048)
+    fps: int | None = Field(default=None, ge=1, le=60)
+    steps: int | None = Field(default=None, ge=1, le=50)
+    cfg: float | None = Field(default=None, ge=0, le=20)
+    noise_aug_strength: float | None = Field(default=None, ge=0, le=1)
 
 
 class VideoClipGenerationResult(BaseModel):
@@ -1198,6 +1209,28 @@ class ProviderProfileSummary(BaseModel):
     api_key_env: str | None = None
     configured: bool
     default: bool
+
+
+class VisualQualityProfileSummary(BaseModel):
+    """Safe visual quality preset metadata for the creator UI."""
+
+    profile_id: str
+    label: str
+    description: str
+    recommended_for: str
+    image_width: int = Field(ge=256, le=2048)
+    image_height: int = Field(ge=256, le=2048)
+    image_steps: int = Field(ge=1, le=50)
+    image_guidance: float = Field(ge=0, le=20)
+    image_identity_weight: float = Field(ge=0, le=1.5)
+    video_width: int = Field(ge=64, le=2048)
+    video_height: int = Field(ge=64, le=2048)
+    video_fps: int = Field(ge=1, le=60)
+    video_steps: int = Field(ge=1, le=50)
+    video_cfg: float = Field(ge=0, le=20)
+    video_noise_aug_strength: float = Field(ge=0, le=1)
+    video_motion_zoom: float = Field(ge=1, le=2)
+    version: str
 
 
 class TTSGenerationRequest(BaseModel):
@@ -1628,6 +1661,7 @@ class EpisodeTaskPlanCreateRequest(BaseModel):
     provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     image_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
     video_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
     auto_advance: bool = True
     bgm_source_path: str | None = Field(default=None, max_length=500)
     bgm_label: str = Field(default="licensed-local-bgm", min_length=1, max_length=120)
@@ -1687,6 +1721,7 @@ class EpisodeTaskPlanItem(BaseModel):
 class EpisodeTaskPlanResponse(BaseModel):
     project_id: UUID
     label: str
+    visual_quality_profile_id: str | None = None
     auto_run_id: UUID | None = None
     auto_advance: bool = False
     batch: TaskBatchRecord | None = None
@@ -1715,6 +1750,7 @@ class ProductionRunResponse(BaseModel):
 
     project_id: UUID
     run_id: UUID
+    visual_quality_profile_id: str | None = None
     status: Literal["active", "blocked", "completed", "failed"]
     stage: str = Field(min_length=1, max_length=80)
     task_ids: list[UUID] = Field(default_factory=list, max_length=100)

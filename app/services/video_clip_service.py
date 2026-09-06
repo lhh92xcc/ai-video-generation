@@ -87,10 +87,22 @@ class VideoClipTaskService:
         if episode is None:
             raise EpisodeNotFoundError
         provider_profile_id: str | None = None
+        visual_quality_profile_id: str | None = None
+        visual_quality_snapshot: dict[str, object] | None = None
         if self._provider_registry is not None:
             profile = self._provider_registry.resolve("video", request.provider_profile_id)
             self._provider_registry.ensure_configured(profile)
             provider_profile_id = profile.profile_id
+            quality = self._provider_registry.resolve_quality_profile(
+                request.visual_quality_profile_id
+            )
+            visual_quality_profile_id = quality.profile_id
+            visual_quality_snapshot = quality.as_snapshot()
+        elif request.visual_quality_profile_id is not None:
+            raise VisualProviderProfileError(
+                "VISUAL_QUALITY_SELECTION_UNAVAILABLE",
+                "Visual quality profile selection is not enabled for this service",
+            )
         elif request.provider_profile_id is not None:
             raise VisualProviderProfileError(
                 "PROVIDER_PROFILE_SELECTION_UNAVAILABLE",
@@ -158,6 +170,14 @@ class VideoClipTaskService:
                 "prompt": prompt,
                 "source_prompt": source_prompt,
                 "negative_prompt": negative_prompt,
+                **(
+                    {
+                        "visual_quality_profile_id": visual_quality_profile_id,
+                        "visual_quality_profile": visual_quality_snapshot,
+                    }
+                    if visual_quality_profile_id is not None
+                    else {}
+                ),
                 **(
                     {"reference_image_id": str(reference_image_id)}
                     if reference_image_id is not None
@@ -252,9 +272,18 @@ class VideoClipTaskService:
             generation_attempt = max(1, int(input_data.get("generation_attempt", 1)))
             provider = self._provider
             selected_profile_id = input_data.get("provider_profile_id")
-            if self._provider_registry is not None and selected_profile_id:
+            quality_profile_id = input_data.get("visual_quality_profile_id")
+            quality_snapshot = input_data.get("visual_quality_profile")
+            quality_settings = None
+            if self._provider_registry is not None:
+                quality_settings = self._provider_registry.settings_for_quality(
+                    str(quality_profile_id) if quality_profile_id else None,
+                    quality_snapshot,
+                )
                 provider = await self._provider_registry.get_video_provider(
-                    str(selected_profile_id)
+                    str(selected_profile_id) if selected_profile_id else None,
+                    quality_profile_id=str(quality_profile_id) if quality_profile_id else None,
+                    quality_snapshot=quality_snapshot,
                 )
             result = await provider.generate_video_clip(
                 VideoClipGenerationRequest(
@@ -271,6 +300,16 @@ class VideoClipTaskService:
                     keyframe_bytes=keyframe_bytes,
                     keyframe_mime_type=keyframe_mime_type,
                     generation_attempt=generation_attempt,
+                    width=quality_settings.video_output_width if quality_settings is not None else None,
+                    height=quality_settings.video_output_height if quality_settings is not None else None,
+                    fps=quality_settings.video_fps if quality_settings is not None else None,
+                    steps=quality_settings.video_steps if quality_settings is not None else None,
+                    cfg=quality_settings.video_cfg if quality_settings is not None else None,
+                    noise_aug_strength=(
+                        quality_settings.video_noise_aug_strength
+                        if quality_settings is not None
+                        else None
+                    ),
                 )
             )
             stored_artifact = await self._store_generated_video(task, result, generation_attempt)
@@ -307,6 +346,12 @@ class VideoClipTaskService:
                         "shot_list_id": input_data["shot_list_id"],
                         "shot_index": input_data["shot_index"],
                         "provider_profile_id": input_data.get("provider_profile_id"),
+                        "visual_quality_profile_id": input_data.get(
+                            "visual_quality_profile_id"
+                        ),
+                        "visual_quality_profile": input_data.get(
+                            "visual_quality_profile"
+                        ),
                         **result.metadata,
                         **self._stored_artifact_metadata(stored_artifact),
                         "output_uri": output_uri,

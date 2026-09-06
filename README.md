@@ -101,6 +101,10 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 
 后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
+视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 Windows GPU 主机人工验收。
+
+默认使用 `local_safe`；Windows GPU 配置档案默认使用 `local_balanced`。也可以通过 `AI_VIDEO_VISUAL_QUALITY_PROFILE` 或 TOML 的 `[visual_quality].default_profile` 设置默认档案，前台新建完整生产、分集计划或单镜头视频任务时可直接下拉选择。
+
 ## 验证
 
 ```bash
@@ -110,7 +114,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `303 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+当前回归基线为 `305 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

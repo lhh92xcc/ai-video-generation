@@ -5,6 +5,7 @@ export interface VideoClipCreateRequest {
   prompt_override?: string
   negative_prompt?: string
   provider_profile_id?: string
+  visual_quality_profile_id?: string
 }
 
 export function createVideoClipTask(

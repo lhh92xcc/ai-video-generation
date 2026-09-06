@@ -56,6 +56,13 @@ class ComfyUIImageGenerationProvider:
     ) -> ReferenceImageGenerationResult:
         workflow = self._load_workflow()
         seed = self._seed_for(request)
+        steps = request.steps if request.steps is not None else self.steps
+        guidance = request.guidance if request.guidance is not None else self.guidance
+        identity_weight = (
+            request.identity_weight
+            if request.identity_weight is not None
+            else self.identity_weight
+        )
         identity_image_info: dict[str, str] | None = None
         workflow_text = json.dumps(workflow, ensure_ascii=False)
         if "__AI_VIDEO_IDENTITY_IMAGE__" in workflow_text:
@@ -73,9 +80,9 @@ class ComfyUIImageGenerationProvider:
                 "__AI_VIDEO_WIDTH__": request.width,
                 "__AI_VIDEO_HEIGHT__": request.height,
                 "__AI_VIDEO_SEED__": seed,
-                "__AI_VIDEO_IMAGE_STEPS__": self.steps,
-                "__AI_VIDEO_IMAGE_GUIDANCE__": self.guidance,
-                "__AI_VIDEO_IMAGE_IDENTITY_WEIGHT__": self.identity_weight,
+                "__AI_VIDEO_IMAGE_STEPS__": steps,
+                "__AI_VIDEO_IMAGE_GUIDANCE__": guidance,
+                "__AI_VIDEO_IMAGE_IDENTITY_WEIGHT__": identity_weight,
                 "__AI_VIDEO_CHECKPOINT__": self.model,
                 "__AI_VIDEO_IDENTITY_IMAGE__": identity_image_info["name"]
                 if identity_image_info
@@ -151,9 +158,9 @@ class ComfyUIImageGenerationProvider:
                 "filename": image_info["filename"],
                 "subfolder": image_info["subfolder"],
                 "seed": seed,
-                "steps": self.steps,
-                "guidance": self.guidance,
-                "identity_weight": self.identity_weight,
+                "steps": steps,
+                "guidance": guidance,
+                "identity_weight": identity_weight,
                 "identity_image": identity_image_info,
                 "local": True,
             },

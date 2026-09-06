@@ -107,6 +107,7 @@ export function createEpisodeTaskPlan(
     provider_profile_id?: string
     image_provider_profile_id?: string
     video_provider_profile_id?: string
+    visual_quality_profile_id?: string
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'
@@ -139,6 +140,7 @@ export function startProductionRun(
     provider_profile_id?: string
     image_provider_profile_id?: string
     video_provider_profile_id?: string
+    visual_quality_profile_id?: string
     bgm_source_path?: string
     bgm_label?: string
     bgm_rights_status?: 'unknown' | 'pending' | 'confirmed' | 'denied'

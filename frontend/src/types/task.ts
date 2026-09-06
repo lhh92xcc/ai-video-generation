@@ -124,6 +124,7 @@ export interface EpisodeTaskPlanItem {
 export interface EpisodeTaskPlanResponse {
   project_id: string
   label: string
+  visual_quality_profile_id: string | null
   auto_run_id: string | null
   auto_advance: boolean
   batch: TaskBatchRecord | null
@@ -140,6 +141,7 @@ export type ProductionRunStatus = 'active' | 'blocked' | 'completed' | 'failed'
 export interface ProductionRunResponse {
   project_id: string
   run_id: string
+  visual_quality_profile_id: string | null
   status: ProductionRunStatus
   stage: string
   task_ids: string[]

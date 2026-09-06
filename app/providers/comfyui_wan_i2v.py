@@ -70,18 +70,28 @@ class ComfyUIWanI2VVideoGenerationProvider:
         workflow = self._load_workflow()
         started = monotonic()
         image_info = await self._upload_keyframe(request)
-        frames = max(17, int(request.duration_seconds * self.fps) + 1)
+        output_width = self._aligned_size(request.width or self.output_width)
+        output_height = self._aligned_size(request.height or self.output_height)
+        fps = request.fps if request.fps is not None else self.fps
+        steps = request.steps if request.steps is not None else self.steps
+        cfg = request.cfg if request.cfg is not None else self.cfg
+        noise_aug_strength = (
+            request.noise_aug_strength
+            if request.noise_aug_strength is not None
+            else self.noise_aug_strength
+        )
+        frames = max(17, int(request.duration_seconds * fps) + 1)
         seed = self._seed_for(request)
         replacements = {
             "__AI_VIDEO_PROMPT__": request.prompt,
             "__AI_VIDEO_NEGATIVE_PROMPT__": request.negative_prompt,
-            "__AI_VIDEO_WIDTH__": self.output_width,
-            "__AI_VIDEO_HEIGHT__": self.output_height,
+            "__AI_VIDEO_WIDTH__": output_width,
+            "__AI_VIDEO_HEIGHT__": output_height,
             "__AI_VIDEO_FRAMES__": frames,
-            "__AI_VIDEO_FPS__": self.fps,
-            "__AI_VIDEO_STEPS__": self.steps,
-            "__AI_VIDEO_CFG__": self.cfg,
-            "__AI_VIDEO_NOISE_AUG_STRENGTH__": self.noise_aug_strength,
+            "__AI_VIDEO_FPS__": fps,
+            "__AI_VIDEO_STEPS__": steps,
+            "__AI_VIDEO_CFG__": cfg,
+            "__AI_VIDEO_NOISE_AUG_STRENGTH__": noise_aug_strength,
             "__AI_VIDEO_SEED__": seed,
             "__AI_VIDEO_MODEL__": self.model,
             "__AI_VIDEO_INPUT_IMAGE__": image_info["name"],
@@ -105,12 +115,12 @@ class ComfyUIWanI2VVideoGenerationProvider:
                 "prompt_id": prompt_id,
                 "input_image": image_info,
                 "frames": frames,
-                "fps": self.fps,
-                "steps": self.steps,
-                "cfg": self.cfg,
-                "noise_aug_strength": self.noise_aug_strength,
-                "width": self.output_width,
-                "height": self.output_height,
+                "fps": fps,
+                "steps": steps,
+                "cfg": cfg,
+                "noise_aug_strength": noise_aug_strength,
+                "width": output_width,
+                "height": output_height,
                 "motion": "wan2.1_i2v",
             },
         )
@@ -322,6 +332,10 @@ class ComfyUIWanI2VVideoGenerationProvider:
             f"{request.prompt}:{request.generation_attempt}".encode()
         ).hexdigest()
         return int(digest[:12], 16) % 2_147_483_647
+
+    @staticmethod
+    def _aligned_size(value: int) -> int:
+        return max(64, int(value) // 8 * 8)
 
     @staticmethod
     def _mime_type(filename: str) -> str:

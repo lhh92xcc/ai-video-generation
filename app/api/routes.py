@@ -65,6 +65,7 @@ from app.domain.models import (
     ProjectRole,
     ProjectRecord,
     ProviderProfileSummary,
+    VisualQualityProfileSummary,
     ReferenceImageCreateRequest,
     ReferenceImageRecord,
     RightsStatus,
@@ -191,6 +192,12 @@ class EpisodePlanRequest(BaseModel):
 
 class ProviderProfileListResponse(BaseModel):
     items: list[ProviderProfileSummary]
+    total: int = Field(ge=0)
+    default_profile_id: str
+
+
+class VisualQualityProfileListResponse(BaseModel):
+    items: list[VisualQualityProfileSummary]
     total: int = Field(ge=0)
     default_profile_id: str
 
@@ -440,6 +447,26 @@ async def list_provider_profiles(
         items=[ProviderProfileSummary.model_validate(profile.as_public_dict()) for profile in profiles],
         total=len(profiles),
         default_profile_id=default_profile_id,
+    )
+
+
+@router.get(
+    "/api/v1/visual-quality-profiles",
+    response_model=VisualQualityProfileListResponse,
+    tags=["provider-profiles"],
+)
+async def list_visual_quality_profiles(
+    request: Request,
+) -> VisualQualityProfileListResponse:
+    registry = request.app.state.visual_profile_registry
+    profiles = registry.list_quality_profiles()
+    return VisualQualityProfileListResponse(
+        items=[
+            VisualQualityProfileSummary.model_validate(profile.as_public_dict())
+            for profile in profiles
+        ],
+        total=len(profiles),
+        default_profile_id=registry.default_quality_profile_id,
     )
 
 

@@ -20,10 +20,12 @@ import {
 import { getEpisodeScript, getEpisodeShots } from '../api/novelWorkbench'
 import { getArtifact, getTasks } from '../api/tasks'
 import { useProviderProfiles } from '../composables/useProviderProfiles'
+import { useVisualQualityProfiles } from '../composables/useVisualQualityProfiles'
 import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import MediaPreview from './MediaPreview.vue'
 import ProductionQualityPanel from './ProductionQualityPanel.vue'
 import ProviderProfileSelect from './ProviderProfileSelect.vue'
+import VisualQualityProfileSelect from './VisualQualityProfileSelect.vue'
 import type { EpisodeScriptRecord, ShotContent, ShotListRecord } from '../types/novel'
 import type {
   ChapterRecord,
@@ -78,6 +80,12 @@ const {
   selectedProfileId: selectedVideoProfileId,
   isLoading: videoProfilesLoading,
 } = useProviderProfiles('video')
+const {
+  profiles: visualQualityProfiles,
+  defaultProfileId: visualQualityDefaultProfileId,
+  selectedProfileId: selectedVisualQualityProfileId,
+  isLoading: visualQualityProfilesLoading,
+} = useVisualQualityProfiles()
 
 const projectData = ref(props.project)
 const chapters = ref<ChapterRecord[]>([])
@@ -734,7 +742,10 @@ async function startVideoClip(shot: ShotContent) {
     () => createVideoClipTask(
       selectedEpisode.value?.id ?? '',
       shot.shot_index,
-      { provider_profile_id: selectedVideoProfileId.value ?? undefined },
+      {
+        provider_profile_id: selectedVideoProfileId.value ?? undefined,
+        visual_quality_profile_id: selectedVisualQualityProfileId.value ?? undefined,
+      },
       newIdempotencyKey(`video-clip-${selectedEpisode.value?.id}-${shot.shot_index}`),
     ),
   )
@@ -904,6 +915,7 @@ async function startEpisodeTaskPlan() {
         subtitle_mode: 'align',
         image_provider_profile_id: selectedImageProfileId.value ?? undefined,
         video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
+        visual_quality_profile_id: selectedVisualQualityProfileId.value ?? undefined,
       },
       newIdempotencyKey('episode-task-plan'),
     )
@@ -928,6 +940,7 @@ async function startFullProduction() {
         subtitle_mode: 'align',
         image_provider_profile_id: selectedImageProfileId.value ?? undefined,
         video_provider_profile_id: selectedVideoProfileId.value ?? undefined,
+        visual_quality_profile_id: selectedVisualQualityProfileId.value ?? undefined,
         auto_advance: true,
       },
       `creator:${projectData.value.id}:production-run`,
@@ -1052,6 +1065,12 @@ onUnmounted(() => {
           <div v-if="sourceReady" class="creator-provider-panel">
             <div class="creator-provider-panel-heading"><div><p class="creator-eyebrow">PROVIDER PROFILES</p><h4>本次生产配置</h4><p>选择会写入新任务快照；已经运行中的任务不会被改写，也不需要手动编辑配置文件。</p></div><span>任务快照</span></div>
             <div class="creator-provider-grid">
+              <VisualQualityProfileSelect
+                v-model="selectedVisualQualityProfileId"
+                :profiles="visualQualityProfiles"
+                :default-profile-id="visualQualityDefaultProfileId"
+                :disabled="visualQualityProfilesLoading || Boolean(action)"
+              />
               <ProviderProfileSelect
                 v-model="selectedImageProfileId"
                 :profiles="imageProfiles"
@@ -1071,9 +1090,9 @@ onUnmounted(() => {
                 hint="本地 Wan/FFmpeg 或已配置的云端档案可按任务选择，选择结果会随 DAG 保存。"
               />
             </div>
-            <p v-if="imageProfilesLoading || videoProfilesLoading" class="creator-provider-status">正在读取图片和视频配置…</p>
+            <p v-if="visualQualityProfilesLoading || imageProfilesLoading || videoProfilesLoading" class="creator-provider-status">正在读取质量档案、图片和视频配置…</p>
             <p v-else-if="!imageProfiles.length || !videoProfiles.length" class="creator-provider-status warning">图片或视频 Provider 列表为空，请检查 API 配置。</p>
-            <p v-else class="creator-provider-status">未配置的云端档案会保留在列表中但不可选；当前选择会同时用于“一键启动完整生产”和高级分集计划。</p>
+            <p v-else class="creator-provider-status">质量档案会锁定分辨率、采样和视频帧率，并随任务保存；Provider 选择只决定实际模型服务。</p>
             <div class="creator-visual-quality-note">
               <span class="creator-visual-quality-mark">✦</span>
               <div><strong>当前视觉质量基线</strong><p>单主体、清晰轮廓、干净背景、稳定曝光；视频限制为 3～5 秒连续轻动作，优先保持角色身份和构图稳定。</p><small>这是可复现的输入约束，不等同于画质保证。分辨率、采样步数和超时由运行档案决定，完成后仍需人工看片并筛掉失败镜头。</small></div>

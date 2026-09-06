@@ -196,6 +196,7 @@ class EpisodeTaskPlanService:
         return EpisodeTaskPlanResponse(
             project_id=project_id,
             label=request.label,
+            visual_quality_profile_id=request.visual_quality_profile_id,
             auto_advance=request.auto_advance,
             batch=batch,
             batches=batches,
@@ -241,6 +242,9 @@ class EpisodeTaskPlanService:
                     include_video=True,
                     include_assembly=True,
                     auto_advance=True,
+                    visual_quality_profile_id=task.input_data.get(
+                        "visual_quality_profile_id"
+                    ),
                 ),
                 idempotency_key=f"auto-dag:episodes:{task.project_id}",
             )
@@ -277,6 +281,9 @@ class EpisodeTaskPlanService:
                 include_video=True,
                 include_assembly=True,
                 auto_advance=True,
+                visual_quality_profile_id=task.input_data.get(
+                    "visual_quality_profile_id"
+                ),
             ),
             idempotency_key=f"auto-dag:episode:{episode_id}",
         )
@@ -359,6 +366,7 @@ class EpisodeTaskPlanService:
                 project_tasks,
                 idempotency_key,
                 request.image_provider_profile_id,
+                request.visual_quality_profile_id,
             )
             if reference_item is not None:
                 return reference_item, reference_task_ids
@@ -417,6 +425,7 @@ class EpisodeTaskPlanService:
                 ready_references,
                 idempotency_key,
                 request.video_provider_profile_id,
+                request.visual_quality_profile_id,
             )
             if video_item is not None:
                 return video_item, video_task_ids
@@ -468,6 +477,7 @@ class EpisodeTaskPlanService:
         project_tasks,
         idempotency_key,
         image_provider_profile_id=None,
+        visual_quality_profile_id=None,
     ):
         assets = await self._store.list_assets(episode.project_id)
         by_key = {(asset.asset_type, asset.asset_key): asset for asset in assets}
@@ -508,6 +518,7 @@ class EpisodeTaskPlanService:
                 asset.id,
                 ReferenceImageCreateRequest(
                     provider_profile_id=image_provider_profile_id,
+                    visual_quality_profile_id=visual_quality_profile_id,
                 ),
                 self._task_key(idempotency_key, "reference", asset.id),
             )
@@ -610,6 +621,7 @@ class EpisodeTaskPlanService:
         references,
         idempotency_key,
         video_provider_profile_id=None,
+        visual_quality_profile_id=None,
     ):
         blocked: list[str] = []
         successful: list[GenerationTaskRecord] = []
@@ -636,6 +648,7 @@ class EpisodeTaskPlanService:
                 VideoClipCreateRequest(
                     reference_image_id=reference_image_id,
                     provider_profile_id=video_provider_profile_id,
+                    visual_quality_profile_id=visual_quality_profile_id,
                 ),
                 self._task_key(idempotency_key, f"video-{shot.shot_index}", episode.id),
             )

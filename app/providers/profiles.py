@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 from dataclasses import dataclass, field, replace
 
 from app.config import Settings
+from app.media.visual_quality_profiles import (
+    VisualQualityProfile,
+    VisualQualityProfileError,
+    VisualQualityProfileRegistry,
+)
 from app.providers.asr import SubtitleASRProvider
 from app.providers.image_generation import ImageGenerationProvider
 from app.providers.video_generation import VideoGenerationProvider
@@ -253,10 +260,102 @@ class VisualProviderProfileRegistry:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._profiles = self._build_profiles(settings)
+        self._quality_registry = VisualQualityProfileRegistry(
+            settings.visual_quality_profile
+        )
         self._image_providers: dict[str, ImageGenerationProvider] = {}
         self._video_providers: dict[str, VideoGenerationProvider] = {}
         self._identity_providers: dict[str, ImageGenerationProvider] = {}
         self._lock = asyncio.Lock()
+
+    def list_quality_profiles(self) -> list[VisualQualityProfile]:
+        """Return safe visual quality presets for the creator UI."""
+
+        return self._quality_registry.list_profiles()
+
+    @property
+    def default_quality_profile_id(self) -> str:
+        return self._quality_registry.default_profile_id
+
+    def resolve_quality_profile(self, profile_id: str | None) -> VisualQualityProfile:
+        """Resolve a preset and expose it through the common profile error type."""
+
+        try:
+            return self._quality_registry.resolve(profile_id)
+        except VisualQualityProfileError as exc:
+            raise ProviderProfileError(exc.code, exc.message, exc.status_code) from exc
+
+    def quality_snapshot(self, profile_id: str | None) -> dict[str, object]:
+        return self.resolve_quality_profile(profile_id).as_snapshot()
+
+    def settings_for_quality(
+        self,
+        quality_profile_id: str | None = None,
+        quality_snapshot: object | None = None,
+    ) -> Settings:
+        """Apply a validated preset or immutable task snapshot to Settings."""
+
+        profile = self._profile_from_snapshot(quality_snapshot, quality_profile_id)
+        return replace(
+            self._settings,
+            image_width=profile.image_width,
+            image_height=profile.image_height,
+            image_steps=profile.image_steps,
+            image_guidance=profile.image_guidance,
+            image_identity_weight=profile.image_identity_weight,
+            video_image_size=f"{profile.video_width}x{profile.video_height}",
+            video_output_width=profile.video_width,
+            video_output_height=profile.video_height,
+            video_fps=profile.video_fps,
+            video_steps=profile.video_steps,
+            video_cfg=profile.video_cfg,
+            video_noise_aug_strength=profile.video_noise_aug_strength,
+            video_motion_zoom=profile.video_motion_zoom,
+        )
+
+    def _profile_from_snapshot(
+        self,
+        quality_snapshot: object | None,
+        quality_profile_id: str | None,
+    ) -> VisualQualityProfile:
+        if quality_snapshot is None:
+            return self.resolve_quality_profile(quality_profile_id)
+        if not isinstance(quality_snapshot, dict):
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot must be an object",
+            )
+        snapshot_id = quality_snapshot.get("profile_id")
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot is missing profile_id",
+            )
+        if quality_profile_id and snapshot_id != quality_profile_id:
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot does not match profile_id",
+            )
+        try:
+            profile = VisualQualityProfile.from_snapshot(quality_snapshot)
+        except (TypeError, ValueError) as exc:
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot contains invalid parameters",
+            ) from exc
+        try:
+            known = self._quality_registry.resolve(profile.profile_id)
+        except VisualQualityProfileError as exc:
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot uses an unknown profile",
+            ) from exc
+        if profile.version != known.version:
+            raise ProviderProfileError(
+                "VISUAL_QUALITY_SNAPSHOT_INVALID",
+                "Visual quality task snapshot uses an unsupported version",
+            )
+        return profile
 
     def list_profiles(self, capability: str) -> list[RuntimeProviderProfile]:
         if capability not in {"image", "video"}:
@@ -296,39 +395,50 @@ class VisualProviderProfileRegistry:
             status_code=409,
         )
 
-    async def get_image_provider(self, profile_id: str | None) -> ImageGenerationProvider:
+    async def get_image_provider(
+        self,
+        profile_id: str | None,
+        *,
+        quality_profile_id: str | None = None,
+        quality_snapshot: object | None = None,
+    ) -> ImageGenerationProvider:
         profile = self.resolve("image", profile_id)
         self.ensure_configured(profile)
-        cached = self._image_providers.get(profile.profile_id)
+        provider_settings = self.settings_for_quality(quality_profile_id, quality_snapshot)
+        cache_key = self._provider_cache_key(profile.profile_id, quality_snapshot, quality_profile_id)
+        cached = self._image_providers.get(cache_key)
         if cached is not None:
             return cached
 
         async with self._lock:
-            cached = self._image_providers.get(profile.profile_id)
+            cached = self._image_providers.get(cache_key)
             if cached is not None:
                 return cached
             from app.providers.factory import create_image_generation_provider
 
             provider_settings = replace(
-                self._settings,
+                provider_settings,
                 image_provider=profile.provider,
                 image_base_url=profile.base_url,
                 image_api_key=profile.api_key,
                 image_model=profile.model,
             )
             provider = create_image_generation_provider(provider_settings)
-            self._image_providers[profile.profile_id] = provider
+            self._image_providers[cache_key] = provider
             return provider
 
     async def get_identity_image_provider(
         self,
         profile_id: str | None,
+        *,
+        quality_profile_id: str | None = None,
+        quality_snapshot: object | None = None,
     ) -> ImageGenerationProvider | None:
         profile = self.resolve("image", profile_id)
         self.ensure_configured(profile)
         if profile.provider != "comfyui":
             return None
-        cache_key = f"identity:{profile.profile_id}"
+        cache_key = f"identity:{self._provider_cache_key(profile.profile_id, quality_snapshot, quality_profile_id)}"
         cached = self._identity_providers.get(cache_key)
         if cached is not None:
             return cached
@@ -340,7 +450,7 @@ class VisualProviderProfileRegistry:
             from app.providers.factory import create_identity_image_generation_provider
 
             provider_settings = replace(
-                self._settings,
+                self.settings_for_quality(quality_profile_id, quality_snapshot),
                 image_provider=profile.provider,
                 image_base_url=profile.base_url,
                 image_api_key=profile.api_key,
@@ -351,29 +461,52 @@ class VisualProviderProfileRegistry:
                 self._identity_providers[cache_key] = provider
             return provider
 
-    async def get_video_provider(self, profile_id: str | None) -> VideoGenerationProvider:
+    async def get_video_provider(
+        self,
+        profile_id: str | None,
+        *,
+        quality_profile_id: str | None = None,
+        quality_snapshot: object | None = None,
+    ) -> VideoGenerationProvider:
         profile = self.resolve("video", profile_id)
         self.ensure_configured(profile)
-        cached = self._video_providers.get(profile.profile_id)
+        provider_settings = self.settings_for_quality(quality_profile_id, quality_snapshot)
+        cache_key = self._provider_cache_key(profile.profile_id, quality_snapshot, quality_profile_id)
+        cached = self._video_providers.get(cache_key)
         if cached is not None:
             return cached
 
         async with self._lock:
-            cached = self._video_providers.get(profile.profile_id)
+            cached = self._video_providers.get(cache_key)
             if cached is not None:
                 return cached
             from app.providers.factory import create_video_generation_provider
 
             provider_settings = replace(
-                self._settings,
+                provider_settings,
                 video_provider=profile.provider,
                 video_base_url=profile.base_url,
                 video_api_key=profile.api_key,
                 video_model=profile.model,
             )
             provider = create_video_generation_provider(provider_settings)
-            self._video_providers[profile.profile_id] = provider
+            self._video_providers[cache_key] = provider
             return provider
+
+    @staticmethod
+    def _provider_cache_key(
+        profile_id: str,
+        quality_snapshot: object | None,
+        quality_profile_id: str | None,
+    ) -> str:
+        serialized = json.dumps(
+            quality_snapshot if quality_snapshot is not None else {"profile_id": quality_profile_id},
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+        return f"{profile_id}:{digest}"
 
     async def close(self) -> None:
         providers = [
