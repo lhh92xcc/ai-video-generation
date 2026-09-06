@@ -83,7 +83,7 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
-ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 主机应先从单张 512×512 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据实际显存、耗时和画面质量调整分辨率、采样步数和时长。配置档案不要求某个固定显卡型号。
+ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 主机应先在前台选择 `local_safe`，从单张 512×768 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据实际显存、耗时和画面质量调整分辨率、采样步数和时长。配置档案不要求某个固定显卡型号。
 
 ## 配置与安全
 
@@ -101,9 +101,17 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 
 后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
-视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 Windows GPU 主机人工验收。
+视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 GPU 主机人工验收。
 
-默认使用 `local_safe`；Windows GPU 配置档案默认使用 `local_balanced`。也可以通过 `AI_VIDEO_VISUAL_QUALITY_PROFILE` 或 TOML 的 `[visual_quality].default_profile` 设置默认档案，前台新建完整生产、分集计划或单镜头视频任务时可直接下拉选择。
+默认使用 `local_safe`；Windows GPU 配置档案默认使用 `local_balanced`。也可以通过 `AI_VIDEO_VISUAL_QUALITY_PROFILE` 或 TOML 的 `[visual_quality].default_profile` 设置默认档案，前台新建完整生产、分集计划或单镜头视频任务时可直接通过卡片选择。
+
+| 档案 | 参考图 | 视频片段 | 适用场景 |
+| --- | --- | --- | --- |
+| `local_safe` | 512×768，4 steps | 320×576，8fps，6 steps | 首次联调、低显存和失败范围控制 |
+| `local_balanced` | 576×1024，6 steps | 384×672，12fps，8 steps | 目标 GPU 主机的首轮作品集样片 |
+| `high_quality` | 720×1280，8 steps | 576×1024，16fps，12 steps | 单任务高质量候选，必须先实测 |
+
+档案只提供可复现的起始参数；显存、耗时、身份一致性和动作质量必须以目标机器的真实 smoke 与人工看片为准。
 
 ## 验证
 

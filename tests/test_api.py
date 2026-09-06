@@ -59,7 +59,7 @@ def test_visual_provider_profile_lists_are_safe_for_frontend_dropdown(client: Te
         assert all("api_key" not in item for item in body["items"])
 
 
-def test_visual_quality_profile_list_is_safe_for_frontend_dropdown(client: TestClient) -> None:
+def test_visual_quality_profile_list_is_safe_for_frontend_selector(client: TestClient) -> None:
     response = client.get("/api/v1/visual-quality-profiles")
 
     assert response.status_code == 200

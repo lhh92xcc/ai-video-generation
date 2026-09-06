@@ -20,19 +20,20 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     settings = load_settings("config/config.windows_gpu.toml")
 
     assert settings.runtime_profile == "windows_gpu"
+    assert settings.visual_quality_profile == "local_balanced"
     assert settings.queue_backend == "redis"
     assert settings.video_provider == "comfyui_wan_i2v"
-    assert settings.image_width == 768
+    assert settings.image_width == 576
     assert settings.image_height == 1024
-    assert settings.image_steps == 4
-    assert settings.image_guidance == 3.5
-    assert settings.image_identity_weight == 0.9
-    assert settings.video_output_width == 320
-    assert settings.video_output_height == 576
-    assert settings.video_fps == 8
-    assert settings.video_steps == 6
-    assert settings.video_cfg == 5.0
-    assert settings.video_noise_aug_strength == 0.02
+    assert settings.image_steps == 6
+    assert settings.image_guidance == 4.0
+    assert settings.image_identity_weight == 0.92
+    assert settings.video_output_width == 384
+    assert settings.video_output_height == 672
+    assert settings.video_fps == 12
+    assert settings.video_steps == 8
+    assert settings.video_cfg == 5.5
+    assert settings.video_noise_aug_strength == 0.015
     assert "identity" in settings.video_prompt_suffix
     assert settings.worker_gpu_lock_enabled is True
     assert settings.worker_scheduler_enabled is True

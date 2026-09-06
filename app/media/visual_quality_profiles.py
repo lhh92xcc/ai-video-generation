@@ -124,7 +124,7 @@ class VisualQualityProfileRegistry:
             profile_id="local_balanced",
             label="Local Balanced · 平衡质量",
             description="提高关键帧和视频采样规格，仍保持逐镜头、低并发的本地路线。",
-            recommended_for="目标 Windows GPU 主机的首轮作品集验收",
+            recommended_for="目标 GPU 主机的首轮作品集验收",
             image_width=576,
             image_height=1024,
             image_steps=6,

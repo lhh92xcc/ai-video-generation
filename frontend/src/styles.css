@@ -658,6 +658,37 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-provider-grid .field-hint, .creator-video-provider-inline .field-hint { margin-top: 5px; font-size: 8px; line-height: 1.45; }
 .creator-provider-status { margin: 11px 0 0; color: #858da1; font-size: 8px; line-height: 1.5; }
 .creator-provider-status.warning { color: #a8732d; }
+.creator-provider-grid .visual-quality-selector { grid-column: 1 / -1; }
+.visual-quality-selector { min-width: 0; border: 1px solid #e0e2f4; border-radius: 11px; padding: 12px; background: linear-gradient(145deg, #fafaff 0%, #fff 62%); }
+.visual-quality-selector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.visual-quality-eyebrow { margin: 0 0 4px; color: #8589d3; font-size: 7px; font-weight: 800; letter-spacing: .14em; }
+.visual-quality-selector .field-label { margin: 0; color: #4d5574; font-size: 11px; }
+.visual-quality-caption { margin: 4px 0 0; color: #969daf; font-size: 8px; line-height: 1.45; }
+.visual-quality-current-badge { flex: 0 0 auto; border: 1px solid #d9daf7; border-radius: 999px; padding: 5px 8px; color: #6264d4; background: #f1f1ff; font-size: 8px; font-weight: 700; }
+.visual-quality-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 11px; }
+.visual-quality-option { position: relative; min-width: 0; border: 1px solid #e4e6ef; border-radius: 9px; padding: 10px; color: inherit; background: #fff; text-align: left; cursor: pointer; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, background 150ms ease; }
+.visual-quality-option:hover:not(:disabled) { border-color: #bfc2ed; background: #fdfdff; box-shadow: 0 5px 15px rgba(77, 79, 184, .07); transform: translateY(-1px); }
+.visual-quality-option:focus-visible { outline: 0; border-color: #7779dc; box-shadow: 0 0 0 3px rgba(91, 92, 226, .14); }
+.visual-quality-option.selected { border-color: #7779dc; background: linear-gradient(155deg, #f7f7ff, #fff 68%); box-shadow: 0 0 0 2px rgba(119, 121, 220, .1), 0 8px 18px rgba(77, 79, 184, .08); }
+.visual-quality-option:disabled { cursor: wait; opacity: .62; }
+.visual-quality-option-top { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+.visual-quality-option-index { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; color: #7579c9; background: #eeefff; font-family: "SFMono-Regular", Consolas, monospace; font-size: 8px; font-weight: 800; }
+.visual-quality-option-title { display: block; min-width: 0; padding-right: 16px; }
+.visual-quality-option-title strong { display: block; overflow: hidden; color: #515a73; font-size: 9px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.visual-quality-option-title small { display: inline-block; margin-top: 4px; border-radius: 999px; padding: 2px 5px; color: #6a6cc9; background: #eeeeff; font-size: 7px; font-weight: 700; }
+.visual-quality-option-check { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: #fff; background: #686bd5; font-size: 10px; font-weight: 800; }
+.visual-quality-option-recommended { display: block; overflow: hidden; margin-top: 9px; color: #737d94; font-size: 8px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.visual-quality-option-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 9px; }
+.visual-quality-option-metrics span { min-width: 0; overflow: hidden; border-radius: 5px; padding: 5px 6px; color: #6d7690; background: #f5f6fa; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.visual-quality-option-metrics b { margin-right: 3px; color: #a0a7b8; font-size: 7px; font-weight: 600; }
+.visual-quality-option-description { display: -webkit-box; overflow: hidden; margin-top: 9px; color: #9aa2b1; font-size: 7px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.visual-quality-selected-summary { display: flex; align-items: center; gap: 8px; margin-top: 10px; border-top: 1px solid #ececf6; padding-top: 9px; }
+.visual-quality-selected-mark { display: grid; place-items: center; flex: 0 0 19px; width: 19px; height: 19px; border-radius: 6px; color: #fff; background: #5f62ce; font-size: 10px; font-weight: 800; }
+.visual-quality-selected-summary > div { min-width: 0; flex: 1; }
+.visual-quality-selected-summary strong, .visual-quality-selected-summary p { display: block; }
+.visual-quality-selected-summary strong { overflow: hidden; color: #566078; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.visual-quality-selected-summary p { margin: 3px 0 0; overflow: hidden; color: #959dae; font-size: 7px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.visual-quality-selected-summary > small { flex: 0 0 auto; color: #a1a7b4; font-size: 7px; text-align: right; }
 .creator-visual-quality-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; border-top: 1px solid #eeeff8; padding-top: 11px; }
 .creator-visual-quality-mark { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 7px; color: #6365d5; background: #eeefff; font-size: 10px; }
 .creator-visual-quality-note strong, .creator-visual-quality-note p, .creator-visual-quality-note small { display: block; }
@@ -670,6 +701,11 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-video-provider-inline .field-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 720px) {
   .creator-provider-grid { grid-template-columns: 1fr; }
+  .visual-quality-options { grid-template-columns: 1fr; }
+  .visual-quality-option-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .visual-quality-option-description { -webkit-line-clamp: 3; }
+  .visual-quality-selected-summary { align-items: flex-start; }
+  .visual-quality-selected-summary > small { max-width: 82px; }
   .creator-video-provider-inline .provider-selector { display: block; }
   .creator-video-provider-inline .field-hint { margin-top: 5px; }
 }

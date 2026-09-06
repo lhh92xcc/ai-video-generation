@@ -12,8 +12,8 @@ frontend_origin = "http://localhost:5173"
 log_level = "INFO"
 
 [visual_quality]
-# 运行时质量档案会写入每个新任务的快照；可在前台下拉框中覆盖。
-# local_safe 适合首次联调，local_balanced 适合目标 Windows GPU 主机验收。
+# 运行时质量档案会写入每个新任务的快照；可在前台质量卡片中覆盖。
+# local_safe 适合首次联调，local_balanced 适合目标 GPU 主机验收。
 default_profile = "local_safe"
 
 [auth]
