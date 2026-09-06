@@ -117,6 +117,14 @@ ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包
 
 档案只提供可复现的起始参数；显存、耗时、身份一致性和动作质量必须以目标机器的真实 smoke 与人工看片为准。
 
+### 视频运动 Prompt 约束
+
+视频任务不会只把模型生成的原始画面描述直接交给 I2V Provider。服务层通过
+`app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色和连续性要求；运行时说明见
+[`prompts/video-motion-generation.txt`](prompts/video-motion-generation.txt)。每个镜头被限制为一个 3～5 秒连续镜头和一种可读的轻微动作（例如呼吸、一次眨眼、小幅转头或衣物轻动），并明确禁止新增人物、切镜、换场、大幅变形和同时发生多个复杂动作。
+
+该组约束是 Provider 无关的输入基线，用于减少变脸、动作崩坏和镜头语义漂移；它不是画质保证。真实 ComfyUI/Wan 运行仍需要在目标 GPU 主机人工筛选镜头，并记录失败和重试结果。
+
 ## 验证
 
 ```bash
@@ -126,7 +134,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-当前回归基线为 `319 passed、7 skipped、1 warning`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `320 passed、7 skipped、1 warning`；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

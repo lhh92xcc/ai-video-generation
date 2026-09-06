@@ -36,12 +36,67 @@ DEFAULT_VIDEO_NEGATIVE_PROMPT = (
 )
 
 DEFAULT_VIDEO_PROMPT_SUFFIX = (
-    "single continuous shot, 3 to 5 seconds, one coherent camera take, subtle "
-    "readable motion such as breathing, blinking, a small head turn or gentle cloth "
-    "movement, stable exposure, preserve the exact reference identity, face shape, "
-    "hairstyle, clothing, colors and silhouette, keep the original composition, no "
-    "new characters, no cuts, no scene change, no large body transformation"
+    "single continuous shot, 3 to 5 seconds, one coherent camera take, choose only "
+    "one restrained micro-motion such as breathing, one blink, a small head turn or "
+    "gentle cloth movement, stable exposure, preserve the exact reference identity, "
+    "face shape, hairstyle, clothing, colors and silhouette, keep the original "
+    "composition, no new characters, no cuts, no scene change, no large body "
+    "transformation, no simultaneous complex actions"
 )
+
+
+def build_video_motion_prompt(
+    *,
+    source_prompt: str,
+    shot_size: str,
+    camera_movement: str,
+    location: str,
+    characters: Sequence[str],
+    continuity_notes: str = "",
+    prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
+) -> str:
+    """Compose a deterministic, shot-aware prompt for an I2V Provider.
+
+    LLM-generated ``visual_prompt`` text is useful story context, but it is not a
+    reliable substitute for production constraints.  This helper adds the
+    protocol-level framing, camera and continuity facts at the service boundary
+    so every video adapter receives the same guardrails.
+    """
+
+    framing = {
+        "wide": "wide vertical establishing shot with readable foreground, midground and background",
+        "medium": "medium vertical shot with the primary subject clearly readable",
+        "close_up": "close-up portrait with the face unobstructed and centered in the visual hierarchy",
+        "extreme_close_up": "tight facial or detail shot with the identity still clearly recognizable",
+        "over_the_shoulder": "over-the-shoulder vertical shot with a stable foreground shoulder and readable subject",
+        "insert": "single detail shot with one dominant readable object",
+    }.get(shot_size, "clear vertical composition")
+    movement = {
+        "fixed": "locked-off camera; the subject stays in place",
+        "pan": "very gentle horizontal pan; the subject stays in place",
+        "tilt": "very gentle vertical tilt; the subject stays in place",
+        "dolly": "slow subtle push-in or pull-out with no sudden acceleration",
+        "tracking": "restrained lateral tracking with the subject remaining stable",
+        "handheld": "minimal stabilized handheld drift with no visible shake",
+        "zoom": "very gentle optical-style push-in with no hard zoom",
+    }.get(camera_movement, "restrained stabilized camera movement")
+    visible_characters = ", ".join(item.strip() for item in characters if item.strip())
+    character_clause = (
+        f"Approved visible characters: {visible_characters}. Do not add any other character. "
+        if visible_characters
+        else "No character is visible; keep the frame focused on the approved environment or prop. "
+    )
+    continuity_clause = (
+        f"Continuity requirements: {continuity_notes.strip()[:300]}. "
+        if continuity_notes.strip()
+        else "Keep identity, costume, palette, lighting direction and prop placement consistent with the reference image. "
+    )
+    prompt = (
+        f"{source_prompt.strip()[:900]}. {framing}. Location: {location.strip()[:120]}. "
+        f"Camera direction: {movement}. {character_clause}{continuity_clause}"
+        f"{prompt_suffix.strip()}"
+    )
+    return prompt[:2000]
 
 
 def build_shot_keyframe_prompt(

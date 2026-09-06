@@ -30,6 +30,7 @@ from app.media.identity_audit import IdentityAuditProvider
 from app.media.visual_prompts import (
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
     DEFAULT_VIDEO_PROMPT_SUFFIX,
+    build_video_motion_prompt,
 )
 from app.providers.errors_video import VideoProviderError
 from app.providers.video_generation import VideoGenerationProvider
@@ -161,7 +162,14 @@ class VideoClipTaskService:
                 identity_anchor_reference_image_id = self._identity_anchor_id(reference_image)
 
         source_prompt = request.prompt_override or shot.visual_prompt
-        prompt = self._compose_prompt(source_prompt)
+        prompt = self._compose_prompt(
+            source_prompt,
+            shot_size=shot.shot_size,
+            camera_movement=shot.camera_movement,
+            location=shot.location,
+            characters=shot.characters,
+            continuity_notes=shot.continuity_notes,
+        )
         negative_prompt = request.negative_prompt or self._default_negative_prompt
         task = GenerationTaskRecord(
             id=uuid4(),
@@ -224,14 +232,27 @@ class VideoClipTaskService:
         await self._task_queue.enqueue(stored_task.id)
         return stored_task, False
 
-    def _compose_prompt(self, source_prompt: str) -> str:
-        """Add a short motion/continuity guardrail without changing source text."""
+    def _compose_prompt(
+        self,
+        source_prompt: str,
+        *,
+        shot_size: str,
+        camera_movement: str,
+        location: str,
+        characters: list[str],
+        continuity_notes: str,
+    ) -> str:
+        """Add deterministic framing and restrained-motion constraints."""
 
-        source_prompt = source_prompt.strip()
-        if not self._prompt_suffix:
-            return source_prompt[:2000]
-        separator = " " if source_prompt.endswith((".", "。", "！", "？")) else ". "
-        return f"{source_prompt}{separator}{self._prompt_suffix}"[:2000]
+        return build_video_motion_prompt(
+            source_prompt=source_prompt,
+            shot_size=shot_size,
+            camera_movement=camera_movement,
+            location=location,
+            characters=characters,
+            continuity_notes=continuity_notes,
+            prompt_suffix=self._prompt_suffix,
+        )
 
     async def run_task(self, task_id: UUID) -> None:
         task = await self._get_task(task_id)
