@@ -406,6 +406,13 @@ class VideoClipTaskService:
                         "episode_id": input_data["episode_id"],
                         "shot_list_id": input_data["shot_list_id"],
                         "shot_index": input_data["shot_index"],
+                        "source_prompt": input_data.get("source_prompt"),
+                        "prompt": input_data.get("prompt"),
+                        "negative_prompt": input_data.get("negative_prompt"),
+                        "asset_refs": input_data.get("asset_refs", []),
+                        "approved_asset_facts": input_data.get(
+                            "approved_asset_facts", []
+                        ),
                         "provider_profile_id": input_data.get("provider_profile_id"),
                         "visual_quality_profile_id": input_data.get(
                             "visual_quality_profile_id"

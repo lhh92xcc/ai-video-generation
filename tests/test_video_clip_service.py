@@ -346,6 +346,7 @@ def test_video_clip_prompt_captures_exact_approved_asset_facts(tmp_path) -> None
             VideoClipCreateRequest(),
             idempotency_key="asset-facts",
         )
+        await service.run_task(task.id)
         await queue.close()
 
         assert reused is False
@@ -354,6 +355,14 @@ def test_video_clip_prompt_captures_exact_approved_asset_facts(tmp_path) -> None
         ]
         assert "黑发、深色外套" in task.input_data["prompt"]
         assert "Approved asset design facts" in task.input_data["prompt"]
+        completed = await store.get_task(task.id)
+        assert completed is not None
+        artifact_metadata = completed.artifacts[0].metadata
+        assert artifact_metadata["approved_asset_facts"] == task.input_data[
+            "approved_asset_facts"
+        ]
+        assert artifact_metadata["asset_refs"][0]["version"] == 1
+        assert artifact_metadata["prompt"] == task.input_data["prompt"]
         await storage.close()
 
     asyncio.run(exercise())
