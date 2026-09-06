@@ -1,0 +1,155 @@
+{
+  "episode_number": 2,
+  "title": "金果回席",
+  "logline": "芒芒坐进云上果园董事会，用录音和血脉验证拆穿前未婚夫与葡萄夫人的假契约。",
+  "opening_hook": "董事会的最末席上，葡萄夫人当众宣布：被剥掉果皮的弃果，不配碰金果园。",
+  "ending_hook": "菠萝川跪问芒芒究竟是谁，芒芒揭示自己就是他想攀附的董事长。",
+  "total_duration_seconds": 60,
+  "scenes": [
+    {
+      "scene_index": 1,
+      "title": "最末席",
+      "location": "云上果园董事会",
+      "time": "次日·上午",
+      "characters": ["芒芒", "葡萄夫人", "菠萝川"],
+      "duration_seconds": 10,
+      "action": "芒芒走进漂浮在云层上的玻璃会议室，葡萄夫人用银色手杖敲击桌面，把她的椅子推到最末端。菠萝川装作无奈地摊手。",
+      "narration": "她第一次回到果园，却被安排坐在所有人的背后。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "葡萄夫人",
+          "text": "一个被剥掉果皮的弃果，也配坐主位？",
+          "emotion": "轻蔑",
+          "delivery_notes": "轻敲桌面，眼神从芒芒身上扫过。"
+        }
+      ],
+      "emotion": "权力压迫",
+      "source_chapter_numbers": [2]
+    },
+    {
+      "scene_index": 2,
+      "title": "先听录音",
+      "location": "云上果园董事会",
+      "time": "次日·上午",
+      "characters": ["芒芒", "菠萝川", "莓莓"],
+      "duration_seconds": 10,
+      "action": "莓莓把手机推到芒芒面前，假装关心她的名誉。芒芒没有接手机，而是按下桌面投影按钮，录音波形铺满玻璃墙。",
+      "narration": "当他们准备好一套说辞时，她准备好了一段声音。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "配不配，不如先听完这段录音。",
+          "emotion": "克制",
+          "delivery_notes": "短句，按键后保持沉默。"
+        }
+      ],
+      "emotion": "证据亮相",
+      "source_chapter_numbers": [2]
+    },
+    {
+      "scene_index": 3,
+      "title": "假装爱过",
+      "location": "云上果园董事会",
+      "time": "次日·上午",
+      "characters": ["菠萝川", "莓莓", "芒芒"],
+      "duration_seconds": 10,
+      "action": "录音回放菠萝川的声音。菠萝川抢着解释，莓莓的粉色蝴蝶结歪到一边，芒芒隔着玻璃桌看着两人互相推责。",
+      "narration": "原来那句‘我爱你’，只是夺走她身份的钥匙。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "菠萝川",
+          "text": "我只是假装爱她，等她交出金果谱。",
+          "emotion": "录音中的得意",
+          "delivery_notes": "作为录音播放，声音可略带空间回响。"
+        }
+      ],
+      "emotion": "背叛证实",
+      "source_chapter_numbers": [2]
+    },
+    {
+      "scene_index": 4,
+      "title": "血脉不认眼泪",
+      "location": "老果汁工坊",
+      "time": "次日·午后",
+      "characters": ["芒芒", "榴莲婆婆"],
+      "duration_seconds": 10,
+      "action": "榴莲婆婆把金果谱摊在铜炉旁，芒芒将手掌按在书页上。金色叶脉沿着她的手臂亮起，照亮工坊里的玻璃瓶。",
+      "narration": "真正的继承，不靠哭赢，而靠规则认人。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "榴莲婆婆",
+          "text": "金果谱只认血脉，不认眼泪。去拍卖厅，让所有人看清楚。",
+          "emotion": "坚定指引",
+          "delivery_notes": "说到‘看清楚’时抬眼。"
+        }
+      ],
+      "emotion": "准备反击",
+      "source_chapter_numbers": [2]
+    },
+    {
+      "scene_index": 5,
+      "title": "伪造的指纹",
+      "location": "金果拍卖厅",
+      "time": "次日·傍晚",
+      "characters": ["芒芒", "葡萄夫人", "莓莓"],
+      "duration_seconds": 10,
+      "action": "葡萄夫人把旧契约甩到拍卖桌上，莓莓立刻对着直播镜头哭泣。芒芒把契约举到金色聚光灯下，纸面上的伪造纹路显形。",
+      "narration": "一张旧契约，想把她的母亲和果园一起抹掉。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "葡萄夫人",
+          "text": "你母亲当年把金果园输给我，契约在此。",
+          "emotion": "强硬",
+          "delivery_notes": "把契约压在桌面中央。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "芒芒",
+          "text": "契约上的指纹，是你伪造的。",
+          "emotion": "冷静反击",
+          "delivery_notes": "用手指点出指纹边缘，不提高音量。"
+        }
+      ],
+      "emotion": "证据反杀",
+      "source_chapter_numbers": [2]
+    },
+    {
+      "scene_index": 6,
+      "title": "董事长就是我",
+      "location": "金果拍卖厅",
+      "time": "次日·傍晚",
+      "characters": ["芒芒", "菠萝川", "葡萄夫人", "莓莓"],
+      "duration_seconds": 10,
+      "action": "血脉验证光束从芒芒脚下升起，整座拍卖厅的金色果灯同时亮起。菠萝川膝盖一软跪下，葡萄夫人第一次失去镇定。",
+      "narration": "所有人都在等她报名字，只有她知道，这个名字他们早就见过。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "菠萝川",
+          "text": "你到底是谁？",
+          "emotion": "恐惧",
+          "delivery_notes": "跪下后仰头，声音发颤。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "芒芒",
+          "text": "你不是想娶董事长女儿吗？我就是董事长。",
+          "emotion": "终极打脸",
+          "delivery_notes": "最后一句对镜头说，留出反应空间。"
+        }
+      ],
+      "emotion": "身份反转",
+      "source_chapter_numbers": [2]
+    }
+  ],
+  "risk_notes": [
+    "董事会与拍卖厅的权力关系属于虚构世界观，画面应保持卡通化，避免现实企业冒用。",
+    "录音、指纹和血脉验证是叙事道具，不构成现实取证或法律意见。",
+    "莓莓的哭诉不使用侮辱性标签，保留平台可审核的戏剧化冲突。"
+  ]
+}

@@ -172,6 +172,11 @@ class EpisodeTaskPlanService:
         batch = None
         batches = []
         if task_ids:
+            # A single task can be present both in an episode item's stage
+            # list and in the completed-task carry-forward list.  TaskBatch
+            # rejects duplicate IDs, so collapse the planner output before
+            # creating the durable batch while preserving stage order.
+            task_ids = list(dict.fromkeys(task_ids))
             for part, start in enumerate(range(0, len(task_ids), 100), start=1):
                 chunk = task_ids[start : start + 100]
                 batch_request = TaskBatchCreateRequest(

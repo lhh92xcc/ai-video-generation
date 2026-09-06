@@ -1,0 +1,155 @@
+{
+  "episode_number": 3,
+  "title": "黑心籽的代价",
+  "logline": "菠萝川借复婚制造流量，芒芒用黑心籽录音盒把谎话变成公开证据，并为果园立下新规则。",
+  "opening_hook": "菠萝川带着复婚协议登上夜市直播台，承诺归还股份，却只想再骗一次流量。",
+  "ending_hook": "金果谱最后一页指向失踪多年的芒芒母亲，新的风暴即将开始。",
+  "total_duration_seconds": 60,
+  "scenes": [
+    {
+      "scene_index": 1,
+      "title": "复婚直播",
+      "location": "夜市直播台",
+      "time": "当晚·夜",
+      "characters": ["菠萝川", "芒芒", "莓莓"],
+      "duration_seconds": 10,
+      "action": "环形灯亮起，菠萝川把复婚协议递向镜头，莓莓在旁边示意评论区刷屏。芒芒坐在桌对面，目光落在协议而不是他脸上。",
+      "narration": "他们把婚姻剪成一场直播，想再骗一次掌声。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "菠萝川",
+          "text": "只要你复婚，我把所有股份还你。",
+          "emotion": "假装深情",
+          "delivery_notes": "面向镜头微笑，手指故意压住协议金额。"
+        }
+      ],
+      "emotion": "虚假复合",
+      "source_chapter_numbers": [3]
+    },
+    {
+      "scene_index": 2,
+      "title": "黑心籽上桌",
+      "location": "夜市直播台",
+      "time": "当晚·夜",
+      "characters": ["芒芒", "菠萝川", "莓莓"],
+      "duration_seconds": 10,
+      "action": "芒芒点头答应，却从披风内袋取出黑心籽录音盒，放在两人中间。红色心跳灯开始规律闪烁。",
+      "narration": "她说可以复婚，但先让谎话自己发出声音。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "可以，但你们先吃下这颗黑心籽。",
+          "emotion": "平静设局",
+          "delivery_notes": "不要解释装置用途，只把它推到镜头中心。"
+        }
+      ],
+      "emotion": "陷阱落下",
+      "source_chapter_numbers": [3]
+    },
+    {
+      "scene_index": 3,
+      "title": "谎话报警",
+      "location": "夜市直播台",
+      "time": "当晚·夜",
+      "characters": ["莓莓", "菠萝川", "芒芒"],
+      "duration_seconds": 10,
+      "action": "菠萝川和莓莓同时改口互相甩锅，黑心籽的红灯快速闪烁，直播屏幕跳出刺耳警报和波形。围观者的评论飞快上滚。",
+      "narration": "每一句甩锅，都是黑心籽记下的证据。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "莓莓",
+          "text": "你敢直播我们的私事？",
+          "emotion": "慌张质问",
+          "delivery_notes": "先看装置，再看镜头，语速突然变快。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "芒芒",
+          "text": "是你们先把我的真心当成流量。",
+          "emotion": "冷冽",
+          "delivery_notes": "用一句话压住争吵，保持稳定眼神。"
+        }
+      ],
+      "emotion": "公开审判",
+      "source_chapter_numbers": [3]
+    },
+    {
+      "scene_index": 4,
+      "title": "掌声不是规则",
+      "location": "老果汁工坊",
+      "time": "当晚·稍后",
+      "characters": ["芒芒", "榴莲婆婆"],
+      "duration_seconds": 10,
+      "action": "直播结束后，芒芒把黑心籽录音盒放回木盒。榴莲婆婆关掉铜炉火焰，提醒她不要只追求报复的掌声。",
+      "narration": "赢下热搜很容易，守住一个果园却需要规则。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "榴莲婆婆",
+          "text": "复仇能赢掌声，只有规则能守住果园。",
+          "emotion": "温和提醒",
+          "delivery_notes": "像长辈给出最后一次选择。"
+        }
+      ],
+      "emotion": "价值选择",
+      "source_chapter_numbers": [3]
+    },
+    {
+      "scene_index": 5,
+      "title": "新分红规则",
+      "location": "云上果园董事会",
+      "time": "次日·上午",
+      "characters": ["芒芒", "葡萄夫人", "菠萝川", "莓莓"],
+      "duration_seconds": 10,
+      "action": "芒芒站在董事会主位，投影出新的分红与证据留存规则。葡萄夫人、菠萝川和莓莓的表决权标记被暂时锁定。",
+      "narration": "她没有把旧权力换成自己的新任性，而是把漏洞一条条封上。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "从今天起，谁也不能用血脉、婚约或假合同夺走别人的劳动。",
+          "emotion": "坚定宣告",
+          "delivery_notes": "面向整张长桌，语气清晰有节奏。"
+        }
+      ],
+      "emotion": "制度翻盘",
+      "source_chapter_numbers": [3]
+    },
+    {
+      "scene_index": 6,
+      "title": "第四枚印记",
+      "location": "果园婚礼台",
+      "time": "次日·深夜",
+      "characters": ["芒芒", "榴莲婆婆"],
+      "duration_seconds": 10,
+      "action": "空婚礼台重新亮灯，芒芒把裂开的蓝宝石婚戒放进回收箱。榴莲婆婆翻开金果谱最后一页，陌生的第四枚印记突然发光。",
+      "narration": "她以为结局是赢回果园，没想到真正的家人还在风暴里。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "榴莲婆婆",
+          "text": "别急着庆祝，最后一枚印记，指向你失踪多年的母亲。",
+          "emotion": "压低的悬念",
+          "delivery_notes": "先看书页，再看向果园深处。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "芒芒",
+          "text": "母亲还活着？",
+          "emotion": "震动",
+          "delivery_notes": "轻声说出，镜头停在发光印记上。"
+        }
+      ],
+      "emotion": "续季钩子",
+      "source_chapter_numbers": [3]
+    }
+  ],
+  "risk_notes": [
+    "黑心籽是虚构的戏剧装置，不暗示现实测谎或法律效力。",
+    "直播争执与舆论清算需要避免现实个人信息、网暴和可识别账号。",
+    "结尾保留母亲线索，若继续扩写应先确认人物关系和版权状态。"
+  ]
+}

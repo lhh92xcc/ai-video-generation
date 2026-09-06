@@ -1,0 +1,44 @@
+{
+  "format_version": "ai-video-generation.novel-bundle.v1",
+  "title": "她只剩一层皮｜AI水果狗血短剧",
+  "language": "zh-CN",
+  "aspect_ratio": "9:16",
+  "target_episode_count": 3,
+  "target_episode_duration_seconds": 60,
+  "rights_status": "pending",
+  "content_origin": "original_rewrite_inspired_by_public_industry_analysis",
+  "source_file": "source/她只剩一层皮.md",
+  "story_bible_file": "structured/story-bible.json",
+  "episode_outlines_file": "structured/episode-outlines.json",
+  "episode_script_files": [
+    "structured/episode-01.script.json",
+    "structured/episode-02.script.json",
+    "structured/episode-03.script.json"
+  ],
+  "shot_list_files": [
+    "structured/episode-01.shots.json",
+    "structured/episode-02.shots.json",
+    "structured/episode-03.shots.json"
+  ],
+  "production_notes": [
+    "先上传 Markdown 原文并生成或复核 StoryBible，再进入分集和分镜任务。",
+    "资产首次同步默认为 needs_review；只有人工审核为 ready 才提交视频片段。",
+    "台词、字幕、参考图和音乐仍需人工复核；本清单不代表平台发布许可。"
+  ],
+  "inspiration_sources": [
+    {
+      "title": "你们爱看的狗血短剧，她自己写完从来不看第二遍",
+      "publisher": "36氪／新周刊",
+      "url": "https://36kr.com/p/3931869914545539",
+      "accessed": "2026-09-05",
+      "use": "节奏与题材套路研究"
+    },
+    {
+      "title": "AI短剧新赛道！从水果大剧到餐具、蔬菜，内容内卷到离谱",
+      "publisher": "澎湃新闻",
+      "url": "https://m.thepaper.cn/newsDetail_forward_33071238",
+      "accessed": "2026-09-05",
+      "use": "拟人化载体与冲突组合研究"
+    }
+  ]
+}

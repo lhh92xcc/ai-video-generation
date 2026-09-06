@@ -1,0 +1,155 @@
+{
+  "episode_number": 1,
+  "title": "她只剩一层皮",
+  "logline": "被未婚夫和闺蜜在婚礼上公开抛弃后，芒芒发现自己剥掉的金色果皮竟是继承人印记。",
+  "opening_hook": "婚礼前一小时，芒芒亲手剥下自己的金色果皮，只为给未婚夫换一笔参赛费。",
+  "ending_hook": "芒芒披上金色果皮织成的披风回到婚礼台，而金果谱最后一页亮起陌生印记。",
+  "total_duration_seconds": 60,
+  "scenes": [
+    {
+      "scene_index": 1,
+      "title": "换报名费",
+      "location": "果园后巷",
+      "time": "黄昏·婚礼前",
+      "characters": ["芒芒", "菠萝川"],
+      "duration_seconds": 8,
+      "action": "芒芒忍痛剥下一片金色果皮，递给菠萝川；远处婚礼彩灯刚刚亮起。菠萝川接过果皮，目光停在发光的纹路上。",
+      "narration": "她以为，牺牲一层皮，就能换来一辈子的婚礼。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "这层皮换来的报名费，够你去拿冠军了。拿到奖，我们就结婚。",
+          "emotion": "温柔但决绝",
+          "delivery_notes": "前半句压低声音，最后四个字轻轻落下。"
+        }
+      ],
+      "emotion": "牺牲",
+      "source_chapter_numbers": [1]
+    },
+    {
+      "scene_index": 2,
+      "title": "婚礼取消",
+      "location": "果园婚礼台",
+      "time": "黄昏",
+      "characters": ["芒芒", "菠萝川", "莓莓"],
+      "duration_seconds": 10,
+      "action": "芒芒站在叶片拱门下等待交换戒指，菠萝川却牵着莓莓走上台。蓝宝石婚戒被他随手放到桌边。",
+      "narration": "她等来戒指，却等来一句婚礼取消。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "菠萝川，戒指呢？",
+          "emotion": "错愕",
+          "delivery_notes": "先看戒指台，再抬头看他。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "菠萝川",
+          "text": "婚礼取消。我爱的是能让我登上金果榜的莓莓。",
+          "emotion": "冷漠",
+          "delivery_notes": "不看芒芒，直接把莓莓拉到身前。"
+        }
+      ],
+      "emotion": "公开背叛",
+      "source_chapter_numbers": [1]
+    },
+    {
+      "scene_index": 3,
+      "title": "连皮都没有",
+      "location": "果园婚礼台",
+      "time": "黄昏·人群起哄",
+      "characters": ["芒芒", "莓莓", "菠萝川"],
+      "duration_seconds": 8,
+      "action": "莓莓挽住菠萝川的手，故意展示新戒指。芒芒弯腰捡起裂开的蓝宝石戒指，围观水果的影子压过她的脚边。",
+      "narration": "最狠的不是被抢走，而是对方还要笑着告诉你，你不配。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "莓莓",
+          "text": "别怪我，谁让你的皮都卖光了？",
+          "emotion": "甜笑讥讽",
+          "delivery_notes": "保持甜美笑容，最后一个字拖长。"
+        }
+      ],
+      "emotion": "羞辱",
+      "source_chapter_numbers": [1]
+    },
+    {
+      "scene_index": 4,
+      "title": "金色印记",
+      "location": "老果汁工坊",
+      "time": "夜晚",
+      "characters": ["芒芒", "榴莲婆婆"],
+      "duration_seconds": 10,
+      "action": "芒芒在铜炉边擦掉眼泪，榴莲婆婆从木架底层取出深绿色的金果谱。书页上的纹路与芒芒缺失的果皮边缘发出同样的金光。",
+      "narration": "她卖掉的不是果皮，是金果王族的身份印记。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "榴莲婆婆",
+          "text": "你剥掉的每一片皮，都在证明你是谁。",
+          "emotion": "沉稳揭示",
+          "delivery_notes": "停顿半拍后说出“证明你是谁”。"
+        }
+      ],
+      "emotion": "真相初现",
+      "source_chapter_numbers": [1]
+    },
+    {
+      "scene_index": 5,
+      "title": "继承人现身",
+      "location": "金果拍卖厅",
+      "time": "夜晚",
+      "characters": ["芒芒", "榴莲婆婆", "菠萝川", "莓莓"],
+      "duration_seconds": 12,
+      "action": "拍卖厅大屏幕投影出金色果皮合同与金果谱。菠萝川和莓莓试图遮住屏幕，榴莲婆婆按下遥控器，血脉印记铺满整面墙。",
+      "narration": "他们拿走了她的皮，却没拿走她的证据。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "榴莲婆婆",
+          "text": "合同写得很清楚，真正的金果园继承人，是芒芒。",
+          "emotion": "公开宣判",
+          "delivery_notes": "面向观众席，不看反派。"
+        },
+        {
+          "line_index": 2,
+          "speaker": "芒芒",
+          "text": "那我就把他们欠我的，一笔一笔收回来。",
+          "emotion": "觉醒",
+          "delivery_notes": "语气平静，最后一句直视菠萝川。"
+        }
+      ],
+      "emotion": "反转",
+      "source_chapter_numbers": [1]
+    },
+    {
+      "scene_index": 6,
+      "title": "回到婚礼台",
+      "location": "果园婚礼台",
+      "time": "夜晚",
+      "characters": ["芒芒", "菠萝川", "莓莓"],
+      "duration_seconds": 12,
+      "action": "芒芒披上金色果皮织成的披风走回舞台，菠萝川后退撞翻戒指台。莓莓想抢走金果谱，芒芒用合同挡住她的手。",
+      "narration": "她只剩一层皮？不，她终于穿回了自己的名字。",
+      "dialogues": [
+        {
+          "line_index": 1,
+          "speaker": "芒芒",
+          "text": "婚礼可以取消，但你们欠我的每一颗果籽，都得一颗不少地还回来。",
+          "emotion": "冷静压迫",
+          "delivery_notes": "镜头推近时放慢语速，结尾停顿。"
+        }
+      ],
+      "emotion": "强钩子",
+      "source_chapter_numbers": [1]
+    }
+  ],
+  "risk_notes": [
+    "拟人化水果的脸型、颜色和果皮纹路需要在参考图阶段锁定。",
+    "公开羞辱与合同揭示属于戏剧化表达，发布前人工检查平台审核尺度。",
+    "本集为原创改写，不应与任何现成短剧台词逐句替换或拼接。"
+  ]
+}

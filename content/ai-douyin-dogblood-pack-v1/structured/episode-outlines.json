@@ -1,0 +1,37 @@
+{
+  "items": [
+    {
+      "episode_number": 1,
+      "title": "她只剩一层皮",
+      "logline": "被未婚夫和闺蜜在婚礼上公开抛弃后，芒芒发现自己剥掉的金色果皮竟是继承人印记。",
+      "objective": "让芒芒从被动受辱转为掌握证据，并在公众面前宣布回归。",
+      "conflict": "菠萝川与莓莓利用婚礼羞辱芒芒，试图夺走她的身份印记和果园权益。",
+      "turning_point": "榴莲婆婆拿出金果谱，证明芒芒才是金果园继承人。",
+      "ending_hook": "芒芒回到婚礼台公开反击，而金果谱最后一页亮起陌生印记。",
+      "source_chapter_numbers": [1],
+      "target_duration_seconds": 60
+    },
+    {
+      "episode_number": 2,
+      "title": "金果回席",
+      "logline": "芒芒坐进云上果园董事会，用录音和血脉验证拆穿前未婚夫与葡萄夫人的假契约。",
+      "objective": "完成从情感复仇到权力夺回的升级，让芒芒获得合法继承人的公开身份。",
+      "conflict": "葡萄夫人用旧契约和卖惨舆论否认芒芒，菠萝川与莓莓试图销毁录音证据。",
+      "turning_point": "金果谱、录音和血脉验证同时通过，拍卖厅的金色果灯全部亮起。",
+      "ending_hook": "菠萝川跪问芒芒是谁，芒芒揭示自己就是他想攀附的董事长。",
+      "source_chapter_numbers": [2],
+      "target_duration_seconds": 60
+    },
+    {
+      "episode_number": 3,
+      "title": "黑心籽的代价",
+      "logline": "菠萝川借复婚制造流量，芒芒用黑心籽录音盒把谎话变成公开证据，并为果园立下新规则。",
+      "objective": "给三集试播一个阶段性清算，同时留下芒芒母亲和第四枚印记的续季钩子。",
+      "conflict": "菠萝川与莓莓想把复婚直播包装成翻盘，芒芒必须在报复和制度重建之间做选择。",
+      "turning_point": "直播中的谎话触发黑心籽警报，董事会据此暂停反派的表决权。",
+      "ending_hook": "金果谱最后一页指向失踪多年的芒芒母亲，新的风暴即将开始。",
+      "source_chapter_numbers": [3],
+      "target_duration_seconds": 60
+    }
+  ]
+}
