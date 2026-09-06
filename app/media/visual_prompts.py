@@ -10,6 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from app.domain.models import (
+    AssetRecord,
+    AssetStatus,
+    CharacterAssetContent,
+    LocationAssetContent,
+    PropAssetContent,
+)
+
 DEFAULT_REFERENCE_STYLE = (
     "polished 2D manhwa animation illustration, clean single-frame 9:16 vertical "
     "composition, crisp consistent linework, clear facial planes, soft cel shading, "
@@ -44,6 +52,83 @@ DEFAULT_VIDEO_PROMPT_SUFFIX = (
     "composition, no new characters, no cuts, no scene change, no large body "
     "transformation, no simultaneous complex actions"
 )
+
+
+def _compact(value: str, limit: int) -> str:
+    """Keep prompt facts readable without allowing one field to dominate."""
+
+    compacted = " ".join(value.strip().split())
+    if len(compacted) <= limit:
+        return compacted
+    return f"{compacted[: max(1, limit - 1)].rstrip()}…"
+
+
+def build_approved_asset_facts(
+    assets: Sequence[AssetRecord],
+    *,
+    max_chars: int = 900,
+) -> list[str]:
+    """Render only approved, versioned design facts for a video Prompt.
+
+    The source models intentionally contain more information than an I2V model
+    needs.  This helper selects visual continuity fields and keeps the result
+    bounded so the actual shot description and motion guardrails remain in the
+    request.  Non-ready assets are ignored instead of being presented as facts.
+    """
+
+    facts: list[str] = []
+    for asset in assets:
+        if asset.status != AssetStatus.READY:
+            continue
+        content = asset.content
+        if isinstance(content, CharacterAssetContent):
+            details = [
+                f"appearance={_compact(content.appearance, 260)}",
+                f"traits={_compact('、'.join(content.traits), 120)}"
+                if content.traits
+                else "traits=未设定",
+            ]
+            if content.age_range != "待设定":
+                details.append(f"age_range={_compact(content.age_range, 60)}")
+        elif isinstance(content, LocationAssetContent):
+            details = [
+                f"description={_compact(content.description, 220)}",
+                f"atmosphere={_compact(content.atmosphere, 100)}",
+                f"visual_keywords={_compact('、'.join(content.visual_keywords), 120)}"
+                if content.visual_keywords
+                else "visual_keywords=未设定",
+            ]
+        elif isinstance(content, PropAssetContent):
+            details = [
+                f"description={_compact(content.description, 220)}",
+                f"visual_keywords={_compact('、'.join(content.visual_keywords), 120)}"
+                if content.visual_keywords
+                else "visual_keywords=未设定",
+                f"continuity={_compact(content.continuity_notes, 140)}",
+            ]
+        else:  # pragma: no cover - AssetContent is a closed union today.
+            continue
+
+        facts.append(
+            f'{asset.asset_type.value} "{_compact(asset.name, 80)}" v{asset.version}: '
+            + "; ".join(details)
+        )
+
+    if not facts:
+        return []
+    bounded: list[str] = []
+    used = 0
+    for fact in facts:
+        separator = 2 if bounded else 0
+        remaining = max_chars - used - separator
+        if remaining <= 0:
+            break
+        if len(fact) > remaining:
+            bounded.append(_compact(fact, remaining))
+            break
+        bounded.append(fact)
+        used += separator + len(fact)
+    return bounded
 
 _SHOT_MOTION_SAFETY = {
     "close_up": (
@@ -81,6 +166,7 @@ def build_video_motion_prompt(
     location: str,
     characters: Sequence[str],
     continuity_notes: str = "",
+    approved_asset_facts: Sequence[str] = (),
     prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
 ) -> str:
     """Compose a deterministic, shot-aware prompt for an I2V Provider.
@@ -119,16 +205,27 @@ def build_video_motion_prompt(
         if continuity_notes.strip()
         else "Keep identity, costume, palette, lighting direction and prop placement consistent with the reference image. "
     )
+    asset_facts = "; ".join(
+        _compact(fact, 420) for fact in approved_asset_facts if fact.strip()
+    )
+    asset_facts_clause = (
+        f"Approved asset design facts: {asset_facts}. "
+        if asset_facts
+        else "No additional approved asset facts were supplied; follow the reference image and shot constraints. "
+    )
     motion_safety = _SHOT_MOTION_SAFETY.get(
         shot_size,
         "general motion plan: use only one restrained readable movement and keep the subject geometry stable",
     )
-    prompt = (
+    dynamic_context = (
         f"{source_prompt.strip()[:900]}. {framing}. Location: {location.strip()[:120]}. "
-        f"Camera direction: {movement}. {character_clause}{continuity_clause}"
-        f"{motion_safety}. {prompt_suffix.strip()}"
+        f"Camera direction: {movement}. {character_clause}{asset_facts_clause}{continuity_clause}"
     )
-    return prompt[:2000]
+    fixed_constraints = f"{motion_safety}. {prompt_suffix.strip()}"
+    available_context = 2000 - len(fixed_constraints) - 1
+    if available_context <= 0:
+        return fixed_constraints[:2000]
+    return f"{dynamic_context[:available_context].rstrip(' .')}. {fixed_constraints}"
 
 
 def build_shot_keyframe_prompt(

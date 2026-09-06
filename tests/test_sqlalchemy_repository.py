@@ -650,6 +650,12 @@ def test_sqlalchemy_store_persists_episode_script_and_shots() -> None:
         )
         loaded_assets = await store.list_assets(project.id, AssetType.CHARACTER)
         loaded_asset = await store.get_asset(saved_asset_v2.id)
+        exact_v1 = await store.get_asset_version(
+            project.id,
+            saved_asset.asset_key,
+            AssetType.CHARACTER,
+            1,
+        )
         assert saved_asset.version == 1
         assert saved_asset_v2.version == 2
         assert saved_asset_v2.asset_key == saved_asset.asset_key
@@ -658,6 +664,8 @@ def test_sqlalchemy_store_persists_episode_script_and_shots() -> None:
         assert loaded_asset.status == AssetStatus.READY
         assert loaded_asset.content.appearance.endswith("旧表")
         assert loaded_asset.aliases == ["主人公"]
+        assert exact_v1 is not None
+        assert exact_v1.content.appearance == "黑发、深色外套"
 
         saved_review = await store.save_asset_review(
             AssetReviewRecord(

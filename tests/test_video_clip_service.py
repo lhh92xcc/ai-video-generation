@@ -322,6 +322,43 @@ def test_video_clip_prefers_matching_shot_keyframe_over_standard_identity(tmp_pa
     asyncio.run(exercise())
 
 
+def test_video_clip_prompt_captures_exact_approved_asset_facts(tmp_path) -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        storage = LocalFileArtifactStorage(tmp_path)
+        service = VideoClipTaskService(
+            store,
+            queue,
+            MockVideoGenerationProvider(),
+            storage,
+        )
+
+        async def noop_handler(task_id) -> None:
+            del task_id
+
+        queue.set_handler(noop_handler)
+        episode, _reference = await _video_identity_fixture(store, storage)
+
+        task, reused = await service.create_task(
+            episode.id,
+            1,
+            VideoClipCreateRequest(),
+            idempotency_key="asset-facts",
+        )
+        await queue.close()
+
+        assert reused is False
+        assert task.input_data["approved_asset_facts"] == [
+            'character "主角" v1: appearance=黑发、深色外套; traits=稳定'
+        ]
+        assert "黑发、深色外套" in task.input_data["prompt"]
+        assert "Approved asset design facts" in task.input_data["prompt"]
+        await storage.close()
+
+    asyncio.run(exercise())
+
+
 def test_video_clip_task_requires_ready_shot_assets(tmp_path) -> None:
     async def exercise() -> None:
         store = InMemoryStore()

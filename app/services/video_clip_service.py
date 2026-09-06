@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from app.domain.models import (
     ArtifactSummary,
+    AssetRecord,
     AssetStatus,
     AssetType,
     GenerationTaskKind,
@@ -30,6 +31,7 @@ from app.media.identity_audit import IdentityAuditProvider
 from app.media.visual_prompts import (
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
     DEFAULT_VIDEO_PROMPT_SUFFIX,
+    build_approved_asset_facts,
     build_video_motion_prompt,
 )
 from app.providers.errors_video import VideoProviderError
@@ -162,6 +164,11 @@ class VideoClipTaskService:
                 identity_anchor_reference_image_id = self._identity_anchor_id(reference_image)
 
         source_prompt = request.prompt_override or shot.visual_prompt
+        approved_assets = await self._load_approved_assets(
+            shot_list.project_id,
+            shot.asset_refs,
+        )
+        approved_asset_facts = build_approved_asset_facts(approved_assets)
         prompt = self._compose_prompt(
             source_prompt,
             shot_size=shot.shot_size,
@@ -169,6 +176,7 @@ class VideoClipTaskService:
             location=shot.location,
             characters=shot.characters,
             continuity_notes=shot.continuity_notes,
+            approved_asset_facts=approved_asset_facts,
         )
         negative_prompt = request.negative_prompt or self._default_negative_prompt
         task = GenerationTaskRecord(
@@ -183,6 +191,7 @@ class VideoClipTaskService:
                 "prompt": prompt,
                 "source_prompt": source_prompt,
                 "negative_prompt": negative_prompt,
+                "approved_asset_facts": approved_asset_facts,
                 **(
                     {
                         "visual_quality_profile_id": visual_quality_profile_id,
@@ -241,6 +250,7 @@ class VideoClipTaskService:
         location: str,
         characters: list[str],
         continuity_notes: str,
+        approved_asset_facts: list[str],
     ) -> str:
         """Add deterministic framing and restrained-motion constraints."""
 
@@ -251,8 +261,33 @@ class VideoClipTaskService:
             location=location,
             characters=characters,
             continuity_notes=continuity_notes,
+            approved_asset_facts=approved_asset_facts,
             prompt_suffix=self._prompt_suffix,
         )
+
+    async def _load_approved_assets(
+        self,
+        project_id: UUID,
+        asset_refs: list[ShotAssetReference],
+    ) -> list[AssetRecord]:
+        """Load the exact ready asset versions captured by the shot list."""
+
+        assets: list[AssetRecord] = []
+        seen: set[tuple[UUID, int]] = set()
+        for asset_ref in asset_refs:
+            key = (asset_ref.asset_key, asset_ref.version)
+            if key in seen:
+                continue
+            seen.add(key)
+            asset = await self._store.get_asset_version(
+                project_id,
+                asset_ref.asset_key,
+                asset_ref.asset_type,
+                asset_ref.version,
+            )
+            if asset is not None and asset.status == AssetStatus.READY:
+                assets.append(asset)
+        return assets
 
     async def run_task(self, task_id: UUID) -> None:
         task = await self._get_task(task_id)

@@ -719,6 +719,24 @@ class SqlAlchemyStore:
             row = await session.get(AssetRow, asset_id)
             return self._asset_from_row(row) if row else None
 
+    async def get_asset_version(
+        self,
+        project_id: UUID,
+        asset_key: UUID,
+        asset_type: AssetType,
+        version: int,
+    ) -> AssetRecord | None:
+        async with self._session_factory() as session:
+            row = await session.scalar(
+                select(AssetRow).where(
+                    AssetRow.project_id == project_id,
+                    AssetRow.asset_key == asset_key,
+                    AssetRow.asset_type == asset_type.value,
+                    AssetRow.version == version,
+                )
+            )
+            return self._asset_from_row(row) if row else None
+
     async def save_asset_review(self, review: AssetReviewRecord) -> AssetReviewRecord:
         async with self._session_factory() as session:
             row = self._asset_review_to_row(review)

@@ -3,8 +3,17 @@ from app.media.visual_prompts import (
     DEFAULT_REFERENCE_STYLE,
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
     DEFAULT_VIDEO_PROMPT_SUFFIX,
+    build_approved_asset_facts,
     build_video_motion_prompt,
 )
+from app.domain.models import (
+    AssetRecord,
+    AssetStatus,
+    AssetType,
+    CharacterAssetContent,
+    LocationAssetContent,
+)
+from uuid import uuid4
 
 
 def test_reference_baseline_contains_single_subject_and_clean_composition_guards() -> None:
@@ -42,3 +51,63 @@ def test_video_prompt_adds_shot_framing_camera_and_identity_constraints() -> Non
     assert "no unscripted speaking" in prompt
     assert "choose only one restrained micro-motion" in prompt
     assert "Do not add any other character" in prompt
+
+
+def test_approved_asset_facts_select_visual_fields_and_ignore_unapproved_assets() -> None:
+    project_id = uuid4()
+    story_bible_id = uuid4()
+    ready_character = AssetRecord(
+        project_id=project_id,
+        story_bible_id=story_bible_id,
+        asset_type=AssetType.CHARACTER,
+        name="林默",
+        status=AssetStatus.READY,
+        content=CharacterAssetContent(
+            role="protagonist",
+            traits=["冷静", "敏锐"],
+            appearance="黑发、深色外套、左手旧表",
+        ),
+        provider="test",
+        model="test",
+        duration_ms=0,
+    )
+    unapproved_location = AssetRecord(
+        project_id=project_id,
+        story_bible_id=story_bible_id,
+        asset_type=AssetType.LOCATION,
+        name="旧城区",
+        status=AssetStatus.NEEDS_REVIEW,
+        content=LocationAssetContent(
+            description="狭窄的旧城区街道",
+            atmosphere="潮湿、冷清",
+            visual_keywords=["霓虹", "雨夜"],
+        ),
+        provider="test",
+        model="test",
+        duration_ms=0,
+    )
+
+    facts = build_approved_asset_facts([ready_character, unapproved_location])
+
+    assert len(facts) == 1
+    assert 'character "林默" v1' in facts[0]
+    assert "黑发、深色外套、左手旧表" in facts[0]
+    assert "冷静、敏锐" in facts[0]
+    assert "旧城区" not in "".join(facts)
+
+
+def test_video_prompt_includes_approved_asset_design_facts() -> None:
+    prompt = build_video_motion_prompt(
+        source_prompt="林默在雨夜街道停下",
+        shot_size="medium",
+        camera_movement="fixed",
+        location="旧城区",
+        characters=["林默"],
+        approved_asset_facts=[
+            'character "林默" v2: appearance=黑发、深色外套; traits=冷静、敏锐'
+        ],
+    )
+
+    assert "Approved asset design facts" in prompt
+    assert "黑发、深色外套" in prompt
+    assert "v2" in prompt

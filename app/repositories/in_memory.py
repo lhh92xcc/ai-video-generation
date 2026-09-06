@@ -576,6 +576,27 @@ class InMemoryStore:
             asset = self._assets.get(asset_id)
             return asset.model_copy(deep=True) if asset else None
 
+    async def get_asset_version(
+        self,
+        project_id: UUID,
+        asset_key: UUID,
+        asset_type: AssetType,
+        version: int,
+    ) -> AssetRecord | None:
+        async with self._lock:
+            asset = next(
+                (
+                    item
+                    for item in self._assets.values()
+                    if item.project_id == project_id
+                    and item.asset_key == asset_key
+                    and item.asset_type == asset_type
+                    and item.version == version
+                ),
+                None,
+            )
+            return asset.model_copy(deep=True) if asset else None
+
     async def save_asset_review(self, review: AssetReviewRecord) -> AssetReviewRecord:
         async with self._lock:
             self._asset_reviews[review.id] = review

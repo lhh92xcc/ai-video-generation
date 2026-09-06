@@ -126,8 +126,10 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 ### 视频运动 Prompt 约束
 
 视频任务不会只把模型生成的原始画面描述直接交给 I2V Provider。服务层通过
-`app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色和连续性要求；运行时说明见
+`app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色、当前镜头精确绑定的 `ready` 资产视觉事实和连续性要求；运行时说明见
 [`prompts/video-motion-generation.txt`](prompts/video-motion-generation.txt)。每个镜头被限制为一个 3～5 秒连续镜头和一种可读的轻微动作（例如呼吸、一次眨眼、小幅转头或衣物轻动），并明确禁止新增人物、切镜、换场、大幅变形和同时发生多个复杂动作。
+
+角色、场景和道具事实按 `asset_key` + `version` 从仓储读取，并把外观、氛围、材质与连续性字段写入 `approved_asset_facts` 任务快照；未审核或找不到的资产不会被猜测补全。这样每个视频任务都能复盘“哪一版资产 → 哪段 Prompt → 哪个 Artifact”，减少同一角色跨镜头换脸和道具漂移。
 
 服务层还会根据景别追加动作安全策略：近景/特写只允许眨眼、呼吸或眼神等微动作，并禁止未设定的说话动作；中景只允许小幅转头、呼吸或克制手势；远景只允许衣物、头发或光线的轻微变化；道具特写只允许焦点、反光或材质微变化。这样能把“画面描述”和“可执行的动作预算”分开，降低 Wan 在短镜头中变脸、手部变形和运动失控的概率。
 
@@ -144,7 +146,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `331 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `334 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 

@@ -241,6 +241,16 @@ class NovelStore(Protocol):
     async def get_asset(self, asset_id: UUID) -> AssetRecord | None:
         ...
 
+    async def get_asset_version(
+        self,
+        project_id: UUID,
+        asset_key: UUID,
+        asset_type: AssetType,
+        version: int,
+    ) -> AssetRecord | None:
+        """Return the exact version referenced by a shot, if it still exists."""
+        ...
+
     async def save_asset_review(self, review: AssetReviewRecord) -> AssetReviewRecord:
         ...
 
