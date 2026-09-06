@@ -311,6 +311,20 @@ const workflowCoreSteps = computed(() => [
   videoAssemblyTask.value?.status === 'succeeded',
 ])
 const workflowCoreCompletedCount = computed(() => workflowCoreSteps.value.filter(Boolean).length)
+const blockingFailureCount = computed(() => tasks.value.filter((task) => {
+  if (task.status !== 'failed') return false
+  const episodeId = String(task.input_data.episode_id ?? '')
+  if (task.kind === 'novel_story_bible') return !storyBibleReady.value
+  if (task.kind === 'novel_episode_plan') return !episodesReady.value
+  if (!selectedEpisodeId.value || episodeId !== selectedEpisodeId.value) return false
+  if (task.kind === 'novel_episode_script') return !scriptReady.value
+  if (task.kind === 'novel_shot_list') return !shotListReady.value
+  if (task.kind === 'audio_narration') return !audioArtifact.value
+  if (task.kind === 'subtitle_asr' || task.kind === 'subtitle_align') return !subtitleArtifact.value
+  if (task.kind === 'video_clip') return !videoClipArtifact(Number(task.input_data.shot_index))
+  if (task.kind === 'video_assembly') return !renderedVideoArtifact.value
+  return task.kind === 'asset_reference_image' && !assetGateReady.value
+}).length)
 const workflowPhaseCards = computed(() => [
   {
     key: 'content',
@@ -377,12 +391,10 @@ const workflowBlocker = computed(() => {
   return '当前核心流程已完成，可预览并下载成片。'
 })
 const failedTaskCount = computed(() => {
-  const task = workflowFailureTask.value
-  if (!task) return 0
-  return task.kind === 'video_clip' ? Math.max(1, shotFailedCount.value) : 1
+  return blockingFailureCount.value
 })
 const workspaceStatus = computed(() => {
-  if (failedTaskCount.value > 0) return { label: `${selectedEpisode.value ? '本集 ' : ''}${failedTaskCount.value} 个步骤需处理`, className: 'attention' }
+  if (blockingFailureCount.value > 0) return { label: `${selectedEpisode.value ? '本集 ' : ''}${blockingFailureCount.value} 个失败任务待处理`, className: 'attention' }
   if (renderedVideoArtifact.value) return { label: '成片已就绪', className: 'ready' }
   if (activeTaskCount.value > 0) return { label: '正在生产', className: 'analyzing' }
   if (workflowStageKey.value === 'content') return { label: '等待内容', className: 'pending' }
@@ -463,6 +475,25 @@ function formatTaskKind(kind: string) {
 
 function formatStatus(status: TaskStatus) {
   return formatTaskStatus(status)
+}
+
+function episodeHasScript(episode: EpisodeRecord) {
+  if (episode.id === selectedEpisodeId.value && selectedScript.value?.episode_id === episode.id) return true
+  if (episode.status === 'scripted') return true
+  return tasks.value.some((task) => (
+    task.kind === 'novel_episode_script'
+    && String(task.input_data.episode_id ?? '') === episode.id
+    && task.status === 'succeeded'
+    && task.artifacts.some((artifact) => artifact.type === 'episode_script_json')
+  ))
+}
+
+function episodeScriptStatusLabel(episode: EpisodeRecord) {
+  if (episodeHasScript(episode)) return '已有剧本'
+  const task = latestTask('novel_episode_script', episode.id)
+  if (task?.status && isActive(task.status)) return '剧本生成中'
+  if (task?.status === 'failed') return '剧本生成失败'
+  return '待生成剧本'
 }
 
 function formatBytes(size: number) {
@@ -961,8 +992,8 @@ onUnmounted(() => {
         <span>PHASE {{ String(index + 1).padStart(2, '0') }}</span><strong>{{ phase.label }}</strong><small>{{ phase.detail }}</small><em>{{ phase.complete ? '已完成' : phase.active ? '进行中' : '未开始' }}</em>
       </button>
     </div>
-    <section class="creator-workflow-summary" aria-live="polite"><div class="creator-workflow-summary-main"><p class="creator-eyebrow">CURRENT STAGE</p><h3>{{ workflowStageLabel }}</h3><p>{{ workflowStageDetail }}</p></div><div class="creator-workflow-summary-metric"><small>关键节点完成度</small><strong>{{ workflowCoreCompletedCount }}/10</strong><span>{{ workflowBlocker }}</span><em>{{ selectedShotList ? `${videoClipSucceededCount}/${selectedShotList.shots.length} 个视频片段已完成` : '等待分镜清单' }}</em></div><button class="creator-primary-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">{{ nextWorkflowStep.label }} <span>→</span></button></section>
-    <section class="creator-route-guide"><div><span class="creator-route-guide-label">推荐生产路径</span><strong>原文 → 剧本 → 资产审核 → 媒体生成 → 成片复核</strong></div><p>如果只是正常制作，使用上方的“下一步”或第一步里的“一键启动完整生产”；高级计划仅用于批量调试。</p></section>
+    <section class="creator-workflow-summary" aria-live="polite"><div class="creator-workflow-summary-main"><p class="creator-eyebrow">CURRENT STAGE</p><h3>{{ workflowStageLabel }}</h3><p>{{ workflowStageDetail }}</p></div><div class="creator-workflow-summary-metric"><small>核心门槛完成度 · 共 10 个</small><strong>{{ workflowCoreCompletedCount }}/10</strong><span>{{ workflowBlocker }}</span><em>{{ selectedShotList ? `${videoClipSucceededCount}/${selectedShotList.shots.length} 个视频片段已完成` : '等待分镜清单' }}</em></div><button class="creator-primary-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">{{ nextWorkflowStep.label }} <span>→</span></button></section>
+    <section class="creator-route-guide"><div><span class="creator-route-guide-label">推荐生产路径</span><strong>原文 → 剧本 → 资产审核 → 媒体生成 → 成片复核</strong><small>5 个业务阶段 · 10 个核心门槛 · 11 个执行步骤</small></div><p>正常制作只需要跟随上方“下一步”；详细步骤用于定位、复盘和断点重试。一键生产也会保留资产审核门禁。</p></section>
 
     <details class="creator-detail-workflow">
       <summary><span>查看 11 个执行步骤</span><small>需要定位或复盘时展开</small></summary>
@@ -1019,7 +1050,7 @@ onUnmounted(() => {
 
         <section v-if="episodesReady" id="creator-step-episodes" class="creator-workspace-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">CONTENT HANDOFF</p><h3>选择要制作的分集</h3><p>先从一集开始验证脚本质量，后续再扩展批量生产。</p></div><span class="creator-card-state ready">{{ selectedEpisode ? `已选第 ${selectedEpisode.episode_number} 集` : '请选择' }}</span></div>
-          <div class="creator-episode-picker"><button v-for="episode in episodes" :key="episode.id" type="button" :class="{ selected: episode.id === selectedEpisodeId }" @click="selectEpisode(episode.id)"><span>第 {{ episode.episode_number }} 集</span><strong>{{ episode.outline.title }}</strong><small>{{ episode.outline.target_duration_seconds }} 秒 · {{ episode.status === 'scripted' ? '已有剧本' : '待生成剧本' }}</small></button></div>
+          <div class="creator-episode-picker"><button v-for="episode in episodes" :key="episode.id" type="button" :class="{ selected: episode.id === selectedEpisodeId }" @click="selectEpisode(episode.id)"><span>第 {{ episode.episode_number }} 集</span><strong>{{ episode.outline.title }}</strong><small>{{ episode.outline.target_duration_seconds }} 秒 · {{ episodeScriptStatusLabel(episode) }}</small></button></div>
         </section>
 
         <details v-if="episodesReady" class="creator-advanced-section">
@@ -1036,20 +1067,20 @@ onUnmounted(() => {
         </details>
 
         <section v-if="selectedEpisode" id="creator-step-script" class="creator-workspace-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 04 · SCRIPT</p><h3>生成并查看分场剧本</h3><p>剧本生成后可以在内部制作后台继续编辑、审核和保存版本。</p></div><span class="creator-card-state" :class="{ ready: scriptReady }">{{ scriptReady ? `版本 ${selectedScript?.version ?? '最新'}` : '待生成' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 05 · SCRIPT</p><h3>生成并查看分场剧本</h3><p>剧本生成后可以在内部制作后台继续编辑、审核和保存版本。</p></div><span class="creator-card-state" :class="{ ready: scriptReady }">{{ scriptReady ? `版本 ${selectedScript?.version ?? '最新'}` : '待生成' }}</span></div>
           <div v-if="!scriptReady" class="creator-script-empty"><span class="creator-script-icon">✎</span><div><strong>{{ scriptTask && isActive(scriptTask.status) ? '剧本正在生成' : '这集还没有剧本' }}</strong><small>{{ scriptTask && isActive(scriptTask.status) ? '任务完成后页面会自动载入剧本摘要。' : '生成后会得到场景、旁白、对白和时长结构。' }}</small></div></div>
           <div v-else-if="selectedScript" class="creator-script-preview"><div class="creator-script-stats"><span><strong>{{ selectedScript.content.scenes.length }}</strong> 个场景</span><span><strong>{{ selectedScript.content.scenes.reduce((count, scene) => count + scene.dialogues.length, 0) }}</strong> 条对白</span><span><strong>{{ selectedScript.content.total_duration_seconds }}</strong> 秒</span></div><div class="creator-script-hook"><strong>{{ selectedScript.content.opening_hook }}</strong><span>{{ selectedScript.content.ending_hook }}</span></div><div class="creator-scene-preview"><div v-for="scene in selectedScript.content.scenes.slice(0, 2)" :key="scene.scene_index"><span>场景 {{ scene.scene_index }}</span><strong>{{ scene.title }}</strong><small>{{ scene.location }} · {{ scene.duration_seconds }} 秒</small></div></div></div>
-          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="scriptReady || Boolean(action) || Boolean(scriptTask && isActive(scriptTask.status))" @click="startScript">{{ action === 'episode-script' ? '提交中…' : scriptReady ? '剧本已生成' : '生成这一集的剧本' }} <span>→</span></button><button v-if="scriptReady" class="creator-ghost-button" type="button" @click="emit('openOperator')">打开编辑工作台 <span>↗</span></button></div>
+          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="scriptReady || Boolean(action) || Boolean(scriptTask && isActive(scriptTask.status))" @click="startScript">{{ action === 'episode-script' ? '提交中…' : scriptReady ? '剧本已生成' : '生成这一集的剧本' }} <span>→</span></button><button v-if="scriptReady" class="creator-ghost-button" type="button" @click="emit('openOperator', 'workbench')">打开编辑工作台 <span>↗</span></button></div>
         </section>
 
         <section v-if="scriptReady" id="creator-step-shots" class="creator-workspace-card creator-next-production-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 05 · STORYBOARD</p><h3>提交分镜任务</h3><p>分镜任务会根据剧本生成镜头列表，并尝试绑定角色、场景和道具资产。</p></div><span class="creator-card-state" :class="{ ready: shotTask?.status === 'succeeded' }">{{ shotTask?.status === 'succeeded' ? '已完成' : '下一步' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 06 · STORYBOARD</p><h3>提交分镜任务</h3><p>分镜任务会根据剧本生成镜头列表，并尝试绑定角色、场景和道具资产。</p></div><span class="creator-card-state" :class="{ ready: shotTask?.status === 'succeeded' }">{{ shotTask?.status === 'succeeded' ? '已完成' : '下一步' }}</span></div>
           <div class="creator-production-note"><span>i</span><p>分镜完成后仍需要人工检查资产绑定和画面提示词，再进入视频片段生成。当前系统不会跳过审核直接批量发布。</p></div>
           <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="Boolean(action) || Boolean(shotTask && isActive(shotTask.status)) || shotTask?.status === 'succeeded'" @click="startShots">{{ action === 'shot-list' ? '提交中…' : shotTask?.status === 'succeeded' ? '分镜任务已完成' : '生成分镜任务' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator', 'workbench')">进入制作后台审核 <span>↗</span></button></div>
         </section>
 
         <section v-if="selectedShotList" id="creator-step-assets" class="creator-workspace-card creator-asset-gate-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 06 · ASSET REVIEW</p><h3>审核角色、场景与道具资产</h3><p>分镜只会引用已审核且有参考图的资产。通过这道门禁后，视频片段才允许提交生成。</p></div><span class="creator-card-state" :class="{ ready: assetGateReady }">{{ assetGateReady ? '已通过' : '待处理' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 07 · ASSET REVIEW</p><h3>审核角色、场景与道具资产</h3><p>分镜只会引用已审核且有参考图的资产。通过这道门禁后，视频片段才允许提交生成。</p></div><span class="creator-card-state" :class="{ ready: assetGateReady }">{{ assetGateReady ? '已通过' : '待处理' }}</span></div>
           <div class="creator-asset-gate-summary"><div><strong>{{ videoClipReadyCount }}/{{ shotTotalCount }}</strong><small>镜头通过资产门禁</small></div><div><strong>{{ shotBlockedCount }}</strong><small>镜头待补充或审核</small></div><div><strong>{{ selectedShotList.shots.reduce((total, shot) => total + shot.asset_refs.length, 0) }}</strong><small>已绑定资产引用</small></div></div>
           <div v-if="!assetGateReady" class="creator-production-note"><span>!</span><p>{{ assetGateLabel }}。打开制作后台，在脚本与资产工作台中完成一键审核或处理未解决绑定，再回来生成画面。</p></div>
           <div v-else class="creator-asset-gate-success"><span>✓</span><p>所有镜头都已满足资产生成条件。接下来可以生成旁白、字幕和视频片段。</p></div>
@@ -1057,15 +1088,15 @@ onUnmounted(() => {
         </section>
 
         <section v-if="scriptReady" id="creator-step-audio" class="creator-workspace-card creator-audio-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 07</p><h3>生成单集旁白</h3><p>从当前剧本整理旁白和对白文本，调用配置好的 TTS Provider 生成可复用的音频 Artifact。</p></div><span class="creator-card-state" :class="{ ready: audioTask?.status === 'succeeded' }">{{ audioTask?.status === 'succeeded' ? '已完成' : audioTask ? formatStatus(audioTask.status) : '待生成' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 08</p><h3>生成单集旁白</h3><p>从当前剧本整理旁白和对白文本，调用配置好的 TTS Provider 生成可复用的音频 Artifact。</p></div><span class="creator-card-state" :class="{ ready: audioTask?.status === 'succeeded' }">{{ audioTask?.status === 'succeeded' ? '已完成' : audioTask ? formatStatus(audioTask.status) : '待生成' }}</span></div>
           <div v-if="audioTask?.status === 'failed'" class="creator-audio-error"><strong>旁白生成失败</strong><span>{{ taskErrorDetail(audioTask.error) }}</span></div>
           <label class="creator-audio-field"><span>旁白与对白文本 <em>{{ narrationText.length }}/5000</em></span><textarea v-model="narrationText" rows="8" maxlength="5000" :disabled="Boolean(action) || Boolean(audioTask && isActive(audioTask.status))" placeholder="输入本集需要合成的旁白或对白文本" @input="narrationTextDirty = true" /></label>
           <div v-if="audioArtifact" class="creator-audio-artifact"><span class="creator-audio-icon">♫</span><div><strong>音频 Artifact 已生成</strong><small>{{ audioArtifact.provider }} · {{ formatAudioDuration(audioArtifact.metadata.duration_seconds) }} · 可供字幕和成片编排使用</small></div><span class="creator-artifact-state">已校验</span></div>
-          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!narrationText.trim() || Boolean(action) || Boolean(audioTask && isActive(audioTask.status))" @click="startNarration">{{ action === 'audio-narration' ? '提交中…' : audioTask?.status === 'succeeded' ? '重新生成旁白' : audioTask ? '再次提交旁白' : '生成本集旁白' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator')">进入任务中心 <span>↗</span></button></div>
+          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!narrationText.trim() || Boolean(action) || Boolean(audioTask && isActive(audioTask.status))" @click="startNarration">{{ action === 'audio-narration' ? '提交中…' : audioTask?.status === 'succeeded' ? '重新生成旁白' : audioTask ? '再次提交旁白' : '生成本集旁白' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator', 'tasks')">进入任务中心 <span>↗</span></button></div>
         </section>
 
         <section v-if="audioArtifact" id="creator-step-subtitle" class="creator-workspace-card creator-subtitle-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 08</p><h3>生成并审核字幕</h3><p>使用已校验的单集旁白创建字幕任务。ASR 依赖选定 Provider，句子级对齐只提供待审核的时间估算。</p></div><span class="creator-card-state" :class="{ ready: subtitleTask?.status === 'succeeded' }">{{ subtitleTask?.status === 'succeeded' ? '已完成' : subtitleTask ? formatStatus(subtitleTask.status) : '待生成' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 09</p><h3>生成并审核字幕</h3><p>使用已校验的单集旁白创建字幕任务。ASR 依赖选定 Provider，句子级对齐只提供待审核的时间估算。</p></div><span class="creator-card-state" :class="{ ready: subtitleTask?.status === 'succeeded' }">{{ subtitleTask?.status === 'succeeded' ? '已完成' : subtitleTask ? formatStatus(subtitleTask.status) : '待生成' }}</span></div>
           <div class="creator-subtitle-source"><span class="creator-audio-icon">♫</span><div><strong>已选择本集旁白 Artifact</strong><small>{{ audioArtifact.provider }} · {{ formatAudioDuration(audioArtifact.metadata.duration_seconds) }} · 已通过音频校验</small></div><span class="creator-artifact-state">可用</span></div>
           <div class="creator-subtitle-mode-switch" role="tablist" aria-label="字幕生成方式"><button type="button" :class="{ active: subtitleMode === 'asr' }" @click="subtitleMode = 'asr'">真实 ASR 转写</button><button type="button" :class="{ active: subtitleMode === 'align' }" @click="subtitleMode = 'align'">句子级对齐</button></div>
           <div v-if="subtitleMode === 'asr'" class="creator-subtitle-note"><strong>ASR Provider</strong><select v-model="selectedProfileId" :disabled="profilesLoading || Boolean(action)"><option value="" disabled>请选择已配置的识别服务</option><option v-for="profile in availableProfiles" :key="profile.profile_id" :value="profile.profile_id">{{ profile.label }} · {{ profile.model }}{{ profile.default ? ' · 默认' : '' }}</option></select><small v-if="profilesLoading">正在读取可用配置…</small><small v-else-if="availableProfiles.length === 0">当前没有可用 ASR Provider；可以切换到句子级对齐，或先在制作后台配置服务。</small><small v-else>文本会作为质量复核参考；Provider 的密钥只保存在服务端。</small></div>
@@ -1077,7 +1108,7 @@ onUnmounted(() => {
         </section>
 
         <details v-if="audioArtifact" class="creator-optional-section">
-          <summary><span>可选：添加背景音乐</span><small>{{ bgmTask?.status === 'succeeded' ? '已完成' : '不影响主流程' }}</small></summary>
+          <summary><span>可选：添加背景音乐</span><small>{{ bgmTask?.status === 'succeeded' ? '已完成 · 不影响主流程' : '不影响主流程' }}</small></summary>
           <section class="creator-workspace-card creator-bgm-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 09 · OPTIONAL</p><h3>添加背景音乐</h3><p>使用服务端配置的 Mock 或授权本地文件 Provider。授权状态只作为线索记录，系统不会自动确认版权。</p></div><span class="creator-card-state" :class="{ ready: bgmTask?.status === 'succeeded' }">{{ bgmTask?.status === 'succeeded' ? '已完成' : bgmTask ? formatStatus(bgmTask.status) : '待生成' }}</span></div>
           <div class="creator-bgm-guide"><span>i</span><p>本地文件模式只允许读取 Worker 授权目录内的相对路径；Mock 模式不需要文件。生成后音频会经过服务端格式和播放性校验；标记为“不可使用”的素材不能提交。</p></div>
@@ -1151,7 +1182,7 @@ onUnmounted(() => {
           </div>
           <div class="creator-next-step-card"><span>下一步</span><strong>{{ nextWorkflowStep.label }}</strong><p>{{ workflowBlocker }}</p><button class="creator-small-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">定位到操作区 <span>↓</span></button></div>
         </section>
-        <section class="creator-workspace-card creator-activity-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">RECENT TASKS</p><h3>任务记录</h3></div><span class="creator-activity-count">{{ activeTaskCount ? `${activeTaskCount} 个处理中` : failedTaskCount ? `${failedTaskCount} 个需处理` : '已同步' }}</span></div><div v-if="loading" class="creator-activity-empty"><span class="spinner" />读取任务…</div><div v-else-if="!tasks.length" class="creator-activity-empty">完成上一步后，任务会显示在这里。</div><div v-else class="creator-activity-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`"><span class="creator-activity-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ formatStatus(group.task.status) }}<span v-if="group.task.error"> · {{ friendlyErrorMessage(group.task.error) }}</span> · {{ formatTime(group.task.updated_at) }}</small></div></div></div></section>
+        <section class="creator-workspace-card creator-activity-card"><div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">RECENT TASKS</p><h3>任务记录</h3></div><span class="creator-activity-count">{{ activeTaskCount ? `${activeTaskCount} 个处理中` : failedTaskCount ? `${failedTaskCount} 个需处理` : '已同步' }}</span></div><div v-if="loading" class="creator-activity-empty"><span class="spinner" />读取任务…</div><div v-else-if="!tasks.length" class="creator-activity-empty">完成上一步后，任务会显示在这里。</div><div v-else class="creator-activity-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`"><span class="creator-activity-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">共 {{ group.count }} 条记录</em></strong><small>{{ formatStatus(group.task.status) }}<span v-if="group.task.error"> · {{ friendlyErrorMessage(group.task.error) }}</span> · {{ formatTime(group.task.updated_at) }}</small></div></div></div></section>
         <section class="creator-workspace-card creator-help-card"><span class="creator-help-icon">?</span><h3>需要人工审核</h3><p>AI 负责拆解和生成，创作者仍可以在每个阶段修改剧本、审核资产，并决定是否进入下一步。</p><button class="creator-small-link" type="button" @click="emit('openOperator', 'workbench')">了解制作后台 <span>→</span></button></section>
       </aside>
     </div>

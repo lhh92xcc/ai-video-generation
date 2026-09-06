@@ -15,6 +15,7 @@ const projectId = ref('')
 type ArtifactFilter = 'all' | 'rendered_video' | 'video' | 'reference_image' | 'audio' | 'subtitle' | 'document'
 const artifactType = ref<ArtifactFilter>('all')
 const searchQuery = ref('')
+const viewMode = ref<'grid' | 'list'>('grid')
 const loading = ref(false)
 const loadingTasks = ref(false)
 const loadingProjects = ref(false)
@@ -199,7 +200,14 @@ function artifactRowMeta(artifact: ArtifactRecord) {
 function artifactStatusLabel(artifact: ArtifactRecord) {
   if (!artifact.metadata.storage_key) return '已登记 · 待读取'
   if (isVisualArtifact(artifact)) return '已生成 · 可预览'
-  return '已登记'
+  if (isAudioArtifact(artifact)) return '已生成 · 可播放'
+  return '已登记 · 可下载'
+}
+
+function artifactGridIcon(artifact: ArtifactRecord) {
+  if (isAudioArtifact(artifact)) return '♫'
+  if (isDocumentArtifact(artifact)) return '文'
+  return '·'
 }
 
 function formatBytes(value: unknown) {
@@ -358,9 +366,20 @@ onMounted(async () => {
 
   <section class="artifact-workspace">
     <article class="card artifact-list-card">
-      <div class="card-header table-heading"><div><h2>资产列表</h2><p>{{ filteredArtifacts.length }} 个结果<span v-if="filteredArtifacts.length !== artifacts.length"> · 共 {{ artifacts.length }} 个</span> · 选择一项查看详情</p></div><span class="table-count">{{ loading ? '读取中' : `${filteredArtifacts.length} 个` }}</span></div>
+      <div class="card-header table-heading artifact-list-heading"><div><h2>资产列表</h2><p>{{ filteredArtifacts.length }} 个结果<span v-if="filteredArtifacts.length !== artifacts.length"> · 共 {{ artifacts.length }} 个</span> · {{ viewMode === 'grid' ? '点击卡片查看详情' : '选择一项查看详情' }}</p></div><div class="artifact-list-heading-actions"><div class="artifact-view-switch" role="toolbar" aria-label="资产展示方式"><button type="button" :class="{ active: viewMode === 'grid' }" :aria-pressed="viewMode === 'grid'" @click="viewMode = 'grid'">图库</button><button type="button" :class="{ active: viewMode === 'list' }" :aria-pressed="viewMode === 'list'" @click="viewMode = 'list'">列表</button></div><span class="table-count">{{ loading ? '读取中' : `${filteredArtifacts.length} 个` }}</span></div></div>
       <div v-if="loading" class="task-empty"><span class="spinner" />正在读取媒体资产…</div>
       <div v-else-if="filteredArtifacts.length === 0" class="task-empty"><strong>{{ emptyStateTitle }}</strong><span>{{ emptyStateDescription }}</span><button v-if="artifacts.length && artifactType !== 'all'" class="creator-small-button" type="button" @click="artifactType = 'all'">显示全部类型</button><button v-else-if="projectId && !tasksError" class="creator-small-button" type="button" @click="emit('openTasks')">前往生产任务</button></div>
+      <div v-else-if="viewMode === 'grid'" class="artifact-grid">
+        <button v-for="artifact in filteredArtifacts" :key="artifact.id" class="artifact-grid-card" :class="{ selected: selectedArtifactId === artifact.id }" type="button" :aria-label="`${typeLabels[artifact.type] || artifact.type}，${artifactStatusLabel(artifact)}，点击查看详情`" @click="selectArtifact(artifact.id)">
+          <span class="artifact-grid-thumb" :class="artifact.type">
+            <MediaPreview v-if="isVisualArtifact(artifact)" :artifact="artifact" variant="gallery" :controls="false" :lazy="false" :alt="`${typeLabels[artifact.type] || artifact.type}缩略图`" />
+            <span v-else class="artifact-grid-placeholder"><strong>{{ artifactGridIcon(artifact) }}</strong><small>{{ isAudioArtifact(artifact) ? '音频文件' : '结构化文件' }}</small></span>
+            <span v-if="isVideoArtifact(artifact)" class="artifact-grid-play" aria-hidden="true">▶</span>
+            <span class="artifact-grid-kind">{{ typeLabels[artifact.type] || artifact.type }}</span>
+          </span>
+          <span class="artifact-grid-copy"><strong>{{ typeLabels[artifact.type] || artifact.type }}</strong><small>{{ artifact.provider }} · {{ artifactRowMeta(artifact) }}</small><em>{{ artifactStatusLabel(artifact) }}</em></span>
+        </button>
+      </div>
       <div v-else class="artifact-list">
         <button v-for="artifact in filteredArtifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" :aria-label="`${typeLabels[artifact.type] || artifact.type}，${artifactStatusLabel(artifact)}，点击查看详情`" @click="selectArtifact(artifact.id)">
           <span class="artifact-list-thumb" :class="artifact.type"><MediaPreview :artifact="artifact" variant="thumb" :controls="false" :lazy="false" :alt="`${typeLabels[artifact.type] || artifact.type}缩略图`" /><span v-if="isVideoArtifact(artifact)" class="artifact-list-play" aria-hidden="true">▶</span><span v-else-if="isDocumentArtifact(artifact)" class="artifact-list-file-mark" aria-hidden="true">文</span></span>
@@ -389,6 +408,32 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.artifact-list-heading { align-items: center; }
+.artifact-list-heading-actions { display: flex; align-items: center; gap: 9px; }
+.artifact-view-switch { display: inline-flex; align-items: center; gap: 2px; border: 1px solid #e5e7ef; border-radius: 7px; padding: 2px; background: #f8f9fc; }
+.artifact-view-switch button { border: 0; border-radius: 5px; padding: 5px 8px; color: #8b94a7; background: transparent; font-size: 8px; font-weight: 700; }
+.artifact-view-switch button:hover, .artifact-view-switch button.active { color: #5d60cd; background: #fff; box-shadow: 0 1px 3px rgba(61, 67, 116, .08); }
+.artifact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border-top: 1px solid var(--border-soft); padding: 13px; }
+.artifact-grid-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid #e8eaf2; border-radius: 10px; padding: 0; color: var(--text); background: #fff; text-align: left; transition: 150ms ease; }
+.artifact-grid-card:hover, .artifact-grid-card.selected { border-color: #b5b7ef; box-shadow: 0 7px 17px rgba(88, 90, 203, .1); transform: translateY(-1px); }
+.artifact-grid-card.selected { box-shadow: inset 0 0 0 2px rgba(98, 100, 220, .2), 0 7px 17px rgba(88, 90, 203, .1); }
+.artifact-grid-thumb { position: relative; display: block; height: 142px; overflow: hidden; background: #f4f5f9; }
+.artifact-grid-thumb :deep(.media-preview) { height: 100%; min-height: 0; border-radius: 0; }
+.artifact-grid-thumb.video_clip, .artifact-grid-thumb.lip_synced_video, .artifact-grid-thumb.rendered_video { background: #eef0ff; }
+.artifact-grid-thumb.reference_image { background: #fff8e9; }
+.artifact-grid-thumb.audio_narration, .artifact-grid-thumb.audio_bgm { background: #eefaf4; }
+.artifact-grid-placeholder { display: grid; place-items: center; align-content: center; gap: 6px; height: 100%; color: #7b8497; }
+.artifact-grid-placeholder strong { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #fff; background: #8d96ad; font-size: 15px; }
+.artifact-grid-thumb.audio_narration .artifact-grid-placeholder strong, .artifact-grid-thumb.audio_bgm .artifact-grid-placeholder strong { color: #398767; background: #d9f1e3; }
+.artifact-grid-placeholder small { color: #9ba3b2; font-size: 8px; }
+.artifact-grid-kind { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 16px); overflow: hidden; border: 1px solid rgba(255,255,255,.7); border-radius: 999px; padding: 4px 6px; color: #fff; background: rgba(24, 29, 49, .62); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.artifact-grid-play { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; color: #fff; background: rgba(30,35,65,.76); font-size: 9px; pointer-events: none; }
+.artifact-grid-copy { display: block; min-width: 0; padding: 10px 11px 11px; }
+.artifact-grid-copy strong, .artifact-grid-copy small, .artifact-grid-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-grid-copy strong { color: var(--text); font-size: 10px; font-weight: 700; }
+.artifact-grid-copy small { margin-top: 4px; color: var(--text-muted); font-size: 8px; }
+.artifact-grid-copy em { margin-top: 5px; color: #7781a0; font-size: 8px; font-style: normal; }
+.artifact-grid-card.selected .artifact-grid-copy em { color: #6264d9; }
 .artifact-task-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -4px 0 18px; border: 1px solid #dfe1fa; border-radius: 11px; padding: 13px 15px; background: linear-gradient(135deg, #f7f7ff, #fff 72%); }
 .artifact-task-status.is-ready { border-color: #d8eee1; background: linear-gradient(135deg, #f4fbf7, #fff 72%); }
 .artifact-task-status.is-attention { border-color: #f1d5d9; background: linear-gradient(135deg, #fff6f7, #fff 72%); }
@@ -439,6 +484,8 @@ onMounted(async () => {
 .artifact-list-copy em { display: block; overflow: hidden; margin-top: 4px; color: #8b94a7; font-size: 8px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-list-row.selected .artifact-list-copy em { color: #6b70c9; }
 @media (max-width: 720px) {
+  .artifact-list-heading { align-items: flex-start; gap: 10px; }
+  .artifact-list-heading-actions { width: 100%; justify-content: space-between; }
   .artifact-task-status { align-items: stretch; flex-direction: column; }
   .artifact-task-status-metrics { flex-basis: auto; }
   .artifact-task-status-action { width: 100%; }

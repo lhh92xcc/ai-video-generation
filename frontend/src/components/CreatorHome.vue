@@ -52,6 +52,10 @@ function formatStatus(status: TaskStatus) {
   return formatTaskStatus(status)
 }
 
+function projectTitle(projectId: string) {
+  return projects.value.find((project) => project.id === projectId)?.title ?? '项目'
+}
+
 function projectStatusLabel(status: string) {
   return status === 'ready' ? '可继续制作' : status === 'failed' ? '需要处理' : '草稿'
 }
@@ -227,7 +231,7 @@ onMounted(refreshDashboard)
           <div class="creator-panel-heading"><div><p class="creator-eyebrow">LIVE PIPELINE</p><h2>制作进度</h2></div><button class="creator-small-link" type="button" @click="emit('openOperator', 'tasks')">查看全部 <span>→</span></button></div>
           <div v-if="loading" class="creator-empty"><span class="spinner" />正在读取任务…</div>
           <div v-else-if="tasks.length === 0" class="creator-empty"><strong>暂无制作任务</strong><span>创建项目后，任务进度会显示在这里。</span></div>
-          <div v-else class="creator-task-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`" class="creator-task-row"><span class="creator-task-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">×{{ group.count }}</em></strong><small>{{ group.task.error ? friendlyErrorMessage(group.task.error) : formatTime(group.task.updated_at) }}</small></div><span class="creator-task-status" :class="group.task.status">{{ formatStatus(group.task.status) }}</span></div></div>
+          <div v-else class="creator-task-list"><div v-for="group in recentTaskGroups" :key="`${group.task.id}-${group.task.status}-${group.task.error?.code ?? ''}`" class="creator-task-row"><span class="creator-task-mark" :class="group.task.status">{{ group.task.status === 'succeeded' ? '✓' : group.task.status === 'failed' ? '!' : '↻' }}</span><div><strong>{{ formatTaskKind(group.task.kind) }}<em v-if="group.count > 1">共 {{ group.count }} 条记录</em></strong><small>{{ projectTitle(group.task.project_id) }} · {{ group.task.error ? friendlyErrorMessage(group.task.error) : formatTime(group.task.updated_at) }}</small></div><span class="creator-task-status" :class="group.task.status">{{ formatStatus(group.task.status) }}</span></div></div>
         </article>
       </section>
 

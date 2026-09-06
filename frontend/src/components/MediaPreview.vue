@@ -11,7 +11,7 @@ type PreviewArtifact = {
 
 const props = withDefaults(defineProps<{
   artifact: PreviewArtifact
-  variant?: 'thumb' | 'panel'
+  variant?: 'thumb' | 'gallery' | 'panel'
   controls?: boolean
   showDownload?: boolean
   alt?: string
@@ -78,6 +78,8 @@ const lazyPreview = computed(() => props.lazy === true)
 const deferred = computed(() => lazyPreview.value && !inViewport.value && mediaKind.value !== 'document')
 const canPreview = computed(() => Boolean(previewUrl.value) && mediaKind.value !== 'document' && !deferred.value)
 const isThumb = computed(() => props.variant === 'thumb')
+const isGallery = computed(() => props.variant === 'gallery')
+const isCompact = computed(() => isThumb.value || isGallery.value)
 const isMediaLoading = computed(() => canPreview.value && !mediaLoaded.value && !loadFailed.value && !loadingTimedOut.value)
 const previewStatus = computed(() => {
   if (loadFailed.value) return '文件读取失败'
@@ -188,9 +190,9 @@ onUnmounted(() => {
         v-if="mediaKind === 'video'"
         :key="`${props.artifact.id}-${reloadKey}`"
         :src="previewRequestUrl"
-        :controls="controls && !isThumb"
-        :preload="isThumb ? 'auto' : 'metadata'"
-        :muted="isThumb"
+        :controls="controls && !isCompact"
+        :preload="isCompact ? 'auto' : 'metadata'"
+        :muted="isCompact"
         :autoplay="isThumb"
         :loop="isThumb"
         playsinline
@@ -239,14 +241,14 @@ onUnmounted(() => {
       <span class="media-preview-message-icon">!</span>
       <strong>文件加载失败</strong>
       <small>已尝试{{ contentUrl && signedUrl ? '服务端安全通道和临时链接' : '当前可用的文件地址' }}；这不代表任务没有生成产物。</small>
-      <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
+      <button v-if="!isCompact" type="button" @click="resetPreview">重新加载</button>
     </div>
 
     <div v-else-if="loadingTimedOut" class="media-preview-message media-preview-slow-message" role="status" aria-live="polite">
       <span class="media-preview-message-icon">↻</span>
       <strong>文件读取较慢</strong>
       <small>媒体仍在从服务端读取，可以继续等待或重新加载。</small>
-      <button v-if="!isThumb" type="button" @click="resetPreview">重新加载</button>
+      <button v-if="!isCompact" type="button" @click="resetPreview">重新加载</button>
     </div>
 
     <div v-else-if="mediaKind === 'document'" class="media-preview-message">
@@ -273,21 +275,27 @@ onUnmounted(() => {
 <style scoped>
 .media-preview { position: relative; display: grid; place-items: center; overflow: hidden; width: 100%; min-height: 100%; background: #151a28; }
 .media-preview-thumb { min-height: 42px; border-radius: 9px; }
+.media-preview-gallery { min-height: 142px; border-radius: 11px; }
 .media-preview-panel { min-height: 250px; border-radius: 9px; }
 .media-preview video, .media-preview img { display: block; width: 100%; height: 100%; object-fit: contain; background: #10131d; }
 .media-preview-thumb video, .media-preview-thumb img { object-fit: cover; }
-.media-preview-thumb video { pointer-events: none; }
+.media-preview-gallery video, .media-preview-gallery img { object-fit: cover; }
+.media-preview-thumb video, .media-preview-gallery video { pointer-events: none; }
 .media-preview audio { width: calc(100% - 36px); }
 .media-preview-panel video { max-height: 420px; }
 .media-preview-panel img { max-height: 420px; }
 .media-preview-spinner { position: absolute; top: 50%; left: 50%; margin: -9px 0 0 -9px; border-color: rgba(255,255,255,.3); border-top-color: #fff; }
 .media-preview-message { display: grid; place-items: center; gap: 6px; min-height: 140px; padding: 20px; color: #d4d9e8; text-align: center; }
 .media-preview-thumb .media-preview-message { min-height: 42px; padding: 4px; gap: 0; }
+.media-preview-gallery .media-preview-message { min-height: 142px; padding: 13px; gap: 5px; }
 .media-preview-message-icon { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid rgba(214,220,237,.45); border-radius: 9px; color: #fff; background: rgba(255,255,255,.12); font-size: 11px; font-weight: 750; }
 .media-preview-thumb .media-preview-message-icon { width: 24px; height: 24px; border-radius: 7px; font-size: 9px; }
+.media-preview-gallery .media-preview-message-icon { width: 30px; height: 30px; border-radius: 9px; font-size: 10px; }
 .media-preview-message strong { font-size: 11px; }
 .media-preview-message small { max-width: 220px; color: #9da7bc; font-size: 9px; line-height: 1.5; }
 .media-preview-thumb .media-preview-message strong, .media-preview-thumb .media-preview-message small { display: none; }
+.media-preview-gallery .media-preview-message strong { font-size: 10px; }
+.media-preview-gallery .media-preview-message small { max-width: 180px; font-size: 8px; }
 .media-preview-message button { margin-top: 4px; border: 1px solid rgba(214,220,237,.35); border-radius: 6px; padding: 6px 9px; color: #fff; background: rgba(255,255,255,.1); font-size: 9px; }
 .media-preview-message button:hover { background: rgba(255,255,255,.18); }
 .media-preview-slow-message { position: absolute; inset: 0; z-index: 2; background: rgba(21,26,40,.86); }
