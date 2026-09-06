@@ -338,6 +338,151 @@ const readinessPercent = computed(() => {
 })
 const unresolvedMachineGates = computed(() => machineGates.value.filter((gate) => gate.blocking && gate.state !== 'passed' && gate.state !== 'not_applicable'))
 
+const portfolioReport = computed(() => ({
+  report_schema_version: 1,
+  generated_at: new Date().toISOString(),
+  project: {
+    id: props.project.id,
+    title: props.project.title,
+    language: props.project.language,
+  },
+  episode: props.episode ? {
+    id: props.episode.id,
+    episode_number: props.episode.episode_number,
+    title: props.episode.outline.title,
+    target_duration_seconds: props.episode.outline.target_duration_seconds,
+  } : null,
+  target: {
+    duration_seconds: { min: 45, max: 60 },
+    aspect_ratio: '9:16',
+    shot_count: { min: 8, max: 12 },
+    style: '2D manhwa / dynamic comic',
+  },
+  readiness: {
+    label: readinessLabel.value,
+    status: allMachinePassed.value && allManualPassed.value
+      ? 'ready_for_portfolio'
+      : allMachinePassed.value
+        ? 'ready_for_human_review'
+        : 'incomplete',
+    percent: readinessPercent.value,
+    machine_passed: machinePassedCount.value,
+    machine_total: machineGateCount.value,
+    human_passed: manualPassedCount.value,
+    human_total: reviewItems.length,
+  },
+  output: {
+    artifact_present: Boolean(props.renderedVideoArtifact),
+    width: outputProbe.value.width || null,
+    height: outputProbe.value.height || null,
+    duration_seconds: outputProbe.value.duration ? Number(outputProbe.value.duration.toFixed(3)) : null,
+    vertical_9_16: outputIsVertical.value,
+    duration_in_target: outputDurationReady.value,
+    provider: props.renderedVideoArtifact?.provider ?? null,
+  },
+  motion: {
+    state: motionProviderSummary.value.state,
+    providers: motionProviderSummary.value.providers,
+    evidence: motionProviderSummary.value.evidence,
+  },
+  machine_checks: machineGates.value.map((gate) => ({
+    id: gate.id,
+    label: gate.label,
+    state: gate.state,
+    status: formatState(gate.state),
+    blocking: gate.blocking,
+    evidence: gate.evidence,
+  })),
+  human_reviews: reviewItems.map((item) => ({
+    id: item.id,
+    label: item.label,
+    status: reviewState.value[item.id] ? 'passed' : 'pending',
+    description: item.description,
+  })),
+  next_actions: unresolvedMachineGates.value.map((gate) => gate.label),
+}))
+
+function markdownCell(value: unknown): string {
+  return String(value ?? '—').replaceAll('|', '\\|').replaceAll('\n', ' ')
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function reportFilename(extension: string): string {
+  const project = props.project.title.trim().replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/^-+|-+$/g, '') || 'ai-video-project'
+  const episode = props.episode ? `-episode-${String(props.episode.episode_number).padStart(2, '0')}` : ''
+  return `${project}${episode}-portfolio-report.${extension}`
+}
+
+function exportJsonReport() {
+  if (!props.episode) return
+  downloadTextFile(reportFilename('json'), `${JSON.stringify(portfolioReport.value, null, 2)}\n`, 'application/json')
+}
+
+function exportMarkdownReport() {
+  if (!props.episode) return
+  const report = portfolioReport.value
+  const machineRows = report.machine_checks
+    .map((gate) => `| ${markdownCell(gate.label)} | ${markdownCell(gate.status)} | ${markdownCell(gate.evidence)} |`)
+    .join('\n')
+  const humanRows = report.human_reviews
+    .map((item) => `| ${markdownCell(item.label)} | ${item.status === 'passed' ? '已完成' : '待审核'} | ${markdownCell(item.description)} |`)
+    .join('\n')
+  const output = report.output
+  const nextActions = report.next_actions.length
+    ? report.next_actions.map((item) => `- ${markdownCell(item)}`).join('\n')
+    : '- 机器门禁已通过；请完成并保存人工审核清单。'
+  const content = [
+    `# ${markdownCell(report.project.title)} · 第 ${report.episode?.episode_number ?? '—'} 集作品集验收报告`,
+    '',
+    `生成时间：${report.generated_at}`,
+    '',
+    '## 当前结论',
+    '',
+    `- 状态：**${markdownCell(report.readiness.label)}**`,
+    `- 总进度：${report.readiness.percent}%（机器 ${report.readiness.machine_passed}/${report.readiness.machine_total}，人工 ${report.readiness.human_passed}/${report.readiness.human_total}）`,
+    `- 真实运动 Provider：${report.motion.providers.length ? report.motion.providers.join('、') : '尚未确认'}`,
+    '',
+    '## 成片规格',
+    '',
+    `- 输出：${output.width ?? '—'}×${output.height ?? '—'}`,
+    `- 时长：${output.duration_seconds ?? '—'} 秒`,
+    `- 9:16 竖屏：${output.vertical_9_16 ? '是' : '否'}`,
+    `- 时长达标：${output.duration_in_target ? '是' : '否'}`,
+    `- 成片 Provider：${output.provider ?? '—'}`,
+    '',
+    '## 机器门禁',
+    '',
+    '| 门禁 | 状态 | 证据 |',
+    '| --- | --- | --- |',
+    machineRows,
+    '',
+    '## 人工审核',
+    '',
+    '| 项目 | 状态 | 审核标准 |',
+    '| --- | --- | --- |',
+    humanRows,
+    '',
+    '## 下一步',
+    '',
+    nextActions,
+    '',
+    '> 说明：机器门禁只证明工程和文件条件；画面、声音、字幕与完整观看感受必须由人工确认。',
+    '',
+  ].join('\n')
+  downloadTextFile(reportFilename('md'), content, 'text/markdown')
+}
+
 function locate(gate: ReadinessGate) {
   if (gate.target) emit('locate', gate.target)
 }
@@ -357,6 +502,14 @@ function locate(gate: ReadinessGate) {
     <div class="portfolio-readiness-progress">
       <div class="portfolio-readiness-progress-copy"><strong>{{ readinessPercent }}%</strong><span>机器门禁 {{ machinePassedCount }}/{{ machineGateCount }} · 人工审核 {{ manualPassedCount }}/{{ reviewItems.length }}</span></div>
       <div class="portfolio-readiness-progress-track"><i :style="{ width: `${readinessPercent}%` }" /></div>
+    </div>
+
+    <div class="portfolio-export-bar">
+      <div><strong>作品集交付材料</strong><small>导出当前状态，方便和成片、截图一起提交；不会包含密钥或本地路径。</small></div>
+      <div class="portfolio-export-actions">
+        <button type="button" class="portfolio-export-button" :disabled="!episode" @click="exportMarkdownReport">下载 Markdown</button>
+        <button type="button" class="portfolio-export-button primary" :disabled="!episode" @click="exportJsonReport">下载 JSON</button>
+      </div>
     </div>
 
     <div class="portfolio-readiness-columns">
@@ -398,12 +551,23 @@ function locate(gate: ReadinessGate) {
 .portfolio-readiness-progress { margin-top: 16px; border: 1px solid #e6e7f4; border-radius: 11px; padding: 11px 12px; background: rgba(255,255,255,.82); }
 .portfolio-readiness-progress-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.portfolio-readiness-progress-copy strong { color: #5d61ce; font-size: 19px; }.portfolio-readiness-progress-copy span { color: #9299aa; font-size: 9px; }
 .portfolio-readiness-progress-track { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #eeeff6; }.portfolio-readiness-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7476dc, #4ca77e); transition: width 180ms ease; }
+.portfolio-export-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; border: 1px solid #e7e8f3; border-radius: 11px; padding: 12px 14px; background: rgba(255,255,255,.78); }
+.portfolio-export-bar strong, .portfolio-export-bar small { display: block; }
+.portfolio-export-bar strong { color: #566078; font-size: 11px; }
+.portfolio-export-bar small { margin-top: 4px; color: #969eaf; font-size: 9px; line-height: 1.5; }
+.portfolio-export-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+.portfolio-export-button { border: 1px solid #dfe2ee; border-radius: 7px; padding: 7px 10px; color: #656e83; background: #fff; font-size: 9px; font-weight: 700; cursor: pointer; }
+.portfolio-export-button:hover:not(:disabled) { border-color: #afb2e8; color: #5e62cd; background: #fafaff; }
+.portfolio-export-button.primary { border-color: #686add; color: #fff; background: #6264d8; }
+.portfolio-export-button.primary:hover:not(:disabled) { border-color: #5355c7; background: #5355c7; }
+.portfolio-export-button:disabled { cursor: not-allowed; opacity: .5; }
 .portfolio-readiness-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 13px; margin-top: 14px; }.portfolio-readiness-section { min-width: 0; border: 1px solid #e5e7f0; border-radius: 12px; padding: 14px; background: rgba(255,255,255,.72); }
 .portfolio-readiness-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }.portfolio-readiness-section-heading strong, .portfolio-readiness-section-heading small { display: block; }.portfolio-readiness-section-heading strong { color: #566078; font-size: 11px; }.portfolio-readiness-section-heading small { margin-top: 4px; color: #9ba3b3; font-size: 9px; line-height: 1.45; }.portfolio-readiness-section-heading > span { color: #6469ce; font-size: 11px; font-weight: 750; }.portfolio-reset-button { border: 0; padding: 0; color: #8a92a5; background: transparent; font-size: 9px; cursor: pointer; }.portfolio-reset-button:hover { color: #5e63c7; }
 .portfolio-gate-list, .portfolio-review-list { display: grid; gap: 7px; margin-top: 11px; }.portfolio-gate { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; color: inherit; background: #fff; text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 150ms ease; }.portfolio-gate:hover:not(:disabled) { border-color: #c9ccf1; background: #fcfcff; transform: translateY(-1px); }.portfolio-gate:disabled { cursor: default; }.portfolio-gate-icon, .portfolio-review-mark { display: grid; place-items: center; flex: 0 0 23px; width: 23px; height: 23px; border-radius: 8px; color: #8d96a8; background: #f0f2f6; font-size: 11px; font-weight: 800; }.portfolio-gate.passed .portfolio-gate-icon { color: #fff; background: #4aa77d; }.portfolio-gate.blocked .portfolio-gate-icon { color: #fff; background: #d86c77; }.portfolio-gate-copy { min-width: 0; flex: 1; }.portfolio-gate-copy strong, .portfolio-gate-copy small, .portfolio-gate-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portfolio-gate-copy strong { color: #5b657a; font-size: 10px; }.portfolio-gate-copy small { margin-top: 3px; color: #6f78ce; font-size: 9px; }.portfolio-gate-copy em { margin-top: 3px; color: #a1a8b5; font-size: 8px; font-style: normal; }.portfolio-gate > b { flex: 0 0 auto; color: #a0a8b5; font-size: 9px; font-weight: 650; }.portfolio-gate.passed > b { color: #3d936d; }.portfolio-gate.pending > b { color: #9b7b35; }
 .portfolio-review-item { display: flex; align-items: flex-start; gap: 9px; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; background: #fff; cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }.portfolio-review-item:hover { border-color: #d2d4f4; }.portfolio-review-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }.portfolio-review-item.checked { border-color: #cde9da; background: #f8fdf9; }.portfolio-review-item.checked .portfolio-review-mark { color: #fff; background: #4aa77d; }.portfolio-review-item > span:last-child { min-width: 0; }.portfolio-review-item strong, .portfolio-review-item small { display: block; }.portfolio-review-item strong { color: #5b657a; font-size: 10px; }.portfolio-review-item small { margin-top: 4px; color: #99a1b0; font-size: 9px; line-height: 1.5; }
 .portfolio-readiness-blockers, .portfolio-readiness-success { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; border-radius: 9px; padding: 10px 11px; font-size: 10px; line-height: 1.55; }.portfolio-readiness-blockers { color: #806831; background: #fff9e9; }.portfolio-readiness-success { color: #397958; background: #effaf4; }.portfolio-readiness-blockers > span, .portfolio-readiness-success > span { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: inherit; background: rgba(255,255,255,.72); font-weight: 800; }.portfolio-readiness-blockers p, .portfolio-readiness-success p { margin: 0; }
 @media (max-width: 860px) { .portfolio-readiness-heading { flex-direction: column; gap: 9px; }.portfolio-readiness-columns { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .portfolio-export-bar { align-items: flex-start; flex-direction: column; }.portfolio-export-actions { width: 100%; }.portfolio-export-button { flex: 1; } }
 
 /* Keep the readiness panel legible when used as the final portfolio gate. */
 .portfolio-readiness-card { padding: 22px; background: radial-gradient(circle at 100% 0%, rgba(119,121,220,.12), transparent 34%), linear-gradient(145deg, #fafaff 0%, #fff 63%); box-shadow: 0 16px 38px rgba(79, 82, 157, .07); }
@@ -420,6 +584,10 @@ function locate(gate: ReadinessGate) {
 .portfolio-readiness-section-heading small { font-size: 10px; }
 .portfolio-readiness-section-heading > span { font-size: 12px; }
 .portfolio-reset-button { font-size: 10px; }
+.portfolio-export-bar { padding: 14px; }
+.portfolio-export-bar strong { font-size: 12px; }
+.portfolio-export-bar small { font-size: 10px; }
+.portfolio-export-button { font-size: 10px; }
 .portfolio-gate, .portfolio-review-item { padding: 11px; }
 .portfolio-gate-copy strong, .portfolio-review-item strong { font-size: 11px; }
 .portfolio-gate-copy small, .portfolio-review-item small { font-size: 10px; }
