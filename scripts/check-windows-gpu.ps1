@@ -10,6 +10,7 @@ param(
     [switch]$RequireComfyUI,
     [switch]$ValidateComfyUIAssets,
     [switch]$RequireOllamaModel,
+    [switch]$RequireComposeMedia,
     [switch]$RequireMuseTalk
 )
 
@@ -118,6 +119,35 @@ function Invoke-MediaPreflight {
         -Message $preflightMessage
 }
 
+function Test-ComposeMediaRuntime {
+    param([bool]$Required = $true)
+
+    Push-Location $ProjectRoot
+    try {
+        $filterOutput = & docker compose exec -T api ffmpeg -hide_banner -filters 2>&1 | Out-String
+        $filterExitCode = $LASTEXITCODE
+        $hasSubtitlesFilter = $filterOutput -match "(?m)(^|\s)subtitles(\s|$)"
+        $filterMessage = if ($filterExitCode -eq 0 -and $hasSubtitlesFilter) {
+            "subtitles filter 可用"
+        } else {
+            "容器内缺少 subtitles filter 或 api 未运行"
+        }
+        Add-Result -Name "Docker FFmpeg subtitles/libass" `
+            -Ok ($filterExitCode -eq 0 -and $hasSubtitlesFilter) `
+            -Message $filterMessage `
+            -Required $Required
+
+        & docker compose exec -T api ffprobe -version *> $null
+        $ffprobeOk = ($LASTEXITCODE -eq 0)
+        $ffprobeMessage = if ($ffprobeOk) { "可执行" } else { "容器内 ffprobe 不可用" }
+        Add-Result -Name "Docker ffprobe" -Ok $ffprobeOk `
+            -Message $ffprobeMessage `
+            -Required $Required
+    } finally {
+        Pop-Location
+    }
+}
+
 Write-Host "AI Video Generation / Windows GPU 主机健康检查" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 Write-Host ""
@@ -150,6 +180,9 @@ Test-HttpEndpoint -Name "MuseTalk bridge" -Uri "$MuseTalkUrl/healthz" -Required 
 
 if ($RequireComfyUI -or $ValidateComfyUIAssets -or $RequireOllamaModel -or $RequireMuseTalk) {
     Invoke-MediaPreflight
+}
+if ((Get-Command docker -ErrorAction SilentlyContinue) -and ($RequireComposeMedia -or $apiResponse -ne $null)) {
+    Test-ComposeMediaRuntime -Required $RequireComposeMedia
 }
 
 if ($operationalResponse -ne $null) {

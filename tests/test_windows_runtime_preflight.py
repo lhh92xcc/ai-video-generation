@@ -50,3 +50,12 @@ def test_windows_launcher_forwards_strict_media_checks() -> None:
     assert "-RequireComfyUI" in launcher
     assert "-ValidateComfyUIAssets" in launcher
     assert "COMFYUI_ROOT" in launcher
+
+
+def test_windows_health_check_requires_container_media_runtime_from_launcher() -> None:
+    launcher = (PROJECT_ROOT / "scripts" / "start-windows-gpu.ps1").read_text(encoding="utf-8")
+    checker = (PROJECT_ROOT / "scripts" / "check-windows-gpu.ps1").read_text(encoding="utf-8")
+
+    assert "-RequireComposeMedia" in launcher
+    assert "subtitles/libass" in checker
+    assert "docker compose exec -T api ffprobe" in checker

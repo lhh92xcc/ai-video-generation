@@ -146,6 +146,7 @@ try {
 
 $checkScript = Join-Path $ProjectRoot "scripts\check-windows-gpu.ps1"
 $healthArguments = @("-ProjectRoot", $ProjectRoot)
+$healthArguments += "-RequireComposeMedia"
 if (-not $SkipOllama) {
     $healthArguments += "-RequireOllamaModel"
 }

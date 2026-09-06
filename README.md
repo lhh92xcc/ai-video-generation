@@ -217,7 +217,8 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
   -ComfyUIRoot $env:COMFYUI_ROOT `
   -RequireComfyUI `
   -ValidateComfyUIAssets `
-  -RequireOllamaModel
+  -RequireOllamaModel `
+  -RequireComposeMedia
 ```
 
 如果要把 MuseTalk 作为正式对话镜头的必需依赖，再追加 `-RequireMuseTalk`；启动器也支持同名参数。如果暂时只检查 Docker/API 基础设施，可省略媒体检查参数。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
