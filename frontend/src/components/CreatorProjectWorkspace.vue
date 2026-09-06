@@ -940,7 +940,7 @@ onUnmounted(() => {
         <span>PHASE {{ String(index + 1).padStart(2, '0') }}</span><strong>{{ phase.label }}</strong><small>{{ phase.detail }}</small><em>{{ phase.complete ? '已完成' : phase.active ? '进行中' : '未开始' }}</em>
       </button>
     </div>
-    <section class="creator-workflow-summary" aria-live="polite"><div class="creator-workflow-summary-main"><p class="creator-eyebrow">CURRENT STAGE</p><h3>{{ workflowStageLabel }}</h3><p>{{ workflowStageDetail }}</p></div><div class="creator-workflow-summary-metric"><small>核心完成度</small><strong>{{ workflowCoreCompletedCount }}/9</strong><span>{{ workflowBlocker }}</span></div><button class="creator-primary-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">{{ nextWorkflowStep.label }} <span>→</span></button></section>
+    <section class="creator-workflow-summary" aria-live="polite"><div class="creator-workflow-summary-main"><p class="creator-eyebrow">CURRENT STAGE</p><h3>{{ workflowStageLabel }}</h3><p>{{ workflowStageDetail }}</p></div><div class="creator-workflow-summary-metric"><small>关键节点完成度</small><strong>{{ workflowCoreCompletedCount }}/9</strong><span>{{ workflowBlocker }}</span><em>{{ selectedShotList ? `${videoClipSucceededCount}/${selectedShotList.shots.length} 个视频片段已完成` : '等待分镜清单' }}</em></div><button class="creator-primary-button" type="button" @click="scrollToWorkflowStep(nextWorkflowStep.target)">{{ nextWorkflowStep.label }} <span>→</span></button></section>
     <section class="creator-route-guide"><div><span class="creator-route-guide-label">推荐生产路径</span><strong>原文 → 剧本 → 资产审核 → 媒体生成 → 成片复核</strong></div><p>如果只是正常制作，使用上方的“下一步”或第一步里的“一键启动完整生产”；高级计划仅用于批量调试。</p></section>
 
     <details class="creator-detail-workflow">

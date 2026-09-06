@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getHealth, type HealthResponse } from './api/client'
 import ProviderProfileSelect from './components/ProviderProfileSelect.vue'
+import RuntimeOverview from './components/RuntimeOverview.vue'
 import ArtifactLibrary from './components/ArtifactLibrary.vue'
 import SubtitleTaskView from './components/SubtitleTaskView.vue'
 import TaskCenter from './components/TaskCenter.vue'
@@ -10,19 +11,59 @@ import ScriptAssetWorkbench from './components/ScriptAssetWorkbench.vue'
 import CreatorHome from './components/CreatorHome.vue'
 import { useProviderProfiles } from './composables/useProviderProfiles'
 
-type AppView = 'overview' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
+type AppView = 'overview' | 'provider' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
 type AppSurface = 'operator' | 'creator'
 
 const initialSurface = new URLSearchParams(window.location.search).get('surface')
 const initialViewParam = new URLSearchParams(window.location.search).get('view')
-const supportedViews: AppView[] = ['overview', 'subtitle', 'tasks', 'queue', 'artifacts', 'workbench']
+const supportedViews: AppView[] = ['overview', 'provider', 'subtitle', 'tasks', 'queue', 'artifacts', 'workbench']
 const initialView = supportedViews.includes(initialViewParam as AppView) ? initialViewParam as AppView : 'overview'
 const activeView = ref<AppView>(initialView)
-const activeSurface = ref<AppSurface>(initialSurface === 'creator' ? 'creator' : 'operator')
+const activeSurface = ref<AppSurface>(initialSurface === 'creator' || (!initialSurface && !initialViewParam) ? 'creator' : 'operator')
 
-function openOperator(view: AppView = 'overview') {
+function syncLocation() {
+  const params = new URLSearchParams(window.location.search)
+  const surface = params.get('surface')
+  const view = params.get('view')
+  activeSurface.value = surface === 'creator' || (!surface && !view) ? 'creator' : 'operator'
+  activeView.value = supportedViews.includes(view as AppView) ? view as AppView : 'overview'
+}
+
+function persistLocation() {
+  const params = new URLSearchParams(window.location.search)
+  if (activeSurface.value === 'creator') {
+    params.set('surface', 'creator')
+    params.delete('view')
+  } else {
+    params.delete('surface')
+    params.set('view', activeView.value)
+  }
+  const query = params.toString()
+  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`)
+}
+
+function setOperatorView(view: AppView = 'overview') {
   activeSurface.value = 'operator'
   activeView.value = view
+  showNotifications.value = false
+  showHelp.value = false
+  persistLocation()
+}
+
+function openCreatorSurface() {
+  activeSurface.value = 'creator'
+  showNotifications.value = false
+  showHelp.value = false
+  persistLocation()
+}
+
+function openHelpCreator() {
+  showHelp.value = false
+  openCreatorSurface()
+}
+
+function openOperator(view: AppView = 'overview') {
+  setOperatorView(view)
 }
 
 const {
@@ -42,10 +83,12 @@ const {
 const health = ref<HealthResponse | null>(null)
 const healthLoading = ref(true)
 const healthError = ref<string | null>(null)
+const showNotifications = ref(false)
+const showHelp = ref(false)
 
 const configuredCount = computed(() => availableProfiles.value.length)
 const selectedProfileName = computed(() => selectedProfile.value?.label ?? '尚未选择')
-const activeViewLabel = computed(() => activeView.value === 'overview' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : '脚本与资产')
+const activeViewLabel = computed(() => activeView.value === 'overview' ? '运行概览' : activeView.value === 'provider' ? 'Provider 配置' : activeView.value === 'subtitle' ? '字幕任务' : activeView.value === 'tasks' ? '生产任务' : activeView.value === 'queue' ? '远程生产队列' : activeView.value === 'artifacts' ? '媒体资产' : '脚本与资产')
 
 async function refreshHealth() {
   healthLoading.value = true
@@ -64,7 +107,11 @@ async function refreshAll() {
   await Promise.all([refreshProfiles(), refreshHealth()])
 }
 
-onMounted(refreshHealth)
+onMounted(() => {
+  refreshHealth()
+  window.addEventListener('popstate', syncLocation)
+})
+onUnmounted(() => window.removeEventListener('popstate', syncLocation))
 </script>
 
 <template>
@@ -88,45 +135,45 @@ onMounted(refreshHealth)
         <span class="workspace-chevron">⌄</span>
       </div>
 
-      <button class="workspace-mode-button" type="button" @click="activeSurface = 'creator'">
+      <button class="workspace-mode-button" type="button" @click="openCreatorSurface">
         <span>↗</span>
         <span>查看用户前台</span>
       </button>
 
       <nav class="side-nav" aria-label="主导航">
         <p class="nav-label">工作台</p>
-        <button class="nav-item" :class="{ active: activeView === 'overview' }" type="button" @click="activeView = 'overview'">
+        <button class="nav-item" :class="{ active: activeView === 'overview' }" type="button" @click="setOperatorView('overview')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" /></svg>
           <span class="nav-text">概览</span>
         </button>
-        <button class="nav-item" :class="{ active: activeView === 'tasks' }" type="button" @click="activeView = 'tasks'">
+        <button class="nav-item" :class="{ active: activeView === 'tasks' }" type="button" @click="setOperatorView('tasks')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Zm-3 1h1v12H5V6Z" /></svg>
           <span class="nav-text">生产任务</span>
         </button>
-        <button class="nav-item" :class="{ active: activeView === 'queue' }" type="button" @click="activeView = 'queue'">
+        <button class="nav-item" :class="{ active: activeView === 'queue' }" type="button" @click="setOperatorView('queue')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v3H4V5Zm0 5.5h10v3H4v-3Zm0 5.5h16v3H4v-3Zm13-5.5 3 1.5-3 1.5v-3Z" /></svg>
           <span class="nav-text">远程队列</span>
         </button>
-        <button class="nav-item" :class="{ active: activeView === 'subtitle' }" type="button" @click="activeView = 'subtitle'">
+        <button class="nav-item" :class="{ active: activeView === 'subtitle' }" type="button" @click="setOperatorView('subtitle')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H8l-4 4V5Zm3 3v2h10V8H7Zm0 4v2h6v-2H7Z" /></svg>
           <span class="nav-text">字幕任务</span>
         </button>
-        <button class="nav-item" :class="{ active: activeView === 'artifacts' }" type="button" @click="activeView = 'artifacts'">
+        <button class="nav-item" :class="{ active: activeView === 'artifacts' }" type="button" @click="setOperatorView('artifacts')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM7 7v10h10V7H7Zm1.5 1.5h7v2h-7v-2Zm0 3.5h7v2h-7v-2Z" /></svg>
           <span class="nav-text">媒体资产</span>
         </button>
-        <button class="nav-item" :class="{ active: activeView === 'workbench' }" type="button" @click="activeView = 'workbench'">
+        <button class="nav-item" :class="{ active: activeView === 'workbench' }" type="button" @click="setOperatorView('workbench')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM7 7h4v4H7V7Zm6 0h4v4h-4V7ZM7 13h4v4H7v-4Zm6 0h4v4h-4v-4Z" /></svg>
           <span class="nav-text">脚本与资产</span>
         </button>
 
         <p class="nav-label nav-label-spaced">系统</p>
-        <button class="nav-item" :class="{ active: activeView === 'overview' }" type="button" @click="activeView = 'overview'">
+        <button class="nav-item" :class="{ active: activeView === 'provider' }" type="button" @click="setOperatorView('provider')">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Zm0 2a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6ZM19.4 13.2a7.8 7.8 0 0 0 0-2.4l1.6-1.2-2-3.4-1.9.8a8.4 8.4 0 0 0-2.1-1.2L14.7 4h-4l-.3 1.8a8.4 8.4 0 0 0-2.1 1.2l-1.9-.8-2 3.4L6 10.8a7.8 7.8 0 0 0 0 2.4l-1.6 1.2 2 3.4 1.9-.8a8.4 8.4 0 0 0 2.1 1.2l.3 1.8h4l.3-1.8a8.4 8.4 0 0 0 2.1-1.2l1.9.8 2-3.4-1.6-1.2Z" /></svg>
           <span class="nav-text">Provider 配置</span>
-          <span v-if="activeView === 'overview'" class="nav-current">当前</span>
+          <span v-if="activeView === 'provider'" class="nav-current">当前</span>
         </button>
-        <button class="nav-item" type="button">
+        <button class="nav-item nav-item-disabled" type="button" disabled aria-disabled="true" title="运行日志尚未开放">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Zm0 2a7 7 0 1 1-7 7 7 7 0 0 1 7-7Zm-1 2v5.4l4 2.3 1-1.7-3-1.7V7h-2Z" /></svg>
           <span class="nav-text">运行日志</span>
           <span class="nav-soon">即将</span>
@@ -134,7 +181,7 @@ onMounted(refreshHealth)
       </nav>
 
       <div class="sidebar-footer">
-        <button class="help-row" type="button">
+        <button class="help-row" type="button" @click="showHelp = true">
           <span class="help-icon">?</span>
           <span class="sidebar-footer-copy">帮助与文档</span>
         </button>
@@ -157,15 +204,25 @@ onMounted(refreshHealth)
             <span class="status-dot" />
             {{ healthLoading ? '连接中' : health ? `API 在线 · v${health.version}` : 'API 离线' }}
           </span>
-          <button class="icon-button" type="button" aria-label="通知">
+          <div class="header-popover-anchor">
+          <button class="icon-button" :class="{ active: showNotifications }" type="button" aria-label="通知" :aria-expanded="showNotifications" aria-controls="runtime-notifications" @click="showNotifications = !showNotifications">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a2.4 2.4 0 0 0 2.3-1.8h-4.6A2.4 2.4 0 0 0 12 21Zm7-4H5l1.5-2V10a5.5 5.5 0 0 1 4.5-5.4V4a1 1 0 1 1 2 0v.6a5.5 5.5 0 0 1 4.5 5.4v5l1.5 2Z" /></svg>
           </button>
+          <section v-if="showNotifications" id="runtime-notifications" class="header-popover" role="status" aria-label="系统通知">
+            <div class="header-popover-heading"><strong>系统通知</strong><button type="button" aria-label="关闭通知" @click="showNotifications = false">×</button></div>
+            <div class="header-notification-item" :class="health ? 'good' : 'warning'"><span>{{ health ? '✓' : '!' }}</span><div><strong>{{ health ? 'API 服务在线' : 'API 暂不可用' }}</strong><small>{{ health ? `当前版本 v${health.version}` : '请检查 Docker API 服务后重试' }}</small></div></div>
+            <div v-if="profilesError" class="header-notification-item warning"><span>!</span><div><strong>Provider 配置读取失败</strong><small>{{ profilesError }}</small></div></div>
+            <p v-else class="header-popover-empty">暂无新的系统通知</p>
+          </section>
+          </div>
           <button class="user-avatar top-avatar" type="button">Q</button>
         </div>
       </header>
 
       <main class="main-content">
-        <template v-if="activeView === 'overview'">
+        <RuntimeOverview v-if="activeView === 'overview'" @open-view="setOperatorView" @open-creator="openCreatorSurface" />
+
+        <template v-else-if="activeView === 'provider'">
         <section class="page-header">
           <div>
             <p class="page-kicker">SYSTEM SETTINGS</p>
@@ -246,7 +303,7 @@ onMounted(refreshHealth)
               <li><span>2</span><div><strong>后台选择配置</strong><p>页面只展示可用状态和安全元数据。</p></div></li>
               <li><span>3</span><div><strong>任务记录 Profile ID</strong><p>Worker 按任务快照选择真实 Provider。</p></div></li>
             </ol>
-            <div class="next-action"><span class="next-action-icon">→</span><div><strong>下一步</strong><p>接入音频 Artifact 选择和字幕任务提交。</p></div></div>
+            <div class="next-action"><span class="next-action-icon">→</span><div><strong>下一步</strong><p>打开创作者前台，创建项目并按阶段推进内容生产。</p></div><button class="next-action-button" type="button" @click="openCreatorSurface">打开前台 <span>↗</span></button></div>
           </article>
         </section>
 
@@ -272,12 +329,24 @@ onMounted(refreshHealth)
         <section class="footer-note"><span class="footer-note-icon">i</span><span>当前页面属于内部运营控制台。普通用户前台将只看到“创建视频、选择脚本、查看进度和预览成片”，不会看到 Provider、模型或环境变量。</span></section>
         </template>
 
-        <SubtitleTaskView v-else-if="activeView === 'subtitle'" @submitted="activeView = 'tasks'" />
+        <SubtitleTaskView v-else-if="activeView === 'subtitle'" @submitted="setOperatorView('tasks')" />
         <TaskCenter v-else-if="activeView === 'tasks'" />
         <ProductionQueue v-else-if="activeView === 'queue'" />
-        <ArtifactLibrary v-else-if="activeView === 'artifacts'" @open-tasks="activeView = 'tasks'" />
+        <ArtifactLibrary v-else-if="activeView === 'artifacts'" @open-tasks="setOperatorView('tasks')" />
         <ScriptAssetWorkbench v-else />
       </main>
+    </div>
+    <div v-if="showHelp" class="operator-modal-backdrop" role="presentation" @click.self="showHelp = false">
+      <section class="operator-help-modal" role="dialog" aria-modal="true" aria-labelledby="operator-help-title">
+        <div class="operator-modal-heading"><div><p class="page-kicker">QUICK GUIDE</p><h2 id="operator-help-title">帮助与快速使用</h2><p>这个工作区分为用户前台和内部制作后台两部分。</p></div><button class="operator-modal-close" type="button" aria-label="关闭帮助" @click="showHelp = false">×</button></div>
+        <div class="operator-help-grid">
+          <article><span>01</span><div><strong>创建视频</strong><p>从创作者前台上传小说或输入原文，按阶段生成故事设定、分集、剧本和分镜。</p></div></article>
+          <article><span>02</span><div><strong>人工审核</strong><p>在资产、分镜、声音和字幕阶段确认结果，再提交视频片段和成片任务。</p></div></article>
+          <article><span>03</span><div><strong>后台运维</strong><p>生产任务、远程队列、媒体资产和 Provider 配置仅供本地管理员使用。</p></div></article>
+        </div>
+        <div class="operator-help-note"><span>i</span><p>运行日志入口目前暂未开放；耗时任务的进度、失败原因和重试入口可在“生产任务”中查看。</p></div>
+        <div class="operator-modal-actions"><button class="secondary-button" type="button" @click="showHelp = false">关闭</button><button class="primary-button" type="button" @click="openHelpCreator">打开创作者前台 <span>↗</span></button></div>
+      </section>
     </div>
   </div>
 </template>
