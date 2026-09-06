@@ -20,15 +20,34 @@ const typeLabels: Record<string, string> = {
   all: '全部类型', rendered_video: '成片视频', video_clip: '视频片段', lip_synced_video: '唇形同步视频', audio_narration: '旁白音频', audio_bgm: 'BGM 音频', subtitle_srt: 'SRT 字幕', reference_image: '参考图', script_json: '脚本 JSON', story_bible_json: 'StoryBible', episode_outline_json: '分集大纲', episode_script_json: '分场剧本', shot_list_json: '分镜 JSON',
 }
 const selectedArtifact = computed(() => artifacts.value.find((item) => item.id === selectedArtifactId.value) ?? null)
+const artifactPriority: Record<string, number> = {
+  rendered_video: 1,
+  lip_synced_video: 2,
+  video_clip: 3,
+  reference_image: 4,
+  audio_narration: 5,
+  audio_bgm: 6,
+  subtitle_srt: 7,
+  script_json: 8,
+  story_bible_json: 9,
+  episode_outline_json: 10,
+  episode_script_json: 11,
+  shot_list_json: 12,
+}
+const orderedArtifacts = computed(() => [...artifacts.value].sort((left, right) => {
+  const priorityDifference = (artifactPriority[left.type] ?? 99) - (artifactPriority[right.type] ?? 99)
+  if (priorityDifference !== 0) return priorityDifference
+  return right.created_at.localeCompare(left.created_at)
+}))
 const artifactCounts = computed(() => ({
-  video: artifacts.value.filter(isVideoArtifact).length,
-  image: artifacts.value.filter((artifact) => artifact.type === 'reference_image').length,
-  audio: artifacts.value.filter(isAudioArtifact).length,
+  video: orderedArtifacts.value.filter(isVideoArtifact).length,
+  image: orderedArtifacts.value.filter((artifact) => artifact.type === 'reference_image').length,
+  audio: orderedArtifacts.value.filter(isAudioArtifact).length,
 }))
 const filteredArtifacts = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return artifacts.value
-  return artifacts.value.filter((artifact) => [
+  if (!query) return orderedArtifacts.value
+  return orderedArtifacts.value.filter((artifact) => [
     typeLabels[artifact.type] ?? artifact.type,
     artifact.type,
     artifact.provider,
@@ -193,7 +212,7 @@ onMounted(async () => {
       <div v-else-if="filteredArtifacts.length === 0" class="task-empty"><strong>{{ artifacts.length ? '没有匹配的资产' : '暂无可预览资产' }}</strong><span>{{ artifacts.length ? '尝试更换搜索词或筛选条件。' : '完成视频、音频或参考图任务后，产物会出现在这里。' }}</span></div>
       <div v-else class="artifact-list">
         <button v-for="artifact in filteredArtifacts" :key="artifact.id" class="artifact-list-row" :class="{ selected: selectedArtifactId === artifact.id }" type="button" @click="selectArtifact(artifact.id)">
-          <span class="artifact-list-thumb" :class="artifact.type"><MediaPreview :artifact="artifact" variant="thumb" :controls="false" /></span>
+          <span class="artifact-list-thumb" :class="artifact.type"><MediaPreview :artifact="artifact" variant="thumb" :controls="false" :lazy="false" /></span>
           <span class="artifact-list-copy"><strong>{{ typeLabels[artifact.type] || artifact.type }}</strong><small>{{ artifact.provider }} · {{ isVideoArtifact(artifact) || isAudioArtifact(artifact) ? formatDuration(artifact.metadata.duration_seconds) : formatTime(artifact.created_at) }}</small></span>
           <span class="artifact-list-arrow">›</span>
         </button>

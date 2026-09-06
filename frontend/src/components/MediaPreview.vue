@@ -29,7 +29,7 @@ const fallbackUsed = ref(false)
 const loadFailed = ref(false)
 const mediaLoaded = ref(false)
 const reloadKey = ref(0)
-const inViewport = ref(props.lazy !== true && props.variant !== 'thumb')
+const inViewport = ref(props.lazy !== true)
 let intersectionObserver: IntersectionObserver | null = null
 
 const storageKey = computed(() => {
@@ -57,7 +57,10 @@ const mediaKind = computed<'image' | 'video' | 'audio' | 'document'>(() => {
   return 'document'
 })
 
-const lazyPreview = computed(() => props.lazy ?? props.variant === 'thumb')
+// Thumbnails are intentionally eager by default: the asset list is a visual
+// review surface, so a placeholder must not be mistaken for an unavailable
+// Artifact. Callers can opt into IntersectionObserver loading with lazy=true.
+const lazyPreview = computed(() => props.lazy === true)
 const deferred = computed(() => lazyPreview.value && !inViewport.value && mediaKind.value !== 'document')
 const canPreview = computed(() => Boolean(previewUrl.value) && mediaKind.value !== 'document' && !deferred.value)
 const isThumb = computed(() => props.variant === 'thumb')
@@ -123,11 +126,13 @@ onUnmounted(() => intersectionObserver?.disconnect())
         :key="`${props.artifact.id}-${reloadKey}`"
         :src="previewUrl"
         :controls="controls && !isThumb"
-        preload="metadata"
+        :preload="isThumb ? 'auto' : 'metadata'"
         :muted="isThumb"
         playsinline
         :aria-label="alt"
+        @loadedmetadata="onLoaded"
         @loadeddata="onLoaded"
+        @canplay="onLoaded"
         @error="onError"
       />
       <audio
@@ -137,6 +142,7 @@ onUnmounted(() => intersectionObserver?.disconnect())
         :controls="controls"
         preload="metadata"
         :aria-label="alt"
+        @loadedmetadata="onLoaded"
         @canplay="onLoaded"
         @error="onError"
       />
@@ -145,7 +151,7 @@ onUnmounted(() => intersectionObserver?.disconnect())
         :key="`${props.artifact.id}-${reloadKey}`"
         :src="previewUrl"
         :alt="alt"
-        :loading="isThumb ? 'lazy' : 'eager'"
+        :loading="lazyPreview ? 'lazy' : 'eager'"
         decoding="async"
         @load="onLoaded"
         @error="onError"
