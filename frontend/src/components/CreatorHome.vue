@@ -257,7 +257,7 @@ onMounted(refreshDashboard)
       <section v-if="!activeProject" class="creator-metrics" aria-label="工作区概览">
         <article><span class="creator-metric-icon purple">✦</span><div><small>我的项目</small><strong>{{ loading ? '—' : projects.length }}</strong></div><span class="creator-metric-note">内容空间</span></article>
         <article><span class="creator-metric-icon blue">↻</span><div><small>进行中的任务</small><strong>{{ loading ? '—' : activeTasks }}</strong></div><span class="creator-metric-note" :class="{ good: activeTasks === 0 }">{{ activeTasks ? '实时处理中' : '当前空闲' }}</span></article>
-        <article><span class="creator-metric-icon green">▶</span><div><small>可预览成片</small><strong>{{ loading ? '—' : previewableVideoCount }}</strong></div><span class="creator-metric-note good">可复核</span></article>
+        <article><span class="creator-metric-icon purple">◇</span><div><small>生产流程</small><strong>5</strong></div><span class="creator-metric-note good">可观察</span></article>
       </section>
 
       <section v-if="!activeProject" id="create" class="creator-section creator-workflow-section">

@@ -38,8 +38,8 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     assert settings.image_steps == 6
     assert settings.image_guidance == 4.0
     assert settings.image_identity_weight == 0.92
-    assert settings.video_output_width == 384
-    assert settings.video_output_height == 672
+    assert settings.video_output_width == 432
+    assert settings.video_output_height == 768
     assert settings.video_fps == 12
     assert settings.video_steps == 8
     assert settings.video_cfg == 5.5

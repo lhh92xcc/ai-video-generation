@@ -1242,6 +1242,7 @@ class VisualQualityProfileSummary(BaseModel):
     """Safe visual quality preset metadata for the creator UI."""
 
     profile_id: str
+    aspect_ratio: str = Field(default="9:16", min_length=3, max_length=20)
     label: str
     description: str
     recommended_for: str

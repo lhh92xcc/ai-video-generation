@@ -47,7 +47,20 @@ class VisualQualityProfile:
     def as_public_dict(self) -> dict[str, object]:
         """Return the complete non-sensitive preset for the UI and API."""
 
-        return asdict(self)
+        payload = asdict(self)
+        payload["aspect_ratio"] = self.aspect_ratio
+        return payload
+
+    @property
+    def aspect_ratio(self) -> str:
+        """Return the declared canvas ratio for both image and video outputs."""
+
+        if (
+            self.image_width * 16 == self.image_height * 9
+            and self.video_width * 16 == self.video_height * 9
+        ):
+            return "9:16"
+        return "custom"
 
     def as_snapshot(self) -> dict[str, object]:
         """Return a detached task snapshot so later preset edits do not alter history."""
@@ -105,15 +118,15 @@ class VisualQualityProfileRegistry:
         VisualQualityProfile(
             profile_id="local_safe",
             label="Local Safe · 保守稳定",
-            description="较低分辨率与采样压力，优先保证本地 GPU 能完整跑通。",
+            description="严格 9:16 的低压档，优先保证首次本地 smoke 能完整跑通。",
             recommended_for="本地 smoke、低显存或首次验收",
-            image_width=512,
+            image_width=432,
             image_height=768,
             image_steps=4,
             image_guidance=3.5,
             image_identity_weight=0.90,
-            video_width=320,
-            video_height=576,
+            video_width=288,
+            video_height=512,
             video_fps=8,
             video_steps=6,
             video_cfg=5.0,
@@ -123,15 +136,15 @@ class VisualQualityProfileRegistry:
         VisualQualityProfile(
             profile_id="local_balanced",
             label="Local Balanced · 平衡质量",
-            description="提高关键帧和视频采样规格，仍保持逐镜头、低并发的本地路线。",
+            description="严格 9:16 的平衡档，提升关键帧和视频清晰度并保持逐镜头低并发。",
             recommended_for="目标 GPU 主机的首轮作品集验收",
             image_width=576,
             image_height=1024,
             image_steps=6,
             image_guidance=4.0,
             image_identity_weight=0.92,
-            video_width=384,
-            video_height=672,
+            video_width=432,
+            video_height=768,
             video_fps=12,
             video_steps=8,
             video_cfg=5.5,

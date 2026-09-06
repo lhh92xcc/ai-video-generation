@@ -630,7 +630,8 @@ class ReferenceImageTaskService:
         composition = {
             "character": (
                 "one identity-anchor portrait, exactly one person, head and shoulders, "
-                "eye-level camera, neutral pose, unobstructed face, simple background"
+                "front-facing eye-level camera, neutral expression and pose, unobstructed face, "
+                "no props, simple quiet background, consistent neutral lighting"
             ),
             "location": (
                 "one coherent vertical establishing plate, stable architectural layout, "

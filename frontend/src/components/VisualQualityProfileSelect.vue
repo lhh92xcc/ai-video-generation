@@ -68,6 +68,7 @@ function selectProfile(profileId: string) {
         <span class="visual-quality-option-metrics">
           <span><b>图</b>{{ profile.image_width }}×{{ profile.image_height }}</span>
           <span><b>视频</b>{{ profile.video_width }}×{{ profile.video_height }}</span>
+          <span><b>画幅</b>{{ profile.aspect_ratio ?? '9:16' }}</span>
           <span><b>帧率</b>{{ profile.video_fps }} fps</span>
           <span><b>采样</b>{{ profile.image_steps }}/{{ profile.video_steps }}</span>
         </span>
@@ -82,7 +83,8 @@ function selectProfile(profileId: string) {
         <p>
           图像 {{ selectedProfile.image_steps }} steps / guidance {{ selectedProfile.image_guidance }} ·
           视频 {{ selectedProfile.video_steps }} steps / CFG {{ selectedProfile.video_cfg }} ·
-          身份权重 {{ Math.round(selectedProfile.image_identity_weight * 100) }}%
+          身份权重 {{ Math.round(selectedProfile.image_identity_weight * 100) }}% ·
+          画幅 {{ selectedProfile.aspect_ratio ?? '9:16' }}
         </p>
       </div>
       <small>任务创建后会保存完整快照</small>

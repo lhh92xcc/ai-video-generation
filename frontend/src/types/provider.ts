@@ -18,6 +18,7 @@ export interface ProviderProfileListResponse {
 
 export interface VisualQualityProfile {
   profile_id: string
+  aspect_ratio?: string
   label: string
   description: string
   recommended_for: string

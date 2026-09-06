@@ -89,7 +89,7 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
-ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 主机应先在前台选择 `local_safe`，从单张 512×768 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据实际显存、耗时和画面质量调整分辨率、采样步数和时长。配置档案不要求某个固定显卡型号。
+ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。目标 GPU 主机应先在前台选择 `local_safe`，从单张严格 9:16 参考图和一个 3 秒、288×512、8fps 的低压 Wan I2V 镜头开始，并保持串行生成；确认稳定后再切换 `local_balanced`。配置档案不要求某个固定显卡型号。
 
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
 
@@ -117,8 +117,8 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 
 | 档案 | 参考图 | 视频片段 | 适用场景 |
 | --- | --- | --- | --- |
-| `local_safe` | 512×768，4 steps | 320×576，8fps，6 steps | 首次联调、低显存和失败范围控制 |
-| `local_balanced` | 576×1024，6 steps | 384×672，12fps，8 steps | 目标 GPU 主机的首轮作品集样片 |
+| `local_safe` | 432×768，4 steps | 288×512，8fps，6 steps | 首次联调、低显存和失败范围控制 |
+| `local_balanced` | 576×1024，6 steps | 432×768，12fps，8 steps | 目标 GPU 主机的首轮作品集样片 |
 | `high_quality` | 720×1280，8 steps | 576×1024，16fps，12 steps | 单任务高质量候选，必须先实测 |
 
 档案只提供可复现的起始参数；显存、耗时、身份一致性和动作质量必须以目标机器的真实 smoke 与人工看片为准。
@@ -159,7 +159,7 @@ docker compose config --quiet
 目标是交付一条 45～60 秒、9:16 的动态漫短剧样片，并让面试官能沿着任务、Artifact 和日志复盘整个过程。
 
 - 已具备：小说上传、StoryBible/剧本/分镜 JSON、资产审核门禁、参考图与视频 Provider 抽象、异步 Worker、失败重试、音频/字幕/成片 Artifact、远程队列和创作者前台。
-- 本地质量基线：Mac 16GB 使用竖屏 `512×768` 参考图、Wan2.1 I2V `320×576`/`8fps`/`6 steps`/串行生成；参考图和视频 Prompt 默认包含单主体、身份连续性和防变脸约束。模型仍在宿主机，不进入仓库。
+- 本地低压基线：使用严格 9:16 的 `432×768` 参考图、Wan2.1 I2V `288×512`/`8fps`/`6 steps`/串行生成；参考图锚点采用正面中性人设、2D 漫画线稿和无道具背景，视频 Prompt 默认包含身份连续性、防变脸和风格锁定约束。模型仍在宿主机，不进入仓库。
 - 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
 - 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
 - 正式样片门禁：非 Mock 且非预览模式只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。需要在 Mac 上只验证流程时可使用 `--preview-only`，但报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。

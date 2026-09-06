@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the reproducible Mac 16GB local target Demo.
+"""Run the reproducible local target portfolio Demo.
 
 The sample intentionally uses the project's real task services and Artifact
 contracts, while keeping the media stack local and small:
@@ -8,7 +8,7 @@ contracts, while keeping the media stack local and small:
     keyframes -> Wan2.1 I2V clips -> one continuous episode narration
     -> WordBoundary scene subtitles -> FFmpeg assembly
 
-It is an execution/demo script, not a second application entry point. The
+    It is an execution/demo script, not a second application entry point. The
 in-memory store keeps the run dependency-free; generated media is persisted to
 the configured local Artifact directory and copied to a stable output path.
 """
@@ -78,6 +78,7 @@ from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     DEFAULT_REFERENCE_STYLE,
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
+    build_shot_keyframe_prompt,
 )
 from app.providers.factory import (
     create_image_generation_provider,
@@ -2367,9 +2368,15 @@ def _asset_ref(asset: AssetRecord) -> ShotAssetReference:
     )
 
 
+def _character_facts(asset: AssetRecord) -> str:
+    """Serialize only the approved character design facts for a shot keyframe."""
+
+    return json.dumps(asset.content.model_dump(mode="json"), ensure_ascii=False)
+
+
 def _reference_prompt(asset_name: str) -> str:
     single_frame = (
-        "one full-frame image, one coherent composition, one camera view, "
+        "one full-frame 2D manhwa illustration, one coherent composition, one camera view, "
         "no split screen, no split frame, "
         "no diptych, no triptych, no collage, no comic panels, no character sheet, "
         "no inset image, no repeated face, no duplicate subject, no second view, "
@@ -2377,25 +2384,24 @@ def _reference_prompt(asset_name: str) -> str:
     )
     prompts = {
         "林默": (
-            "single subject head-and-shoulders portrait, exactly one young Chinese male clockmaker, late 20s, "
+            "single subject front-facing head-and-shoulders 2D manhwa portrait, exactly one young Chinese male clockmaker, late 20s, "
             "short black hair, slim face, dark long coat and old leather gloves, "
-            "quiet serious expression, cinematic rainy-night lighting, neutral clock-shop background, "
-            "centered face, clean portrait crop, vertical composition, " + single_frame
+            "quiet serious neutral expression, soft even studio lighting, plain cool-gray background, "
+            "centered face, clean portrait crop, vertical 9:16 composition, no props, " + single_frame
         ),
         "黑伞女孩": (
-            "single subject head-and-shoulders portrait, exactly one young Chinese woman with long black hair, "
-            "black long coat, umbrella canopy only at the top edge of the frame, calm mysterious expression, "
-            "cinematic rainy-night lighting, softly blurred neutral background, centered face, "
-            "clean portrait photograph, " + single_frame
+            "single subject front-facing head-and-shoulders 2D manhwa portrait, exactly one young Chinese woman with long black hair, "
+            "black long coat, calm mysterious neutral expression, soft even studio lighting, plain cool-gray background, "
+            "centered face, clean portrait crop, vertical 9:16 composition, no umbrella and no props, " + single_frame
         ),
         "旧城区钟表店": (
-            "single empty continuous interior scene, one coherent old Chinese urban clock shop at night, "
+            "single empty continuous 2D manhwa background plate, one coherent old Chinese urban clock shop at night, "
             "wooden counter, many mechanical clocks on the wall, warm amber lamps, "
             "rainy street visible through one window, cinematic vertical composition, "
             "no people, no duplicate windows, no duplicate room, " + single_frame
         ),
         "铜色怀表": (
-            "single object product shot, exactly one antique bronze mechanical pocket watch, "
+            "single 2D manhwa prop design plate, exactly one antique bronze mechanical pocket watch, "
             "front-facing circular watch, hands stopped at twelve o'clock, "
             "on a dark wooden clockmaker counter with a black seamless background, "
             "dramatic cinematic light, centered object, product photograph, " + single_frame
@@ -2493,6 +2499,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             storage,
             default_width=settings.image_width,
             default_height=settings.image_height,
+            identity_provider=identity_provider,
         )
     video_service = VideoClipTaskService(
         store,
@@ -2848,10 +2855,22 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 identity_task, _ = await identity_service.create_task(
                     by_name[reference_name].id,
                     ReferenceImageCreateRequest(
-                        style="Flux PuLID identity-locked cinematic shot keyframe",
-                        prompt_override=shot.visual_prompt,
+                        prompt_override=build_shot_keyframe_prompt(
+                            source_prompt=shot.visual_prompt,
+                            shot_size=shot.shot_size,
+                            camera_movement=shot.camera_movement,
+                            location=shot.location,
+                            characters=shot.characters,
+                            continuity_notes=shot.continuity_notes,
+                            primary_character_facts=_character_facts(by_name[reference_name]),
+                        ),
+                        negative_prompt=DEFAULT_REFERENCE_NEGATIVE_PROMPT,
                         width=settings.image_width,
                         height=settings.image_height,
+                        reference_role="shot_keyframe",
+                        episode_id=episode.id,
+                        shot_index=shot.shot_index,
+                        identity_lock=True,
                         identity_reference_image_id=reference_image_ids[reference_name],
                     ),
                     idempotency_key=f"portfolio-identity-shot-{shot.shot_index}",
