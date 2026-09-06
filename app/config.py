@@ -167,8 +167,8 @@ def _default_config_path() -> Path:
     local_path = Path("config/config.local.toml")
     if local_path.exists() and profile == "local_mac_16gb":
         return local_path
-    windows_path = Path("config/config.windows_4060ti_8gb.toml")
-    if windows_path.exists() and profile == "windows_4060ti_8gb":
+    windows_path = Path("config/config.windows_gpu.toml")
+    if windows_path.exists() and profile == "windows_gpu":
         return windows_path
     return Path("config/config.example.toml")
 
@@ -231,9 +231,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     return Settings(
         app_name=str(app_config.get("name", "ai-video-generation")),
         app_version="0.1.0",
-        runtime_profile=str(
-            setting(app_config, "profile", "AI_VIDEO_PROFILE", "default")
-        ),
+        runtime_profile=str(setting(app_config, "profile", "AI_VIDEO_PROFILE", "default")),
         environment=str(app_config.get("environment", "local")),
         api_host=str(app_config.get("api_host", "0.0.0.0")),
         api_port=int(app_config.get("api_port", 8000)),

@@ -59,11 +59,14 @@ function Test-Command {
     return $ok
 }
 
-Write-Host "AI Video Generation / Windows RTX 4060 Ti 8 GB 健康检查" -ForegroundColor Cyan
+Write-Host "AI Video Generation / Windows GPU 工作站健康检查" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 Write-Host ""
 
-Test-Command -Name "nvidia-smi" -Arguments @() -Required $true | Out-Null
+# NVIDIA hosts expose extra telemetry through nvidia-smi.  It is useful but
+# not a hard requirement for the generic Windows GPU profile; ComfyUI remains
+# the source of truth for the configured backend.
+Test-Command -Name "nvidia-smi" -Arguments @() -Required $false | Out-Null
 Test-Command -Name "docker" -Arguments @("info") -Required $true | Out-Null
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     Push-Location $ProjectRoot

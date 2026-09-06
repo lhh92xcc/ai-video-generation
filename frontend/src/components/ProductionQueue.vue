@@ -127,7 +127,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
     <div>
       <p class="page-kicker">OPERATIONS / REMOTE PRODUCTION QUEUE</p>
       <h1>远程生产队列</h1>
-      <p>Windows 4060 Ti 生产机的状态、GPU 锁、自动 DAG 和失败恢复都在这里集中查看。</p>
+      <p>Windows GPU 工作站的状态、GPU 锁、自动 DAG 和失败恢复都在这里集中查看。</p>
     </div>
     <div class="queue-header-actions">
       <button class="secondary-button" type="button" :disabled="cleaning" @click="cleanup">{{ cleaning ? '清理中…' : '清理临时文件' }}</button>

@@ -14,7 +14,7 @@
 - 身份阈值校准：只读比较候选阈值，不修改生产配置；身份失败镜头支持幂等批量重试。
 - 角色声音资产库：可按角色绑定 Edge TTS、ChatTTS、macOS say 或 Mock 声音档案，并按对白行生成多角色音频。
 - MuseTalk 接口：支持从视频/音频 Artifact 创建唇形同步任务，完成后可在成片编排中选择 `lip_synced_video`，原始片段可回退。
-- Windows RTX 4060 Ti 8GB 运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查。
+- Windows GPU 工作站运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查。
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。
 - Redis Worker 异步任务、幂等、失败重试、批次编排和 Artifact Registry。
 - FFmpeg 多镜头拼接、旁白/BGM 混音、中文字幕烧录和临时下载。
@@ -83,7 +83,7 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
-ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。RTX 4060 Ti 8GB 应从单张 512×512 参考图和一个 3 秒、320×576、8fps、4 步的 Wan I2V 镜头开始，并保持串行生成；是否稳定需要在目标 Windows 机器上实测。
+ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。Windows GPU 工作站应先从单张 512×512 参考图和一个 3 秒、320×576、8fps 的低显存 Wan I2V 镜头开始，并保持串行生成；再根据显存和画面质量实测结果调整分辨率、采样步数和时长。
 
 ## 配置与安全
 
@@ -110,18 +110,18 @@ docker compose config --quiet
 
 ## 当前边界
 
-这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、Windows 4060 Ti 运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在 Windows 主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
+这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、Windows GPU 运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在 Windows 主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
-## Windows RTX 4060 Ti 8GB 生产机
+## Windows GPU 工作站
 
 Mac 端只维护代码、Prompt、配置和前端，不下载 Windows/CUDA 模型。将仓库同步到 Windows 后，在 Windows 主机安装 Docker Desktop、Ollama、ComfyUI、Wan/Flux 模型和真实 MuseTalk runtime；Docker 内的 API/Worker 通过 `host.docker.internal` 访问这些宿主机服务。
 
 使用专用配置档案启动：
 
 ```powershell
-$env:AI_VIDEO_PROFILE = "windows_4060ti_8gb"
-$env:AI_VIDEO_CONFIG = "config/config.windows_4060ti_8gb.toml"
-.\scripts\start-windows-4060ti.ps1 -ProjectRoot (Get-Location).Path
+$env:AI_VIDEO_PROFILE = "windows_gpu"
+$env:AI_VIDEO_CONFIG = "config/config.windows_gpu.toml"
+.\scripts\start-windows-gpu.ps1 -ProjectRoot (Get-Location).Path
 ```
 
 启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次健康检查。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。

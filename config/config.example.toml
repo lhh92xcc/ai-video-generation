@@ -214,7 +214,7 @@ device = "cpu"
 model = "MuseTalk-local"
 timeout_seconds = 900
 # HTTP 模式由 Docker API/Worker 调用 Windows 主机上的 bridge；bridge 本身
-# 不包含模型，模型和 CUDA 环境只安装在 Windows 4060Ti 主机。
+# 不包含模型，模型和 CUDA 环境只安装在实际 Windows GPU 主机。
 base_url = "http://127.0.0.1:8090"
 create_path = "/v1/lip-sync"
 health_path = "/healthz"
@@ -310,7 +310,7 @@ max_script_characters = 5000
 
 [worker]
 # 生产 Worker 的可靠性和 Windows 单 GPU 运行参数。默认值适合开发；
-# config.windows_4060ti_8gb.toml 会打开 GPU 锁、自动推进和临时目录清理。
+# config.windows_gpu.toml 会打开 GPU 锁、自动推进和临时目录清理。
 auto_retry_enabled = true
 max_auto_retries = 2
 retry_backoff_seconds = 5

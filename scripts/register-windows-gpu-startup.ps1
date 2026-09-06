@@ -1,12 +1,12 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [string]$TaskName = "AI Video Generation - Windows 4060Ti"
+    [string]$TaskName = "AI Video Generation - Windows GPU"
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path $ProjectRoot).Path
-$StartScript = (Resolve-Path (Join-Path $ProjectRoot "scripts\start-windows-4060ti.ps1")).Path
+$StartScript = (Resolve-Path (Join-Path $ProjectRoot "scripts\start-windows-gpu.ps1")).Path
 $PowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`" -ProjectRoot `"$ProjectRoot`""
 

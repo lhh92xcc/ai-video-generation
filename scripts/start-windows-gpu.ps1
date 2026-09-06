@@ -12,8 +12,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path $ProjectRoot).Path
-$env:AI_VIDEO_PROFILE = "windows_4060ti_8gb"
-$env:AI_VIDEO_CONFIG = "config/config.windows_4060ti_8gb.toml"
+$env:AI_VIDEO_PROFILE = "windows_gpu"
+$env:AI_VIDEO_CONFIG = "config/config.windows_gpu.toml"
 
 function Test-Endpoint {
     param([string]$Uri)
@@ -57,7 +57,7 @@ function Start-BackgroundProcess {
         -WorkingDirectory $WorkingDirectory -WindowStyle Minimized -PassThru
 }
 
-Write-Host "AI Video Generation / Windows RTX 4060 Ti 启动器" -ForegroundColor Cyan
+Write-Host "AI Video Generation / Windows GPU 工作站启动器" -ForegroundColor Cyan
 Write-Host "项目目录: $ProjectRoot"
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -143,7 +143,7 @@ try {
     Pop-Location
 }
 
-$checkScript = Join-Path $ProjectRoot "scripts\check-windows-4060ti.ps1"
+$checkScript = Join-Path $ProjectRoot "scripts\check-windows-gpu.ps1"
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $checkScript -ProjectRoot $ProjectRoot
 $checkExitCode = $LASTEXITCODE
 exit $checkExitCode

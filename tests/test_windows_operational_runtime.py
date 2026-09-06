@@ -16,10 +16,10 @@ def wait_for_task(client: TestClient, task_id: str) -> dict:
     raise AssertionError(f"task did not finish: {task_id}")
 
 
-def test_windows_4060ti_profile_contains_serial_gpu_runtime_defaults() -> None:
-    settings = load_settings("config/config.windows_4060ti_8gb.toml")
+def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
+    settings = load_settings("config/config.windows_gpu.toml")
 
-    assert settings.runtime_profile == "windows_4060ti_8gb"
+    assert settings.runtime_profile == "windows_gpu"
     assert settings.queue_backend == "redis"
     assert settings.video_provider == "comfyui_wan_i2v"
     assert settings.video_output_width == 320

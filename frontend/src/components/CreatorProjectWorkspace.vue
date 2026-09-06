@@ -898,7 +898,7 @@ async function startFullProduction() {
       projectData.value.id,
       {
         target_episode_count: projectData.value.target_episode_count,
-        label: 'Windows 4060 Ti 完整生产',
+        label: 'Windows GPU 完整生产',
         production_mode: true,
         include_reference_images: true,
         include_narration: true,
@@ -1029,7 +1029,7 @@ onUnmounted(() => {
           <div v-if="!sourceReady" class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!selectedFile || Boolean(action)" @click="uploadSource">{{ action === 'upload' ? '上传中…' : '上传并切分章节' }} <span>→</span></button></div>
           <div v-else class="creator-chapter-preview"><div class="creator-subheading"><strong>章节预览</strong><small>{{ chapters.length }} 个章节</small></div><div v-if="chapters.length" class="creator-chapter-list"><div v-for="chapter in chapters.slice(0, 3)" :key="chapter.id"><span>第 {{ chapter.chapter_number }} 章</span><strong>{{ chapter.title }}</strong></div></div><small v-if="chapters.length > 3" class="creator-more-note">还有 {{ chapters.length - 3 }} 个章节，完整内容将在制作后台中查看。</small></div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
-            <div><span class="creator-auto-run-icon">▶</span><div><strong>Windows 4060 Ti 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
+            <div><span class="creator-auto-run-icon">▶</span><div><strong>Windows GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
             <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
           </div>
           <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRun.status === 'completed' ? '✓' : productionRun.status === 'failed' ? '!' : productionRun.status === 'blocked' ? '!' : '↻' }}</span><div><strong>Run {{ productionRun.status === 'active' ? '运行中' : productionRun.status === 'blocked' ? '等待人工处理' : productionRun.status === 'completed' ? '已完成' : '失败' }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
@@ -1049,7 +1049,7 @@ onUnmounted(() => {
         </section>
 
         <section v-if="episodesReady" id="creator-step-episodes" class="creator-workspace-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">CONTENT HANDOFF</p><h3>选择要制作的分集</h3><p>先从一集开始验证脚本质量，后续再扩展批量生产。</p></div><span class="creator-card-state ready">{{ selectedEpisode ? `已选第 ${selectedEpisode.episode_number} 集` : '请选择' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 04 · EPISODE HANDOFF</p><h3>选择要制作的分集</h3><p>先从一集开始验证脚本质量，后续再扩展批量生产。</p></div><span class="creator-card-state ready">{{ selectedEpisode ? `已选第 ${selectedEpisode.episode_number} 集` : '请选择' }}</span></div>
           <div class="creator-episode-picker"><button v-for="episode in episodes" :key="episode.id" type="button" :class="{ selected: episode.id === selectedEpisodeId }" @click="selectEpisode(episode.id)"><span>第 {{ episode.episode_number }} 集</span><strong>{{ episode.outline.title }}</strong><small>{{ episode.outline.target_duration_seconds }} 秒 · {{ episodeScriptStatusLabel(episode) }}</small></button></div>
         </section>
 
@@ -1110,7 +1110,7 @@ onUnmounted(() => {
         <details v-if="audioArtifact" class="creator-optional-section">
           <summary><span>可选：添加背景音乐</span><small>{{ bgmTask?.status === 'succeeded' ? '已完成 · 不影响主流程' : '不影响主流程' }}</small></summary>
           <section class="creator-workspace-card creator-bgm-card">
-          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 09 · OPTIONAL</p><h3>添加背景音乐</h3><p>使用服务端配置的 Mock 或授权本地文件 Provider。授权状态只作为线索记录，系统不会自动确认版权。</p></div><span class="creator-card-state" :class="{ ready: bgmTask?.status === 'succeeded' }">{{ bgmTask?.status === 'succeeded' ? '已完成' : bgmTask ? formatStatus(bgmTask.status) : '待生成' }}</span></div>
+          <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">OPTIONAL · BGM</p><h3>添加背景音乐</h3><p>使用服务端配置的 Mock 或授权本地文件 Provider。授权状态只作为线索记录，系统不会自动确认版权。</p></div><span class="creator-card-state" :class="{ ready: bgmTask?.status === 'succeeded' }">{{ bgmTask?.status === 'succeeded' ? '已完成' : bgmTask ? formatStatus(bgmTask.status) : '待生成' }}</span></div>
           <div class="creator-bgm-guide"><span>i</span><p>本地文件模式只允许读取 Worker 授权目录内的相对路径；Mock 模式不需要文件。生成后音频会经过服务端格式和播放性校验；标记为“不可使用”的素材不能提交。</p></div>
           <div class="creator-bgm-form"><label><span>曲目标签</span><input v-model="bgmLabel" maxlength="120" :disabled="Boolean(action) || Boolean(bgmTask && isActive(bgmTask.status))" placeholder="例如：悬疑氛围铺底" /></label><label><span>授权状态</span><select v-model="bgmRightsStatus" :disabled="Boolean(action) || Boolean(bgmTask && isActive(bgmTask.status))"><option value="unknown">尚未确认</option><option value="pending">待核验</option><option value="confirmed">已确认</option><option value="denied">不可使用</option></select></label><label class="creator-bgm-wide"><span>授权目录内相对路径（可选）</span><input v-model="bgmSourcePath" maxlength="500" :disabled="Boolean(action) || Boolean(bgmTask && isActive(bgmTask.status))" placeholder="例如 licensed/ambient.wav；Mock 模式可留空" /></label><label><span>权利人（可选）</span><input v-model="bgmRightsHolder" maxlength="200" :disabled="Boolean(action) || Boolean(bgmTask && isActive(bgmTask.status))" placeholder="公司、作者或素材库" /></label><label><span>授权凭据引用（可选）</span><input v-model="bgmRightsReference" maxlength="500" :disabled="Boolean(action) || Boolean(bgmTask && isActive(bgmTask.status))" placeholder="合同号、订单号或内部记录" /></label></div>
           <div v-if="bgmTask?.status === 'failed'" class="creator-audio-error"><strong>BGM 任务失败</strong><span>{{ taskErrorDetail(bgmTask.error) }}</span></div>
@@ -1140,9 +1140,10 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section v-if="assemblyClipSelections.length >= 2" id="creator-step-assembly" class="creator-workspace-card creator-assembly-card">
+        <section v-if="selectedEpisode" id="creator-step-assembly" class="creator-workspace-card creator-assembly-card" :class="{ muted: assemblyClipSelections.length < 2 }">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 11 · FINAL ASSEMBLY</p><h3>编排并生成成片</h3><p>按镜头编号拼接已成功片段，可选混入旁白、BGM 和字幕。任务完成后仅生成 Artifact，不会自动发布。</p></div><span class="creator-card-state" :class="{ ready: videoAssemblyTask?.status === 'succeeded' }">{{ videoAssemblyTask?.status === 'succeeded' ? '已完成' : videoAssemblyTask ? formatStatus(videoAssemblyTask.status) : '可编排' }}</span></div>
           <div class="creator-assembly-summary"><div><strong>{{ assemblyClipSelections.length }} 个镜头</strong><small>按 SHOT 编号自动排序</small></div><div><strong>{{ assemblyClipSelections.reduce((total, selection) => total + positiveNumber(selection.artifact.metadata.duration_seconds), 0).toFixed(1) }} 秒</strong><small>当前选用片段合计</small></div><div><strong>{{ audioTracksForAssemblyCount }} 条音轨</strong><small>旁白 / BGM 可选</small></div></div>
+          <div v-if="assemblyClipSelections.length < 2" class="creator-production-note"><span>i</span><p>成片合成会在至少 2 个成功的视频片段通过播放性校验后开放。当前已就绪 {{ assemblyClipSelections.length }} 个，请先完成 STEP 10 的画面片段。</p></div>
           <div v-if="selectedShotList && successfulVideoClipTasks.length < selectedShotList.shots.length" class="creator-production-note"><span>i</span><p>当前只有部分镜头已成功，成片将按现有成功片段生成（{{ successfulVideoClipTasks.length }}/{{ selectedShotList.shots.length }}）。剩余镜头完成后可重新编排。</p></div>
           <div class="creator-assembly-clip-list"><div v-for="selection in assemblyClipSelections" :key="selection.task.id"><span class="creator-assembly-index">{{ String(selection.shotIndex).padStart(2, '0') }}</span><div><strong>SHOT {{ selection.shotIndex }}{{ selection.source === 'lip_sync' ? ' · MuseTalk' : '' }}</strong><small>{{ selection.artifact.provider }} · {{ selection.source === 'lip_sync' ? '已替换为唇形同步片段' : '原始视频片段回退' }} · 已通过播放性校验</small></div><select v-if="lipSyncCandidateForShot(selection.shotIndex)" class="creator-assembly-source" :value="selection.source" :aria-label="`选择镜头 ${selection.shotIndex} 的成片来源`" @change="setAssemblySource(selection.shotIndex, $event)"><option value="video_clip">原始片段</option><option value="lip_sync">MuseTalk 片段</option></select><span class="creator-artifact-state">已就绪</span></div></div>
           <div class="creator-assembly-options">
@@ -1156,7 +1157,7 @@ onUnmounted(() => {
           <div v-if="renderedVideoArtifactLoading" class="creator-assembly-preview-loading"><span class="spinner" />正在获取成片预览…</div>
           <div v-else-if="renderedVideoArtifactRecord" class="creator-assembly-preview"><MediaPreview :artifact="renderedVideoArtifactRecord" variant="panel" alt="最终成片预览" show-download /><div class="creator-assembly-preview-actions"><span>预览优先使用服务端安全通道，临时链接仅作为回退。</span></div></div>
           <div v-else-if="renderedVideoArtifact" class="creator-production-note"><span>i</span><p>成片 Artifact 已生成，但当前没有可读取的二进制内容；请检查 Worker 存储状态。</p></div>
-          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!assemblyCanSubmit" @click="startVideoAssembly">{{ action === 'video-assembly' ? '提交中…' : videoAssemblyTask?.status === 'succeeded' ? '重新生成成片' : '生成成片' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator', 'artifacts')">查看任务与 Artifact <span>↗</span></button></div>
+          <div class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!assemblyCanSubmit" @click="startVideoAssembly">{{ action === 'video-assembly' ? '提交中…' : videoAssemblyTask?.status === 'succeeded' ? '重新生成成片' : assemblyClipSelections.length < 2 ? '等待片段' : '生成成片' }} <span>→</span></button><button class="creator-ghost-button" type="button" @click="emit('openOperator', 'artifacts')">查看任务与 Artifact <span>↗</span></button></div>
         </section>
 
         <details v-if="selectedEpisode" class="creator-quality-section">
