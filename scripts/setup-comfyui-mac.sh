@@ -24,17 +24,35 @@ fi
 
 comfy_python="${comfyui_home}/.venv/bin/python"
 comfy_pip="${comfyui_home}/.venv/bin/pip"
+require_mps="${COMFYUI_REQUIRE_MPS:-0}"
 
 "${comfy_pip}" install --upgrade pip
-"${comfy_pip}" install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
+torch_packages=(torch torchvision torchaudio)
+if [[ -n "${COMFYUI_TORCH_INDEX_URL:-}" ]]; then
+  "${comfy_pip}" install --upgrade "${torch_packages[@]}" --index-url "${COMFYUI_TORCH_INDEX_URL}"
+else
+  # The CPU-only PyTorch wheel disables MPS on Apple Silicon.  Use the normal
+  # PyPI wheels by default; callers can override the index for an approved
+  # nightly/staged wheel with COMFYUI_TORCH_INDEX_URL.
+  "${comfy_pip}" install --upgrade "${torch_packages[@]}"
+fi
 "${comfy_pip}" install -r "${comfyui_home}/requirements.txt"
 
 "${comfy_python}" - <<'PY'
+import os
 import torch
 
-assert torch.backends.mps.is_built(), "PyTorch was installed without MPS support"
-assert torch.backends.mps.is_available(), "MPS is unavailable on this Mac"
-print(f"ComfyUI PyTorch ready: {torch.__version__}, device=mps")
+mps_built = bool(torch.backends.mps.is_built())
+mps_available = bool(torch.backends.mps.is_available())
+if not (mps_built and mps_available):
+    if os.environ.get("COMFYUI_REQUIRE_MPS", "0") == "1":
+        raise SystemExit("MPS is required but this PyTorch/Mac environment cannot provide it")
+    print(
+        f"ComfyUI PyTorch ready: {torch.__version__}, device=cpu "
+        "(MPS unavailable; set COMFYUI_REQUIRE_MPS=1 to make this a hard failure)"
+    )
+else:
+    print(f"ComfyUI PyTorch ready: {torch.__version__}, device=mps")
 PY
 
 target_files=(

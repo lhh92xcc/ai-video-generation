@@ -147,7 +147,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `334 passed、7 skipped、1 warning`；前端生产构建为 `58 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `335 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
