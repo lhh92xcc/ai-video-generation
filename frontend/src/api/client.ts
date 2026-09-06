@@ -3,6 +3,10 @@ import type { ApiErrorBody } from '../types/provider'
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ''
 const apiBaseUrl = configuredBaseUrl.replace(/\/$/, '')
 
+export function buildApiUrl(path: string): string {
+  return `${apiBaseUrl}${path}`
+}
+
 export class ApiClientError extends Error {
   readonly code: string
   readonly status: number
@@ -31,7 +35,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...init,
     headers,
   })

@@ -448,8 +448,9 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-brand strong { color: #202b40; font-size: 14px; letter-spacing: -0.03em; }
 .creator-brand small { margin-top: 3px; color: #9aa3b6; font-size: 8px; font-weight: 750; letter-spacing: 0.14em; }
 .creator-nav { display: flex; align-items: center; gap: 31px; margin-left: clamp(38px, 7vw, 110px); }
-.creator-nav a { color: #758096; font-size: 12px; font-weight: 600; text-decoration: none; }
-.creator-nav a:hover { color: #5b5ce2; }
+.creator-nav a, .creator-nav button { color: #758096; font: inherit; font-size: 12px; font-weight: 600; text-decoration: none; }
+.creator-nav button { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.creator-nav a:hover, .creator-nav button:hover { color: #5b5ce2; }
 .creator-header-actions { display: flex; align-items: center; gap: 17px; margin-left: auto; }
 .creator-env-badge { display: inline-flex; align-items: center; gap: 6px; color: #8c96aa; font-size: 10px; }
 .creator-env-badge i { width: 6px; height: 6px; border-radius: 50%; background: #35b889; box-shadow: 0 0 0 3px #e5f7ef; }

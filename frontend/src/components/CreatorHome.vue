@@ -105,6 +105,10 @@ function closeProjectWorkspace() {
   void refreshDashboard()
 }
 
+function openOperator(view?: OperatorView) {
+  emit('openOperator', view)
+}
+
 async function createWorkspace() {
   if (!canCreate.value) return
   creating.value = true
@@ -141,9 +145,16 @@ onMounted(refreshDashboard)
         <span><strong>Video Forge</strong><small>AI VIDEO STUDIO</small></span>
       </a>
       <nav class="creator-nav" aria-label="创作者导航">
-        <a href="#create" @click.prevent="openCreatePanel">创建视频</a>
-        <a href="#projects">我的项目</a>
-        <a href="#progress">制作进度</a>
+        <template v-if="activeProject">
+          <a href="#projects" @click.prevent="closeProjectWorkspace">返回项目列表</a>
+          <a href="#creator-project-workspace">当前项目</a>
+          <a href="#creator-workflow-status">制作流程</a>
+        </template>
+        <template v-else>
+          <a href="#create" @click.prevent="openCreatePanel">创建视频</a>
+          <a href="#projects">我的项目</a>
+          <a href="#progress">制作进度</a>
+        </template>
       </nav>
       <div class="creator-header-actions">
         <span class="creator-env-badge"><i />本地体验环境</span>
@@ -184,7 +195,7 @@ onMounted(refreshDashboard)
         :project="activeProject"
         @back="closeProjectWorkspace"
         @changed="refreshDashboard"
-        @open-operator="emit('openOperator')"
+        @open-operator="openOperator"
       />
 
       <section v-if="!activeProject" class="creator-metrics" aria-label="工作区概览">

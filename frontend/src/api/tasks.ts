@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { apiRequest, buildApiUrl } from './client'
 import type { ArtifactListResponse, ArtifactRecord, GenerationTaskListResponse, GenerationTaskRecord, TaskBatchListResponse, TaskBatchRecord, TaskBatchResumeResponse } from '../types/task'
 
 export function getTasks(params: {
@@ -73,5 +73,5 @@ export function getArtifact(
  * so media previews and downloads use this authorized API fallback.
  */
 export function getArtifactContentUrl(artifactId: string, download = false): string {
-  return `/api/v1/artifacts/${artifactId}/content${download ? '?download=true' : ''}`
+  return buildApiUrl(`/api/v1/artifacts/${artifactId}/content${download ? '?download=true' : ''}`)
 }

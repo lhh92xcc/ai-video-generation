@@ -140,7 +140,10 @@ const successfulVideoClipTasks = computed(() => {
 })
 const videoClipSucceededCount = computed(() => successfulVideoClipTasks.value.length)
 const shotTotalCount = computed(() => selectedShotList.value?.shots.length ?? 0)
-const shotFailedCount = computed(() => selectedShotList.value?.shots.filter((shot) => latestVideoClipTask(shot.shot_index)?.status === 'failed').length ?? 0)
+const shotFailedCount = computed(() => selectedShotList.value?.shots.filter((shot) => {
+  const task = latestVideoClipTask(shot.shot_index)
+  return task?.status === 'failed' && !videoClipArtifact(shot.shot_index)
+}).length ?? 0)
 const shotSucceededCount = computed(() => selectedShotList.value?.shots.filter((shot) => {
   const task = latestVideoClipTask(shot.shot_index)
   return task?.status === 'succeeded' && Boolean(task.artifacts.some((artifact) => artifact.type === 'video_clip'))
@@ -160,7 +163,7 @@ const filteredShots = computed(() => {
     const hasArtifact = Boolean(videoClipArtifact(shot.shot_index))
     const matchesFilter = shotFilter.value === 'all'
       || (shotFilter.value === 'ready' && isShotReady(shot) && !hasArtifact && task?.status !== 'failed')
-      || (shotFilter.value === 'failed' && task?.status === 'failed')
+      || (shotFilter.value === 'failed' && task?.status === 'failed' && !hasArtifact)
       || (shotFilter.value === 'succeeded' && task?.status === 'succeeded' && hasArtifact)
       || (shotFilter.value === 'blocked' && !isShotReady(shot))
     if (!matchesFilter) return false
@@ -234,25 +237,27 @@ const recentTaskGroups = computed<RecentTaskGroup[]>(() => {
 const selectedEpisodeTasks = computed(() => selectedEpisodeId.value
   ? tasks.value.filter((task) => String(task.input_data.episode_id ?? '') === selectedEpisodeId.value)
   : [])
-const selectedEpisodeFailedTasks = computed(() => selectedEpisodeTasks.value.filter((task) => task.status === 'failed'))
 const selectedEpisodeActiveTasks = computed(() => selectedEpisodeTasks.value.filter((task) => isActive(task.status)))
+const shotListReady = computed(() => Boolean(selectedShotList.value) || shotTask.value?.status === 'succeeded')
 const workflowFailureTask = computed(() => {
-  const orderedTasks = [
-    storyBibleTask.value,
-    episodePlanTask.value,
-    scriptTask.value,
-    shotTask.value,
-    audioTask.value,
-    subtitleTask.value,
-    bgmTask.value,
-    ...videoClipTasks.value,
-    videoAssemblyTask.value,
+  const stageTasks: Array<{ task: GenerationTaskRecord | null; blocks: boolean }> = [
+    { task: storyBibleTask.value, blocks: !storyBibleReady.value },
+    { task: episodePlanTask.value, blocks: !episodesReady.value },
+    { task: scriptTask.value, blocks: !scriptReady.value },
+    { task: shotTask.value, blocks: !shotListReady.value },
+    { task: audioTask.value, blocks: !audioArtifact.value },
+    { task: subtitleTask.value, blocks: !subtitleArtifact.value },
+    ...videoClipTasks.value.map((task) => ({
+      task,
+      blocks: !videoClipArtifact(Number(task.input_data.shot_index)),
+    })),
+    { task: videoAssemblyTask.value, blocks: assemblyClipSelections.value.length >= 2 && !renderedVideoArtifact.value },
   ]
-  return orderedTasks.find((task) => task?.status === 'failed') ?? null
+  return stageTasks.find(({ task, blocks }) => blocks && task?.status === 'failed')?.task ?? null
 })
 const workflowStageKey = computed(() => {
   if (!sourceReady.value || !storyBibleReady.value || !episodesReady.value) return 'content'
-  if (!selectedEpisode.value || !scriptReady.value || shotTask.value?.status !== 'succeeded') return 'script'
+  if (!selectedEpisode.value || !scriptReady.value || !shotListReady.value) return 'script'
   if (!audioArtifact.value || !subtitleArtifact.value || !selectedShotList.value || videoClipSucceededCount.value < videoClipReadyCount.value) return 'media'
   return 'final'
 })
@@ -288,7 +293,7 @@ const workflowCoreSteps = computed(() => [
   storyBibleReady.value,
   episodesReady.value,
   scriptReady.value,
-  shotTask.value?.status === 'succeeded',
+  shotListReady.value,
   Boolean(audioArtifact.value),
   Boolean(subtitleArtifact.value),
   Boolean(selectedShotList.value) && videoClipReadyCount.value > 0 && videoClipSucceededCount.value >= videoClipReadyCount.value,
@@ -307,8 +312,8 @@ const workflowPhaseCards = computed(() => [
   {
     key: 'script',
     label: '剧本与分镜',
-    detail: selectedEpisode.value ? `${scriptReady.value ? '剧本已就绪' : '等待剧本'} · ${shotTask.value?.status === 'succeeded' ? '分镜已提交' : '等待分镜'}` : '选择分集并生成可审核的剧本',
-    complete: scriptReady.value && shotTask.value?.status === 'succeeded',
+    detail: selectedEpisode.value ? `${scriptReady.value ? '剧本已就绪' : '等待剧本'} · ${shotListReady.value ? '分镜已提交' : '等待分镜'}` : '选择分集并生成可审核的剧本',
+    complete: scriptReady.value && shotListReady.value,
     active: workflowStageKey.value === 'script',
     target: 'creator-step-script',
   },
@@ -343,7 +348,7 @@ const workflowBlocker = computed(() => {
   if (!episodesReady.value) return episodePlanTask.value && isActive(episodePlanTask.value.status) ? '分集大纲任务正在处理中。' : '等待生成分集大纲。'
   if (!selectedEpisode.value) return '请选择要制作的分集。'
   if (!scriptReady.value) return scriptTask.value && isActive(scriptTask.value.status) ? '分场剧本任务正在处理中。' : '等待生成分场剧本。'
-  if (shotTask.value?.status !== 'succeeded') return shotTask.value && isActive(shotTask.value.status) ? '分镜任务正在处理中。' : '需要先生成分镜任务。'
+  if (!shotListReady.value) return shotTask.value && isActive(shotTask.value.status) ? '分镜任务正在处理中。' : '需要先生成分镜任务。'
   if (!audioArtifact.value) return audioTask.value && isActive(audioTask.value.status) ? '旁白任务正在处理中。' : '等待生成单集旁白。'
   if (!subtitleArtifact.value) return subtitleTask.value && isActive(subtitleTask.value.status) ? '字幕任务正在处理中。' : '等待生成并审核字幕。'
   if (!selectedShotList.value) return '分镜数据尚未载入，请刷新工作区。'
@@ -353,33 +358,35 @@ const workflowBlocker = computed(() => {
   return '当前核心流程已完成，可预览并下载成片。'
 })
 const failedTaskCount = computed(() => {
-  return selectedEpisodeFailedTasks.value.length
+  const task = workflowFailureTask.value
+  if (!task) return 0
+  return task.kind === 'video_clip' ? Math.max(1, shotFailedCount.value) : 1
 })
 const workspaceStatus = computed(() => {
-  if (failedTaskCount.value > 0) return { label: `${selectedEpisode.value ? '本集 ' : ''}${failedTaskCount.value} 个任务需处理`, className: 'attention' }
-  if (videoAssemblyTask.value?.status === 'succeeded') return { label: '成片已就绪', className: 'ready' }
+  if (failedTaskCount.value > 0) return { label: `${selectedEpisode.value ? '本集 ' : ''}${failedTaskCount.value} 个步骤需处理`, className: 'attention' }
+  if (renderedVideoArtifact.value) return { label: '成片已就绪', className: 'ready' }
   if (activeTaskCount.value > 0) return { label: '正在生产', className: 'analyzing' }
   if (workflowStageKey.value === 'content') return { label: '等待内容', className: 'pending' }
   return { label: '制作进行中', className: 'pending' }
 })
 const nextWorkflowStep = computed(() => {
   if (!sourceReady.value) return { label: '上传小说', target: 'creator-step-source' }
-  if (storyBibleTask.value?.status === 'failed') return { label: '重试故事设定', target: 'creator-step-story' }
+  if (storyBibleTask.value?.status === 'failed' && !storyBibleReady.value) return { label: '重试故事设定', target: 'creator-step-story' }
   if (!storyBibleReady.value) return { label: '分析故事设定', target: 'creator-step-story' }
-  if (episodePlanTask.value?.status === 'failed') return { label: '重试分集大纲', target: 'creator-step-episode-plan' }
+  if (episodePlanTask.value?.status === 'failed' && !episodesReady.value) return { label: '重试分集大纲', target: 'creator-step-episode-plan' }
   if (!episodesReady.value) return { label: '生成分集大纲', target: 'creator-step-episodes' }
   if (!selectedEpisode.value) return { label: '选择分集', target: 'creator-step-episodes' }
-  if (scriptTask.value?.status === 'failed') return { label: '重试分场剧本', target: 'creator-step-script' }
+  if (scriptTask.value?.status === 'failed' && !scriptReady.value) return { label: '重试分场剧本', target: 'creator-step-script' }
   if (!scriptReady.value) return { label: '生成分场剧本', target: 'creator-step-script' }
-  if (shotTask.value?.status === 'failed') return { label: '重试分镜任务', target: 'creator-step-shots' }
-  if (shotTask.value?.status !== 'succeeded') return { label: '生成分镜任务', target: 'creator-step-shots' }
-  if (audioTask.value?.status === 'failed') return { label: '重试旁白', target: 'creator-step-audio' }
+  if (shotTask.value?.status === 'failed' && !shotListReady.value) return { label: '重试分镜任务', target: 'creator-step-shots' }
+  if (!shotListReady.value) return { label: '生成分镜任务', target: 'creator-step-shots' }
+  if (audioTask.value?.status === 'failed' && !audioArtifact.value) return { label: '重试旁白', target: 'creator-step-audio' }
   if (!audioArtifact.value) return { label: '生成旁白', target: 'creator-step-audio' }
-  if (subtitleTask.value?.status === 'failed') return { label: '重试字幕', target: 'creator-step-subtitle' }
+  if (subtitleTask.value?.status === 'failed' && !subtitleArtifact.value) return { label: '重试字幕', target: 'creator-step-subtitle' }
   if (!subtitleArtifact.value) return { label: '创建字幕', target: 'creator-step-subtitle' }
   if (shotFailedCount.value > 0) return { label: '处理失败镜头', target: 'creator-step-video' }
   if (!selectedShotList.value || videoClipReadyCount.value < selectedShotList.value.shots.length || videoClipSucceededCount.value < videoClipReadyCount.value) return { label: '处理并生成画面片段', target: 'creator-step-video' }
-  if (videoAssemblyTask.value?.status === 'failed') return { label: '重试成片合成', target: 'creator-step-assembly' }
+  if (videoAssemblyTask.value?.status === 'failed' && !renderedVideoArtifact.value) return { label: '重试成片合成', target: 'creator-step-assembly' }
   if (videoAssemblyTask.value?.status !== 'succeeded') return { label: '生成成片', target: 'creator-step-assembly' }
   return { label: '查看成片', target: 'creator-step-assembly' }
 })
@@ -943,7 +950,7 @@ onUnmounted(() => {
         <div class="creator-pipeline-step" :class="{ complete: storyBibleReady, active: sourceReady && !storyBibleReady }"><span>02</span><div><strong>故事设定</strong><small>{{ storyBibleReady ? 'StoryBible 已生成' : '分析人物与世界观' }}</small></div></div>
         <div class="creator-pipeline-step" :class="{ complete: episodesReady, active: storyBibleReady && !episodesReady }"><span>03</span><div><strong>分集大纲</strong><small>{{ episodesReady ? `${episodes.length} 集可选择` : '拆分故事节奏' }}</small></div></div>
         <div class="creator-pipeline-step" :class="{ complete: scriptReady, active: Boolean(selectedEpisode) && !scriptReady }"><span>04</span><div><strong>分场剧本</strong><small>{{ scriptReady ? '剧本可预览' : '选择分集后生成' }}</small></div></div>
-        <div class="creator-pipeline-step" :class="{ active: scriptReady, complete: shotTask?.status === 'succeeded' }"><span>05</span><div><strong>分镜任务</strong><small>{{ shotTask?.status === 'succeeded' ? '已提交完成' : '准备生成画面' }}</small></div></div>
+        <div class="creator-pipeline-step" :class="{ active: scriptReady, complete: shotListReady }"><span>05</span><div><strong>分镜任务</strong><small>{{ shotListReady ? '已提交完成' : '准备生成画面' }}</small></div></div>
         <div class="creator-pipeline-step" :class="{ active: scriptReady, complete: audioTask?.status === 'succeeded' }"><span>06</span><div><strong>单集旁白</strong><small>{{ audioTask?.status === 'succeeded' ? '音频已生成' : '准备合成声音' }}</small></div></div>
         <div class="creator-pipeline-step" :class="{ active: Boolean(audioArtifact), complete: subtitleTask?.status === 'succeeded' }"><span>07</span><div><strong>字幕任务</strong><small>{{ subtitleTask?.status === 'succeeded' ? 'SRT 已生成' : audioArtifact ? '准备创建字幕' : '等待旁白完成' }}</small></div></div>
         <div class="creator-pipeline-step" :class="{ active: Boolean(audioArtifact), complete: bgmTask?.status === 'succeeded' }"><span>08</span><div><strong>BGM</strong><small>{{ bgmTask?.status === 'succeeded' ? '音轨已生成' : audioArtifact ? '准备添加配乐' : '等待旁白完成' }}</small></div></div>
@@ -1105,7 +1112,7 @@ onUnmounted(() => {
       </main>
 
       <aside class="creator-workspace-sidebar">
-        <section class="creator-workspace-card creator-progress-card">
+        <section id="creator-workflow-status" class="creator-workspace-card creator-progress-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">WORKFLOW STATUS</p><h3>阶段导航</h3><p>点击阶段可快速定位；绿色代表该阶段已完成。</p></div><button class="creator-refresh-button" type="button" :disabled="refreshing" aria-label="刷新工作区" @click="refreshWorkspace">↻</button></div>
           <div class="creator-stage-nav">
             <button v-for="phase in workflowPhaseCards" :key="phase.key" type="button" class="creator-stage-nav-row" :class="{ active: phase.active, complete: phase.complete }" @click="scrollToWorkflowStep(phase.target)">
