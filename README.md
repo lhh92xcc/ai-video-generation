@@ -112,6 +112,8 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 
 创作者前台的完整生产配置支持分别选择参考图和视频 Provider；内部后台的 Provider 页面进一步按“字幕识别 / 参考图生成 / 视频片段”三个能力页签展示同一套安全档案，便于检查 API/Worker 的实际配置状态。选择结果只写入新建任务的快照，不会修改已经运行的任务，也不需要手动编辑 TOML。未配置密钥的云端档案会显示为不可选；本地 Mock、ComfyUI、FFmpeg 和 Wan 档案不需要云端 API Key。
 
+创作者前台对视觉 Provider 默认采用本地优先策略：如果发现 `image.comfyui` 和 `video.comfyui_wan_i2v` 档案，就优先选中 ComfyUI Flux Schnell + Wan2.1 I2V；页面同时提供“一键切换本地”按钮。只有用户主动选择云端档案时才会显示费用提醒。该策略只影响创作者前台新任务选择，不会偷偷修改服务端默认配置，也不会改变已经运行的任务快照。
+
 后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
 视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 GPU 主机人工验收。

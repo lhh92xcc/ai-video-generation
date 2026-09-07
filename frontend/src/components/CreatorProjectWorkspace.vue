@@ -77,13 +77,13 @@ const {
   defaultProfileId: imageDefaultProfileId,
   selectedProfileId: selectedImageProfileId,
   isLoading: imageProfilesLoading,
-} = useProviderProfiles('image')
+} = useProviderProfiles('image', { preferredProfileId: 'image.comfyui' })
 const {
   profiles: videoProfiles,
   defaultProfileId: videoDefaultProfileId,
   selectedProfileId: selectedVideoProfileId,
   isLoading: videoProfilesLoading,
-} = useProviderProfiles('video')
+} = useProviderProfiles('video', { preferredProfileId: 'video.comfyui_wan_i2v' })
 const {
   profiles: visualQualityProfiles,
   defaultProfileId: visualQualityDefaultProfileId,
@@ -132,6 +132,19 @@ const noticeMessage = ref<string | null>(null)
 const action = ref<string | null>(null)
 let pollTimer: number | null = null
 let loadedRenderedVideoArtifactId: string | null = null
+
+const localImageProfile = computed(() => imageProfiles.value.find((profile) => profile.profile_id === 'image.comfyui') ?? null)
+const localVideoProfile = computed(() => videoProfiles.value.find((profile) => profile.profile_id === 'video.comfyui_wan_i2v') ?? null)
+const selectedImageProfile = computed(() => imageProfiles.value.find((profile) => profile.profile_id === selectedImageProfileId.value) ?? null)
+const selectedVideoProfile = computed(() => videoProfiles.value.find((profile) => profile.profile_id === selectedVideoProfileId.value) ?? null)
+const localVisualProvidersConfigured = computed(() => Boolean(localImageProfile.value?.configured && localVideoProfile.value?.configured))
+const usingLocalVisualProviders = computed(() => selectedImageProfileId.value === 'image.comfyui' && selectedVideoProfileId.value === 'video.comfyui_wan_i2v')
+const usingCloudVisualProvider = computed(() => Boolean(
+  selectedImageProfile.value
+  && selectedVideoProfile.value
+  && (!['mock', 'comfyui'].includes(selectedImageProfile.value.provider)
+    || !['mock', 'local_fixture', 'ffmpeg_motion', 'comfyui_wan_i2v'].includes(selectedVideoProfile.value.provider)),
+))
 
 const selectedEpisode = computed(() => episodes.value.find((episode) => episode.id === selectedEpisodeId.value) ?? null)
 const sourceReady = computed(() => Boolean(projectData.value.source_id))
@@ -552,6 +565,16 @@ function positiveNumber(value: unknown) {
 
 function scrollToWorkflowStep(target: string) {
   document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function selectLocalVisualProviders() {
+  if (!localVisualProvidersConfigured.value) {
+    noticeMessage.value = '当前 API 没有发现可用的本地 ComfyUI 档案，请先在目标 GPU 主机启动 ComfyUI。'
+    return
+  }
+  selectedImageProfileId.value = localImageProfile.value?.profile_id ?? null
+  selectedVideoProfileId.value = localVideoProfile.value?.profile_id ?? null
+  noticeMessage.value = '已切换到本地免费模式：ComfyUI Flux Schnell + Wan2.1 I2V。新任务不会调用云端视觉 API。'
 }
 
 function focusFailedShots() {
@@ -1132,6 +1155,23 @@ onUnmounted(() => {
           <div v-else class="creator-chapter-preview"><div class="creator-subheading"><strong>章节预览</strong><small>{{ chapters.length }} 个章节</small></div><div v-if="chapters.length" class="creator-chapter-list"><div v-for="chapter in chapters.slice(0, 3)" :key="chapter.id"><span>第 {{ chapter.chapter_number }} 章</span><strong>{{ chapter.title }}</strong></div></div><small v-if="chapters.length > 3" class="creator-more-note">还有 {{ chapters.length - 3 }} 个章节，完整内容将在制作后台中查看。</small></div>
           <div v-if="sourceReady" class="creator-provider-panel">
             <div class="creator-provider-panel-heading"><div><p class="creator-eyebrow">PROVIDER PROFILES</p><h4>本次生产配置</h4><p>选择会写入新任务快照；已经运行中的任务不会被改写，也不需要手动编辑配置文件。</p></div><span>任务快照</span></div>
+            <div class="creator-local-mode-card" :class="{ active: usingLocalVisualProviders, warning: usingCloudVisualProvider }">
+              <div class="creator-local-mode-copy">
+                <span class="creator-local-mode-icon">⌂</span>
+                <div>
+                  <strong>{{ usingLocalVisualProviders ? '本地免费模式已启用' : '推荐先使用本地免费模式' }}</strong>
+                  <p>参考图使用 ComfyUI Flux Schnell，视频使用 Wan2.1 I2V；不需要云端 Key，适合先跑作品集 Demo。</p>
+                </div>
+              </div>
+              <span v-if="usingLocalVisualProviders" class="creator-local-mode-badge">当前使用</span>
+              <button v-else type="button" class="creator-local-mode-button" :disabled="Boolean(action) || !localVisualProvidersConfigured" @click="selectLocalVisualProviders">
+                {{ localVisualProvidersConfigured ? '一键切换本地' : '等待 ComfyUI' }}
+              </button>
+            </div>
+            <div v-if="usingCloudVisualProvider" class="creator-cloud-provider-warning" role="status">
+              <span>!</span>
+              <p>当前至少有一项视觉 Provider 是云端配置（{{ selectedImageProfile?.label ?? '参考图' }} / {{ selectedVideoProfile?.label ?? '视频' }}）。确认预算后再启动；如果只想本地运行，请点击上方“一键切换本地”。</p>
+            </div>
             <div class="creator-provider-grid">
               <VisualQualityProfileSelect
                 v-model="selectedVisualQualityProfileId"

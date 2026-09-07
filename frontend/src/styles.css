@@ -676,6 +676,24 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-provider-grid .field-hint, .creator-video-provider-inline .field-hint { margin-top: 5px; font-size: 8px; line-height: 1.45; }
 .creator-provider-status { margin: 11px 0 0; color: #858da1; font-size: 8px; line-height: 1.5; }
 .creator-provider-status.warning { color: #a8732d; }
+.creator-local-mode-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; border: 1px solid #dfe3f3; border-radius: 10px; padding: 11px 12px; background: linear-gradient(120deg, #f8f9ff, #fff); }
+.creator-local-mode-card.active { border-color: #cce8d9; background: linear-gradient(120deg, #f4fcf7, #fff); }
+.creator-local-mode-card.warning { border-color: #f0dfb8; background: linear-gradient(120deg, #fffaf0, #fff); }
+.creator-local-mode-copy { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+.creator-local-mode-icon { display: grid; place-items: center; flex: 0 0 25px; width: 25px; height: 25px; border-radius: 8px; color: #5e65ca; background: #eceeff; font-size: 14px; }
+.creator-local-mode-card.active .creator-local-mode-icon { color: #287b55; background: #e1f5e9; }
+.creator-local-mode-card.warning .creator-local-mode-icon { color: #a8732d; background: #fff0cd; }
+.creator-local-mode-copy > div { min-width: 0; }
+.creator-local-mode-copy strong, .creator-local-mode-copy p { display: block; }
+.creator-local-mode-copy strong { color: #515b75; font-size: 10px; }
+.creator-local-mode-copy p { margin: 4px 0 0; color: #8c95a8; font-size: 8px; line-height: 1.5; }
+.creator-local-mode-badge { flex: 0 0 auto; border-radius: 999px; padding: 5px 8px; color: #2b8059; background: #e5f7ed; font-size: 8px; font-weight: 750; }
+.creator-local-mode-button { flex: 0 0 auto; border: 1px solid #c6c9ef; border-radius: 7px; padding: 7px 9px; color: #5d62c8; background: #f5f5ff; font-size: 8px; font-weight: 750; cursor: pointer; }
+.creator-local-mode-button:hover:not(:disabled) { border-color: #8f93df; background: #ededff; }
+.creator-local-mode-button:disabled { cursor: not-allowed; opacity: .55; }
+.creator-cloud-provider-warning { display: flex; align-items: flex-start; gap: 7px; margin-top: 9px; border-radius: 8px; padding: 8px 9px; color: #806831; background: #fff9e9; font-size: 8px; line-height: 1.5; }
+.creator-cloud-provider-warning > span { display: grid; place-items: center; flex: 0 0 16px; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: #d2a54a; font-size: 9px; font-weight: 800; }
+.creator-cloud-provider-warning p { margin: 0; }
 .creator-provider-grid .visual-quality-selector { grid-column: 1 / -1; }
 .creator-shot-keyframe-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid #ececf8; border-radius: 9px; padding: 10px 11px; background: #fcfcff; }
 .creator-shot-keyframe-control > div { min-width: 0; }
@@ -727,6 +745,8 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-video-provider-inline .field-hint { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 720px) {
   .creator-provider-grid { grid-template-columns: 1fr; }
+  .creator-local-mode-card { align-items: stretch; flex-direction: column; }
+  .creator-local-mode-button, .creator-local-mode-badge { align-self: flex-start; }
   .creator-shot-keyframe-control { align-items: stretch; flex-direction: column; }
   .creator-shot-keyframe-control select { flex-basis: auto; min-width: 0; width: 100%; }
   .visual-quality-options { grid-template-columns: 1fr; }

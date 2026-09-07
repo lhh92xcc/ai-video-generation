@@ -4,7 +4,20 @@ import type { ProviderCapability } from '../api/providerProfiles'
 import type { ProviderProfile } from '../types/provider'
 import { ApiClientError } from '../api/client'
 
-export function useProviderProfiles(capability: ProviderCapability = 'asr') {
+export interface UseProviderProfilesOptions {
+  /**
+   * Prefer a configured profile for a specific surface without changing the
+   * server-side default. Creator-facing local production uses this to avoid
+   * accidentally spending on a cloud profile just because a key exists in
+   * the developer's .env file.
+   */
+  preferredProfileId?: string
+}
+
+export function useProviderProfiles(
+  capability: ProviderCapability = 'asr',
+  options: UseProviderProfilesOptions = {},
+) {
   const profiles = ref<ProviderProfile[]>([])
   const defaultProfileId = ref<string | null>(null)
   const selectedProfileId = ref<string | null>(null)
@@ -29,7 +42,15 @@ export function useProviderProfiles(capability: ProviderCapability = 'asr') {
       const configuredDefault = response.items.find(
         (profile) => profile.profile_id === response.default_profile_id && profile.configured,
       )
-      selectedProfileId.value = configuredDefault?.profile_id ?? response.items.find((profile) => profile.configured)?.profile_id ?? null
+      const configuredPreferred = options.preferredProfileId
+        ? response.items.find(
+          (profile) => profile.profile_id === options.preferredProfileId && profile.configured,
+        )
+        : undefined
+      selectedProfileId.value = configuredPreferred?.profile_id
+        ?? configuredDefault?.profile_id
+        ?? response.items.find((profile) => profile.configured)?.profile_id
+        ?? null
       hasLoaded.value = true
     } catch (error) {
       hasLoaded.value = false
