@@ -652,8 +652,9 @@ class ReferenceImageTaskService:
                 "clear foreground/midground/background separation, no people"
             ),
             "prop": (
-                "one product-style object plate, exactly one main object, fully visible, "
-                "clear silhouette, readable material and distinctive markings"
+                "one illustrated prop design plate, exactly one main object, fully visible, "
+                "flat 2D manhwa rendering, clean ink contour, cel-shaded color blocks, "
+                "clear silhouette, readable material and distinctive markings; never a photograph"
             ),
         }.get(asset.asset_type.value, "one coherent vertical composition")
         prompt = (
