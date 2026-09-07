@@ -182,7 +182,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `366 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查、Prompt 长度、参考图 manifest 和关键帧模式回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `370 passed、7 skipped、1 warning`；前端生产构建最近一次成功为 `61 modules transformed`，本轮通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查、Prompt 长度、参考图 manifest、关键帧模式和硬件无关质量档案建议回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -299,6 +299,16 @@ uv run python scripts/run-local-portfolio-sample.py \
 ```
 
 `auto` 是默认模式，正式作品集应在身份 Provider 稳定的 GPU 主机上使用 `auto` 或 `always`；`off` 只把标准人设图直接送入 Wan，报告会明确标记为低内存 smoke，不具备正式身份锁定证据，也不会被作品集就绪门禁放行。
+
+如果目标 Windows 主机的显存规格与当前机器不同，可以先用只读建议器选择起始档案：
+
+```powershell
+python scripts\recommend-quality-profile.py
+# 没有 nvidia-smi 时也可以显式传入显存：
+python scripts\recommend-quality-profile.py --vram-gb 12 --json
+```
+
+它只按显存区间建议 `local_safe`、`local_balanced` 或 `high_quality`，不绑定具体显卡型号；建议结果不是兼容性或画质保证，仍必须先跑 1 个 3 秒 smoke。
 
 也可以单独执行严格检查：
 

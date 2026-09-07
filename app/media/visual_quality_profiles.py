@@ -22,6 +22,40 @@ class VisualQualityProfileError(Exception):
         self.status_code = status_code
 
 
+def recommend_visual_quality_profile(vram_gb: float | None) -> str:
+    """Return a conservative starting profile from available GPU memory.
+
+    This is a host-specific starting point, not a compatibility guarantee. The
+    thresholds intentionally describe memory bands instead of GPU models so a
+    Windows host can use the same project without a hardware-specific branch.
+    """
+
+    if vram_gb is None:
+        return "local_safe"
+    if not isfinite(float(vram_gb)) or vram_gb <= 0:
+        raise ValueError("vram_gb must be a positive finite number")
+    if vram_gb < 10:
+        return "local_safe"
+    if vram_gb < 16:
+        return "local_balanced"
+    return "high_quality"
+
+
+def visual_quality_recommendation_reason(vram_gb: float | None) -> str:
+    """Explain why the conservative profile was selected."""
+
+    profile_id = recommend_visual_quality_profile(vram_gb)
+    if vram_gb is None:
+        return (
+            f"未读取到显存信息，保守建议 {profile_id}；先完成 1 个 3 秒 smoke，"
+            "再根据 ComfyUI 实际峰值显存和失败情况调整。"
+        )
+    return (
+        f"检测到约 {vram_gb:.1f} GB 可用显存，建议从 {profile_id} 开始；"
+        "这是起始参数，不代表模型一定能稳定运行或画质一定通过。"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class VisualQualityProfile:
     """A safe image/video generation preset that can be stored as a snapshot."""
