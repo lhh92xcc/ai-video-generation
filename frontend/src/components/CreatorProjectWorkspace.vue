@@ -124,6 +124,7 @@ const renderedVideoArtifactRecord = ref<ArtifactRecord | null>(null)
 const renderedVideoArtifactLoading = ref(false)
 const selectedFile = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const fileDragActive = ref(false)
 const loading = ref(true)
 const refreshing = ref(false)
 const errorMessage = ref<string | null>(null)
@@ -893,9 +894,34 @@ async function runAction(actionName: string, successMessage: string, work: () =>
   }
 }
 
+function selectNovelFile(file: File | null) {
+  fileDragActive.value = false
+  if (!file) {
+    selectedFile.value = null
+    return
+  }
+  const extension = file.name.toLowerCase().split('.').pop() ?? ''
+  if (!['txt', 'md'].includes(extension)) {
+    selectedFile.value = null
+    errorMessage.value = '请选择 UTF-8 编码的 .txt 或 .md 小说文件。'
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    selectedFile.value = null
+    errorMessage.value = '小说文件不能超过 5 MB。'
+    return
+  }
+  errorMessage.value = null
+  selectedFile.value = file
+}
+
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  selectedFile.value = input.files?.[0] ?? null
+  selectNovelFile(input.files?.[0] ?? null)
+}
+
+function onFileDrop(event: DragEvent) {
+  selectNovelFile(event.dataTransfer?.files?.[0] ?? null)
 }
 
 async function uploadSource() {
@@ -1095,11 +1121,11 @@ onUnmounted(() => {
       <main class="creator-workspace-main">
         <section id="creator-step-source" class="creator-workspace-card">
           <div class="creator-workspace-card-heading"><div><p class="creator-eyebrow">STEP 01</p><h3>导入小说原文</h3><p>支持 UTF-8 编码的 `.txt` 或 `.md` 文件，单文件不超过 5 MB。</p></div><span class="creator-card-state" :class="{ ready: sourceReady }">{{ sourceReady ? '已上传' : '待上传' }}</span></div>
-          <div v-if="!sourceReady" class="creator-upload-zone" :class="{ selected: selectedFile }" @click="openFilePicker">
+          <div v-if="!sourceReady" class="creator-upload-zone" :class="{ selected: selectedFile, dragging: fileDragActive }" role="button" tabindex="0" :aria-label="selectedFile ? `已选择 ${selectedFile.name}` : '拖拽或选择小说文件'" @click="openFilePicker" @keydown.enter.prevent="openFilePicker" @keydown.space.prevent="openFilePicker" @dragenter.prevent="fileDragActive = true" @dragover.prevent="fileDragActive = true" @dragleave.prevent="fileDragActive = false" @drop.prevent="onFileDrop">
             <input ref="fileInput" class="creator-hidden-input" type="file" accept=".txt,.md,text/plain,text/markdown" @change="onFileChange" />
             <span class="creator-upload-icon">↑</span>
             <strong>{{ selectedFile ? selectedFile.name : '选择小说文件' }}</strong>
-            <small>{{ selectedFile ? `${formatBytes(selectedFile.size)} · 点击重新选择` : '拖入文件，或点击从电脑选择' }}</small>
+            <small>{{ selectedFile ? `${formatBytes(selectedFile.size)} · 点击重新选择` : fileDragActive ? '松开鼠标以上传文件' : '拖入文件，或点击从电脑选择 · TXT / Markdown · 最大 5 MB' }}</small>
           </div>
           <div v-else class="creator-source-summary"><span class="creator-source-icon">▤</span><div><strong>小说原文已接入</strong><small>{{ projectData.source_id }} · 已切分 {{ chapters.length }} 个章节</small></div><span class="creator-source-meta">{{ chapters.length ? formatBytes(chapters.reduce((total, chapter) => total + chapter.content.length, 0)) : '已保存' }}</span></div>
           <div v-if="!sourceReady" class="creator-workspace-actions"><button class="creator-primary-button" type="button" :disabled="!selectedFile || Boolean(action)" @click="uploadSource">{{ action === 'upload' ? '上传中…' : '上传并切分章节' }} <span>→</span></button></div>

@@ -224,6 +224,19 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
 
 启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次媒体前置检查。前置检查除了端口，还会读取仓库中的三个 workflow JSON，核对必需节点/占位符，并在设置 `COMFYUI_ROOT` 后检查 Flux、Wan、PuLID、Wan 文本编码器、VAE、InsightFace 和 ComfyUI custom nodes 是否实际存在；检查过程只读，不会下载或覆盖模型。
 
+前置检查通过后，可以让启动器执行一镜头真实媒体 Smoke，先确认目标主机确实能够调用参考图和 Wan I2V 模型：
+
+```powershell
+.\scripts\start-windows-gpu.ps1 `
+  -ProjectRoot (Get-Location).Path `
+  -ComfyUIRoot $env:COMFYUI_ROOT `
+  -RunPortfolioSmoke `
+  -SmokeQualityProfile local_safe `
+  -SmokeShotDuration 3
+```
+
+该命令只生成 1 个 3 秒镜头，报告和产物默认写入 `.tmp/windows-portfolio-smoke/`，也可通过 `-SmokeOutputDir` 修改目录。Smoke 会调用真实配置的 Provider；Mock、FFprobe 通过或静态预览都不能证明画面质量。确认单镜头稳定并人工检查身份、动作和声音后，再逐步切换到 `local_balanced` 和 8～12 镜头正式作品集运行。
+
 也可以单独执行严格检查：
 
 ```powershell

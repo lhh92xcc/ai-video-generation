@@ -8,7 +8,13 @@ param(
     [switch]$SkipComfyUI,
     [switch]$SkipMuseTalk,
     [switch]$RequireMuseTalk,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$RunPortfolioSmoke,
+    [ValidateSet(3, 4, 5)]
+    [int]$SmokeShotDuration = 3,
+    [ValidateSet("local_safe", "local_balanced", "high_quality")]
+    [string]$SmokeQualityProfile = "local_safe",
+    [string]$SmokeOutputDir = ".tmp/windows-portfolio-smoke"
 )
 
 $ErrorActionPreference = "Stop"
@@ -169,4 +175,38 @@ if ($RequireMuseTalk) {
 }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $checkScript @healthArguments
 $checkExitCode = $LASTEXITCODE
-exit $checkExitCode
+if ($checkExitCode -ne 0) {
+    exit $checkExitCode
+}
+
+if ($RunPortfolioSmoke) {
+    Push-Location $ProjectRoot
+    try {
+        Write-Host "正在执行一镜头真实媒体 Smoke（质量档案: $SmokeQualityProfile，时长: ${SmokeShotDuration}s）..." -ForegroundColor Cyan
+        $env:AI_VIDEO_VISUAL_QUALITY_PROFILE = $SmokeQualityProfile
+        $runnerArguments = @(
+            "scripts/run-local-portfolio-sample.py",
+            "--shots", "1",
+            "--shot-duration", [string]$SmokeShotDuration,
+            "--output-dir", $SmokeOutputDir
+        )
+        $uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+        if ($null -ne $uvCommand) {
+            & $uvCommand.Source run python @runnerArguments
+        } else {
+            $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+            if ($null -eq $pythonCommand) {
+                throw "找不到 uv 或 python，无法执行真实媒体 Smoke。"
+            }
+            & $pythonCommand.Source @runnerArguments
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "一镜头真实媒体 Smoke 失败，退出码 $LASTEXITCODE。请查看 $SmokeOutputDir/report.json 和 Worker 日志。"
+        }
+        Write-Host "一镜头真实媒体 Smoke 已完成：$SmokeOutputDir" -ForegroundColor Green
+    } finally {
+        Pop-Location
+    }
+}
+
+exit 0
