@@ -59,6 +59,9 @@ const reviewItems: HumanReviewItem[] = [
 ]
 
 const reviewState = ref<Record<string, boolean>>({})
+const reviewScores = ref<Record<string, number | null>>({})
+const reviewNotes = ref<Record<string, string>>({})
+const reviewTimestamps = ref<Record<string, string>>({})
 
 const storageKey = computed(() => (
   `ai-video-generation:portfolio-review:${props.project.id}:${props.episode?.id ?? 'project'}`
@@ -66,13 +69,41 @@ const storageKey = computed(() => (
 
 function loadReviewState() {
   const next: Record<string, boolean> = {}
+  const scores: Record<string, number | null> = {}
+  const notes: Record<string, string> = {}
+  const timestamps: Record<string, string> = {}
   try {
     const raw = window.localStorage.getItem(storageKey.value)
     const parsed: unknown = raw ? JSON.parse(raw) : null
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      // Read the original boolean-only format as well as the richer review
+      // record, so existing browser reviews are not lost after an upgrade.
+      const checked = record.checked && typeof record.checked === 'object' && !Array.isArray(record.checked)
+        ? record.checked as Record<string, unknown>
+        : record
+      const storedScores = record.scores && typeof record.scores === 'object' && !Array.isArray(record.scores)
+        ? record.scores as Record<string, unknown>
+        : {}
+      const storedNotes = record.notes && typeof record.notes === 'object' && !Array.isArray(record.notes)
+        ? record.notes as Record<string, unknown>
+        : {}
+      const storedTimestamps = record.reviewed_at && typeof record.reviewed_at === 'object' && !Array.isArray(record.reviewed_at)
+        ? record.reviewed_at as Record<string, unknown>
+        : {}
       for (const item of reviewItems) {
-        if (typeof (parsed as Record<string, unknown>)[item.id] === 'boolean') {
-          next[item.id] = Boolean((parsed as Record<string, unknown>)[item.id])
+        if (typeof checked[item.id] === 'boolean') {
+          next[item.id] = Boolean(checked[item.id])
+        }
+        const score = Number(storedScores[item.id])
+        if (Number.isFinite(score) && score >= 1 && score <= 5) {
+          scores[item.id] = Math.round(score)
+        }
+        if (typeof storedNotes[item.id] === 'string' && storedNotes[item.id].trim()) {
+          notes[item.id] = storedNotes[item.id].trim().slice(0, 500)
+        }
+        if (typeof storedTimestamps[item.id] === 'string' && storedTimestamps[item.id].trim()) {
+          timestamps[item.id] = storedTimestamps[item.id]
         }
       }
     }
@@ -80,11 +111,19 @@ function loadReviewState() {
     // Browser storage may be disabled; the checklist still works in memory.
   }
   reviewState.value = next
+  reviewScores.value = scores
+  reviewNotes.value = notes
+  reviewTimestamps.value = timestamps
 }
 
 function persistReviewState() {
   try {
-    window.localStorage.setItem(storageKey.value, JSON.stringify(reviewState.value))
+    window.localStorage.setItem(storageKey.value, JSON.stringify({
+      checked: reviewState.value,
+      scores: reviewScores.value,
+      notes: reviewNotes.value,
+      reviewed_at: reviewTimestamps.value,
+    }))
   } catch {
     // A review checkbox must never block the production workspace.
   }
@@ -92,11 +131,47 @@ function persistReviewState() {
 
 function resetReviewState() {
   reviewState.value = {}
+  reviewScores.value = {}
+  reviewNotes.value = {}
+  reviewTimestamps.value = {}
   try {
     window.localStorage.removeItem(storageKey.value)
   } catch {
     // Keep the in-memory reset even when storage is unavailable.
   }
+}
+
+function touchReview(itemId: string) {
+  if (reviewState.value[itemId]) {
+    if (!reviewScores.value[itemId]) {
+      reviewScores.value = { ...reviewScores.value, [itemId]: 5 }
+    }
+    reviewTimestamps.value = { ...reviewTimestamps.value, [itemId]: new Date().toISOString() }
+  } else {
+    const next = { ...reviewTimestamps.value }
+    delete next[itemId]
+    reviewTimestamps.value = next
+  }
+}
+
+function setReviewScore(itemId: string, value: unknown) {
+  const score = Number(value)
+  if (!Number.isFinite(score) || score < 1 || score > 5) return
+  reviewScores.value = { ...reviewScores.value, [itemId]: Math.round(score) }
+  touchReview(itemId)
+}
+
+function setReviewNote(itemId: string, value: string) {
+  reviewNotes.value = { ...reviewNotes.value, [itemId]: value.slice(0, 500) }
+  touchReview(itemId)
+}
+
+function handleScoreChange(itemId: string, event: Event) {
+  setReviewScore(itemId, (event.target as HTMLSelectElement | null)?.value)
+}
+
+function handleNoteInput(itemId: string, event: Event) {
+  setReviewNote(itemId, (event.target as HTMLInputElement | null)?.value ?? '')
 }
 
 watch(storageKey, loadReviewState, { immediate: true })
@@ -416,6 +491,9 @@ const portfolioReport = computed(() => ({
     id: item.id,
     label: item.label,
     status: reviewState.value[item.id] ? 'passed' : 'pending',
+    score: reviewScores.value[item.id] ?? null,
+    notes: reviewNotes.value[item.id] ?? '',
+    reviewed_at: reviewTimestamps.value[item.id] ?? null,
     description: item.description,
   })),
   next_actions: unresolvedMachineGates.value.map((gate) => gate.label),
@@ -455,7 +533,7 @@ function exportMarkdownReport() {
     .map((gate) => `| ${markdownCell(gate.label)} | ${markdownCell(gate.status)} | ${markdownCell(gate.evidence)} |`)
     .join('\n')
   const humanRows = report.human_reviews
-    .map((item) => `| ${markdownCell(item.label)} | ${item.status === 'passed' ? '已完成' : '待审核'} | ${markdownCell(item.description)} |`)
+    .map((item) => `| ${markdownCell(item.label)} | ${item.status === 'passed' ? '已完成' : '待审核'} | ${item.score ?? '—'}/5 | ${markdownCell(item.notes || '—')} |`)
     .join('\n')
   const output = report.output
   const nextActions = report.next_actions.length
@@ -488,8 +566,8 @@ function exportMarkdownReport() {
     '',
     '## 人工审核',
     '',
-    '| 项目 | 状态 | 审核标准 |',
-    '| --- | --- | --- |',
+    '| 项目 | 状态 | 评分 | 备注 |',
+    '| --- | --- | --- | --- |',
     humanRows,
     '',
     '## 下一步',
@@ -544,12 +622,12 @@ function locate(gate: ReadinessGate) {
       </section>
 
       <section class="portfolio-readiness-section">
-        <div class="portfolio-readiness-section-heading"><div><strong>人工验收清单</strong><small>勾选只保存在当前浏览器，不会伪造服务端质量结论</small></div><button type="button" class="portfolio-reset-button" @click="resetReviewState">清空</button></div>
+        <div class="portfolio-readiness-section-heading"><div><strong>人工验收清单</strong><small>勾选、评分和备注只保存在当前浏览器，不会伪造服务端质量结论</small></div><button type="button" class="portfolio-reset-button" @click="resetReviewState">清空</button></div>
         <div class="portfolio-review-list">
           <label v-for="item in reviewItems" :key="item.id" class="portfolio-review-item" :class="{ checked: reviewState[item.id] }">
-            <input v-model="reviewState[item.id]" type="checkbox" />
+            <input v-model="reviewState[item.id]" type="checkbox" @change="touchReview(item.id)" />
             <span class="portfolio-review-mark">{{ reviewState[item.id] ? '✓' : '' }}</span>
-            <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+            <span class="portfolio-review-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small><span v-if="reviewState[item.id]" class="portfolio-review-controls"><select :value="reviewScores[item.id] ?? 5" aria-label="审核评分" @click.stop @change="handleScoreChange(item.id, $event)"><option v-for="score in 5" :key="score" :value="score">{{ score }}/5</option></select><input :value="reviewNotes[item.id] ?? ''" maxlength="500" placeholder="可选：记录失败镜头、返工或判断依据" aria-label="审核备注" @click.stop @input="handleNoteInput(item.id, $event)" /></span></span>
           </label>
         </div>
       </section>
@@ -614,4 +692,8 @@ function locate(gate: ReadinessGate) {
 .portfolio-gate > b { font-size: 10px; }
 .portfolio-readiness-blockers, .portfolio-readiness-success { font-size: 11px; }
 @media (max-width: 860px) { .portfolio-readiness-card { padding: 18px; } }
+.portfolio-review-copy { min-width: 0; flex: 1; }
+.portfolio-review-controls { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; margin-top: 8px; }
+.portfolio-review-controls select, .portfolio-review-controls input { min-width: 0; height: 28px; border: 1px solid #e0e3ec; border-radius: 6px; padding: 0 7px; color: #5b657a; background: #fff; font-size: 9px; }
+.portfolio-review-controls select:focus, .portfolio-review-controls input:focus { border-color: #aeb1ea; outline: 2px solid rgba(91,92,226,.1); }
 </style>

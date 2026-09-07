@@ -20,7 +20,7 @@ frontend_origin = "http://localhost:3000"
 log_level = "INFO"
 
 [visual_quality]
-# Windows 运行主机默认使用平衡档；是否能稳定运行仍需按宿主机显存和实测确认。
+# Windows 本地 GPU 运行主机默认使用平衡档；是否能稳定运行仍需按宿主机显存和实测确认。
 # 下面的基础值与 local_balanced 保持一致，直接调用 Provider 且没有任务快照时也不会出现两套规格。
 default_profile = "local_balanced"
 

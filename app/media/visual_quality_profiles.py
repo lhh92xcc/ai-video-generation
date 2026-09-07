@@ -137,7 +137,7 @@ class VisualQualityProfileRegistry:
             profile_id="local_balanced",
             label="Local Balanced · 平衡质量",
             description="作品集推荐档：提高视频流畅度与关键帧清晰度，同时保持逐镜头串行和低漂移。",
-            recommended_for="Windows 运行主机的首轮作品集验收",
+            recommended_for="本地 GPU 运行主机的首轮作品集验收",
             image_width=576,
             image_height=1024,
             image_steps=6,

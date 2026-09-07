@@ -904,3 +904,11 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   .creator-section-heading h2 { font-size: 23px; }
   .visual-quality-selector { padding: 13px; }
 }
+
+/* Creation guidance: keep the first portfolio run short and explain why. */
+.creator-field-hint { display: block; margin-top: 6px; color: #9aa2b1; font-size: 9px; line-height: 1.45; }
+.creator-create-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; border: 1px solid #e2e3f8; border-radius: 9px; padding: 10px 11px; color: #6468c9; background: linear-gradient(135deg, #fafaff, #fff); }
+.creator-create-note > span { display: grid; place-items: center; flex: 0 0 21px; width: 21px; height: 21px; border-radius: 7px; color: #fff; background: #7476dc; font-size: 10px; }
+.creator-create-note strong, .creator-create-note small { display: block; }
+.creator-create-note strong { color: #5b60bf; font-size: 10px; }
+.creator-create-note small { margin-top: 4px; color: #8f97aa; font-size: 9px; line-height: 1.5; }
