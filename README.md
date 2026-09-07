@@ -119,6 +119,14 @@ CHECK_LOCAL_MAC_VALIDATE_MODELS=0 ./scripts/check-local-mac.sh
 
 如果检查只剩 `ComfyUI /system_stats` 失败，说明代码和 Docker 运行时已就绪，但宿主机 ComfyUI 尚未启动；先启动 ComfyUI，再重新检查。只有检查通过后才进入单张参考图和单个视频镜头 smoke。
 
+Apple Silicon 启动 ComfyUI 时推荐使用仓库脚本：
+
+```bash
+./scripts/start-comfyui-mac.sh
+```
+
+脚本默认保留 MPS 和 ComfyUI smart memory，只把 VAE 放到 CPU，并预留 1 GiB 共享显存。不要把 `--disable-smart-memory` 作为默认参数；它会强制激进 CPU offload，可能让 Flux 退化成非常慢的 CPU 推理。只有遇到明确的内存回收问题时，才临时设置 `COMFYUI_DISABLE_SMART_MEMORY=1 COMFYUI_RESERVE_VRAM_GB=4`。
+
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
 
 ## 配置与安全
@@ -192,7 +200,7 @@ docker compose config --quiet
 
 ## 当前边界
 
-这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
+这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。Mac 前置检查已能通过，MPS-first 模式下单个 Flux 4-step Prompt 实测约 534 秒，因此 Mac 适合作为流程/单张图验证机，不作为批量吞吐基线。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
 ## 作品集 Demo 验收清单
 

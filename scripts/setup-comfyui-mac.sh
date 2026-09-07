@@ -77,4 +77,5 @@ fi
 
 echo "ComfyUI home: ${comfyui_home}"
 echo "Project root: ${project_root}"
-echo "Start command: ${comfy_python} ${comfyui_home}/main.py --listen 127.0.0.1 --port 8188 --cpu-vae --cache-none --disable-smart-memory --reserve-vram 4"
+echo "Start command: ${project_root}/scripts/start-comfyui-mac.sh"
+echo "Emergency fallback: COMFYUI_DISABLE_SMART_MEMORY=1 COMFYUI_RESERVE_VRAM_GB=4 ${project_root}/scripts/start-comfyui-mac.sh"
