@@ -25,7 +25,7 @@
 - 本地/Mock Artifact 浏览器预览：通过授权的 `/api/v1/artifacts/{artifact_id}/content` 读取图片、视频、音频和下载文件，支持 HTTP Range；资产列表默认优先展示真实图片/视频缩略图，预览失败时提供重试和签名 URL 回退，不暴露磁盘路径或内部存储 URI。
 - Vue 创作者前台与内部制作后台；根路径默认进入普通用户前台，后台“概览”提供真实运行摘要和快捷入口，Provider 配置是独立的系统页面；创作者工作区按“内容理解 / 剧本与分镜 / 资产审核 / 媒体生成 / 审核与成片”五阶段导航，并明确区分 10 个核心门槛和 11 个详细执行步骤；镜头清单支持状态筛选和关键词搜索，任务记录支持重复任务聚合；媒体资产默认以图库展示真实图片/视频缩略图，也可切换列表视图，点击后通过授权内容接口预览、播放和下载。
 - 作品集 Demo 就绪度面板：把真实任务/Artifact 的机器门禁与改编、角色、动作、声音、字幕、成片观感等人工验收清单分开显示；人工勾选只保存在当前浏览器，不会伪造服务端质量结论。
-- 作品集交付报告：就绪度面板可按当前分集在浏览器端下载 Markdown 和 JSON 验收报告，包含机器门禁、人工审核状态、成片规格、Provider 证据和下一步，不包含密钥、本地路径或存储地址。
+- 作品集交付报告：就绪度面板可按当前分集在浏览器端下载 Markdown 和 JSON 验收报告，包含机器门禁、人工审核状态、成片规格、Provider 证据和下一步，不包含密钥、本地路径或存储地址；人工评分低于 3/5 会明确标记为需返工，不会伪装成作品集就绪。
 - 作品集创建引导：创作者前台新建项目默认使用 60 秒单集，并提供 45 秒短样片选项；作品集面板可为改编、角色、动作、声音、字幕和完整观感记录 1～5 分、备注和审核时间，随 Markdown/JSON 报告导出。
 - 作品集真实运动门禁：当前分集按镜头只读取最新的成功视频任务和对应 Artifact，拒绝 `mock`、`local_fixture`、`ffmpeg_motion`、未知 Provider 及静态/Fixture 元数据，避免历史重试产物污染正式样片判断。
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
@@ -166,7 +166,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `341 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；该回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `355 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；参考图任务还会校验真实图片可读性和实际尺寸，失败重试会递增生成尝试号；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -188,7 +188,7 @@ docker compose config --quiet
 - 运行前门禁：创作者工作区会显示当前选择档案对应的 ComfyUI、Ollama、Worker、GPU 锁和磁盘状态；本地完整 Run 只有在 ComfyUI、已启用的 Ollama、Worker 和磁盘门槛通过后才允许提交。该门禁只能证明“可开始运行”，不能证明画面或声音质量。
 - 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
 - 作品集 runner 的配置不会绑定某一台机器：优先使用显式 `--config`，其次使用 `AI_VIDEO_CONFIG`/`AI_VIDEO_PROFILE`，只有未选择运行档案时才在本机自动采用存在的 `config/config.local.toml`，否则回退公开的 `config/config.example.toml`。Windows 拉取公开仓库后应设置 `AI_VIDEO_PROFILE=windows_gpu`，不需要也不会依赖 Mac 私有配置。
-- 作品集报告版本：本地 runner 与创作者前台导出的 JSON 报告当前使用 schema version `2`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。
+- 作品集报告版本：本地 runner 的兼容字段 `schema_version` 保持版本 `2`，创作者前台导出的 JSON 报告为 `report_schema_version=3`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。前台人工审核要求勾选且评分至少 `3/5`，低分项目会进入“需要人工返工”。
 - 作品集运动报告：正式运行还要求所有成功视频片段都有 `motion_evidence.status=motion_detected`；`frozen` 直接阻塞，`indeterminate`/`unavailable` 等状态要求补生成或人工确认。该检测只排除完全冻结/静态回退，不评价动作是否自然、人物是否崩坏。
 - 参考图抽卡策略：首次失败的角色锚点或镜头关键帧可直接重试；不要手动改 Prompt 只为制造随机性，先让任务重试递增 `generation_attempt`，这样失败原因、seed 和 Artifact 历史仍然可追踪。
 - 正式样片门禁：非 Mock 且非预览模式只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。需要在 Mac 上只验证流程时可使用 `--preview-only`，但报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。

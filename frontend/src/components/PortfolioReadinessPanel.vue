@@ -4,7 +4,8 @@ import type { EpisodeRecord, NovelProjectRecord, ArtifactSummary, GenerationTask
 
 type GateState = 'passed' | 'pending' | 'blocked' | 'not_applicable'
 
-const PORTFOLIO_REPORT_SCHEMA_VERSION = 2
+const PORTFOLIO_REPORT_SCHEMA_VERSION = 3
+const MIN_PORTFOLIO_REVIEW_SCORE = 3
 const IDENTITY_FAILURE_STATUSES = new Set([
   'failed',
   'no_face',
@@ -175,7 +176,11 @@ function handleNoteInput(itemId: string, event: Event) {
 }
 
 watch(storageKey, loadReviewState, { immediate: true })
-watch(reviewState, persistReviewState, { deep: true })
+watch(
+  [reviewState, reviewScores, reviewNotes, reviewTimestamps],
+  persistReviewState,
+  { deep: true },
+)
 
 function stateFor(ready: boolean, available = true, invalid = false): GateState {
   if (!available) return 'not_applicable'
@@ -483,17 +488,34 @@ const machineGates = computed<ReadinessGate[]>(() => [
 
 const machinePassedCount = computed(() => machineGates.value.filter((gate) => gate.blocking && gate.state === 'passed').length)
 const machineGateCount = computed(() => machineGates.value.filter((gate) => gate.blocking && gate.state !== 'not_applicable').length)
-const manualPassedCount = computed(() => reviewItems.filter((item) => reviewState.value[item.id]).length)
+const manualCheckedCount = computed(() => reviewItems.filter((item) => reviewState.value[item.id]).length)
+const manualNeedsRevision = computed(() => reviewItems.filter((item) => {
+  if (!reviewState.value[item.id]) return false
+  const score = reviewScores.value[item.id] ?? 5
+  return score < MIN_PORTFOLIO_REVIEW_SCORE
+}))
+const manualPassedCount = computed(() => reviewItems.filter((item) => {
+  if (!reviewState.value[item.id]) return false
+  const score = reviewScores.value[item.id] ?? 5
+  return score >= MIN_PORTFOLIO_REVIEW_SCORE
+}).length)
 const allMachinePassed = computed(() => machineGateCount.value > 0 && machinePassedCount.value === machineGateCount.value)
 const allManualPassed = computed(() => manualPassedCount.value === reviewItems.length)
+const unresolvedHumanReviews = computed(() => reviewItems.filter((item) => {
+  if (!reviewState.value[item.id]) return true
+  const score = reviewScores.value[item.id] ?? 5
+  return score < MIN_PORTFOLIO_REVIEW_SCORE
+}))
 const readinessLabel = computed(() => {
   if (!props.episode) return '等待选择分集'
   if (allMachinePassed.value && allManualPassed.value) return '作品集就绪'
+  if (allMachinePassed.value && manualNeedsRevision.value.length) return '需要人工返工'
   if (allMachinePassed.value) return '可以开始人工验收'
   return '还需完成生产步骤'
 })
 const readinessClass = computed(() => {
   if (allMachinePassed.value && allManualPassed.value) return 'ready'
+  if (allMachinePassed.value && manualNeedsRevision.value.length) return 'revision'
   if (allMachinePassed.value) return 'review'
   return 'pending'
 })
@@ -535,6 +557,9 @@ const portfolioReport = computed(() => ({
     machine_total: machineGateCount.value,
     human_passed: manualPassedCount.value,
     human_total: reviewItems.length,
+    human_checked: manualCheckedCount.value,
+    human_needs_revision: manualNeedsRevision.value.map((item) => item.id),
+    minimum_human_score: MIN_PORTFOLIO_REVIEW_SCORE,
   },
   output: {
     artifact_present: Boolean(props.renderedVideoArtifact),
@@ -563,13 +588,24 @@ const portfolioReport = computed(() => ({
   human_reviews: reviewItems.map((item) => ({
     id: item.id,
     label: item.label,
-    status: reviewState.value[item.id] ? 'passed' : 'pending',
-    score: reviewScores.value[item.id] ?? null,
+    status: !reviewState.value[item.id]
+      ? 'pending'
+      : (reviewScores.value[item.id] ?? 5) < MIN_PORTFOLIO_REVIEW_SCORE
+        ? 'needs_revision'
+        : 'passed',
+    score: reviewState.value[item.id] ? (reviewScores.value[item.id] ?? 5) : null,
     notes: reviewNotes.value[item.id] ?? '',
     reviewed_at: reviewTimestamps.value[item.id] ?? null,
     description: item.description,
   })),
-  next_actions: unresolvedMachineGates.value.map((gate) => gate.label),
+  next_actions: [
+    ...unresolvedMachineGates.value.map((gate) => gate.label),
+    ...unresolvedHumanReviews.value.map((item) => (
+      reviewState.value[item.id]
+        ? `人工返工：${item.label}`
+        : `人工审核：${item.label}`
+    )),
+  ],
 }))
 
 function markdownCell(value: unknown): string {
@@ -606,7 +642,7 @@ function exportMarkdownReport() {
     .map((gate) => `| ${markdownCell(gate.label)} | ${markdownCell(gate.status)} | ${markdownCell(gate.evidence)} |`)
     .join('\n')
   const humanRows = report.human_reviews
-    .map((item) => `| ${markdownCell(item.label)} | ${item.status === 'passed' ? '已完成' : '待审核'} | ${item.score ?? '—'}/5 | ${markdownCell(item.notes || '—')} |`)
+    .map((item) => `| ${markdownCell(item.label)} | ${item.status === 'passed' ? '已通过' : item.status === 'needs_revision' ? '需返工' : '待审核'} | ${item.score ?? '—'}/5 | ${markdownCell(item.notes || '—')} |`)
     .join('\n')
   const output = report.output
   const nextActions = report.next_actions.length
@@ -620,7 +656,7 @@ function exportMarkdownReport() {
     '## 当前结论',
     '',
     `- 状态：**${markdownCell(report.readiness.label)}**`,
-    `- 总进度：${report.readiness.percent}%（机器 ${report.readiness.machine_passed}/${report.readiness.machine_total}，人工 ${report.readiness.human_passed}/${report.readiness.human_total}）`,
+    `- 总进度：${report.readiness.percent}%（机器 ${report.readiness.machine_passed}/${report.readiness.machine_total}，人工通过 ${report.readiness.human_passed}/${report.readiness.human_total}，最低评分 ${report.readiness.minimum_human_score}/5）`,
     `- 真实运动 Provider：${report.motion.providers.length ? report.motion.providers.join('、') : '尚未确认'}`,
     '',
     '## 成片规格',
@@ -695,9 +731,9 @@ function locate(gate: ReadinessGate) {
       </section>
 
       <section class="portfolio-readiness-section">
-        <div class="portfolio-readiness-section-heading"><div><strong>人工验收清单</strong><small>勾选、评分和备注只保存在当前浏览器，不会伪造服务端质量结论</small></div><button type="button" class="portfolio-reset-button" @click="resetReviewState">清空</button></div>
+        <div class="portfolio-readiness-section-heading"><div><strong>人工验收清单</strong><small>勾选、评分和备注只保存在当前浏览器；评分低于 {{ MIN_PORTFOLIO_REVIEW_SCORE }}/5 会标记为需返工</small></div><button type="button" class="portfolio-reset-button" @click="resetReviewState">清空</button></div>
         <div class="portfolio-review-list">
-          <label v-for="item in reviewItems" :key="item.id" class="portfolio-review-item" :class="{ checked: reviewState[item.id] }">
+          <label v-for="item in reviewItems" :key="item.id" class="portfolio-review-item" :class="{ checked: reviewState[item.id], 'needs-revision': reviewState[item.id] && (reviewScores[item.id] ?? 5) < MIN_PORTFOLIO_REVIEW_SCORE }">
             <input v-model="reviewState[item.id]" type="checkbox" @change="touchReview(item.id)" />
             <span class="portfolio-review-mark">{{ reviewState[item.id] ? '✓' : '' }}</span>
             <span class="portfolio-review-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small><span v-if="reviewState[item.id]" class="portfolio-review-controls"><select :value="reviewScores[item.id] ?? 5" aria-label="审核评分" @click.stop @change="handleScoreChange(item.id, $event)"><option v-for="score in 5" :key="score" :value="score">{{ score }}/5</option></select><input :value="reviewNotes[item.id] ?? ''" maxlength="500" placeholder="可选：记录失败镜头、返工或判断依据" aria-label="审核备注" @click.stop @input="handleNoteInput(item.id, $event)" /></span></span>
@@ -706,7 +742,7 @@ function locate(gate: ReadinessGate) {
       </section>
     </div>
 
-    <div v-if="unresolvedMachineGates.length" class="portfolio-readiness-blockers"><span>下一步</span><p>优先处理：{{ unresolvedMachineGates.map((gate) => gate.label).join('、') }}。点击左侧门禁可以直接定位到对应操作区。</p></div>
+    <div v-if="unresolvedMachineGates.length || unresolvedHumanReviews.length" class="portfolio-readiness-blockers"><span>下一步</span><p>优先处理：{{ [...unresolvedMachineGates.map((gate) => gate.label), ...unresolvedHumanReviews.map((item) => reviewState[item.id] ? `人工返工：${item.label}` : `人工审核：${item.label}`)].join('、') }}。低于 {{ MIN_PORTFOLIO_REVIEW_SCORE }}/5 的项目不会计入作品集通过。</p></div>
     <div v-else class="portfolio-readiness-success"><span>✓</span><p>机器门禁已全部通过。完成右侧人工清单后，这一集才可以作为最终作品集样片对外展示。</p></div>
   </section>
 </template>
@@ -717,7 +753,7 @@ function locate(gate: ReadinessGate) {
 .portfolio-readiness-heading h3 { margin: 0; color: #3f4770; font-size: 17px; letter-spacing: -.025em; }
 .portfolio-readiness-heading p:last-child { max-width: 680px; margin: 7px 0 0; color: #7f879c; font-size: 10px; line-height: 1.65; }
 .portfolio-readiness-badge { flex: 0 0 auto; border-radius: 999px; padding: 7px 10px; color: #767e91; background: #eef1f7; font-size: 10px; font-weight: 750; }
-.portfolio-readiness-badge.review { color: #756329; background: #fff4d9; }.portfolio-readiness-badge.ready { color: #287b55; background: #e5f7ed; }
+.portfolio-readiness-badge.review { color: #756329; background: #fff4d9; }.portfolio-readiness-badge.revision { color: #a24f57; background: #fff0f2; }.portfolio-readiness-badge.ready { color: #287b55; background: #e5f7ed; }
 .portfolio-readiness-progress { margin-top: 16px; border: 1px solid #e6e7f4; border-radius: 11px; padding: 11px 12px; background: rgba(255,255,255,.82); }
 .portfolio-readiness-progress-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.portfolio-readiness-progress-copy strong { color: #5d61ce; font-size: 19px; }.portfolio-readiness-progress-copy span { color: #9299aa; font-size: 9px; }
 .portfolio-readiness-progress-track { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #eeeff6; }.portfolio-readiness-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7476dc, #4ca77e); transition: width 180ms ease; }
@@ -735,6 +771,7 @@ function locate(gate: ReadinessGate) {
 .portfolio-readiness-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }.portfolio-readiness-section-heading strong, .portfolio-readiness-section-heading small { display: block; }.portfolio-readiness-section-heading strong { color: #566078; font-size: 11px; }.portfolio-readiness-section-heading small { margin-top: 4px; color: #9ba3b3; font-size: 9px; line-height: 1.45; }.portfolio-readiness-section-heading > span { color: #6469ce; font-size: 11px; font-weight: 750; }.portfolio-reset-button { border: 0; padding: 0; color: #8a92a5; background: transparent; font-size: 9px; cursor: pointer; }.portfolio-reset-button:hover { color: #5e63c7; }
 .portfolio-gate-list, .portfolio-review-list { display: grid; gap: 7px; margin-top: 11px; }.portfolio-gate { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; color: inherit; background: #fff; text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease, transform 150ms ease; }.portfolio-gate:hover:not(:disabled) { border-color: #c9ccf1; background: #fcfcff; transform: translateY(-1px); }.portfolio-gate:disabled { cursor: default; }.portfolio-gate-icon, .portfolio-review-mark { display: grid; place-items: center; flex: 0 0 23px; width: 23px; height: 23px; border-radius: 8px; color: #8d96a8; background: #f0f2f6; font-size: 11px; font-weight: 800; }.portfolio-gate.passed .portfolio-gate-icon { color: #fff; background: #4aa77d; }.portfolio-gate.blocked .portfolio-gate-icon { color: #fff; background: #d86c77; }.portfolio-gate-copy { min-width: 0; flex: 1; }.portfolio-gate-copy strong, .portfolio-gate-copy small, .portfolio-gate-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portfolio-gate-copy strong { color: #5b657a; font-size: 10px; }.portfolio-gate-copy small { margin-top: 3px; color: #6f78ce; font-size: 9px; }.portfolio-gate-copy em { margin-top: 3px; color: #a1a8b5; font-size: 8px; font-style: normal; }.portfolio-gate > b { flex: 0 0 auto; color: #a0a8b5; font-size: 9px; font-weight: 650; }.portfolio-gate.passed > b { color: #3d936d; }.portfolio-gate.pending > b { color: #9b7b35; }
 .portfolio-review-item { display: flex; align-items: flex-start; gap: 9px; min-width: 0; border: 1px solid #eceef4; border-radius: 9px; padding: 9px; background: #fff; cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }.portfolio-review-item:hover { border-color: #d2d4f4; }.portfolio-review-item input { position: absolute; width: 1px; height: 1px; opacity: 0; }.portfolio-review-item.checked { border-color: #cde9da; background: #f8fdf9; }.portfolio-review-item.checked .portfolio-review-mark { color: #fff; background: #4aa77d; }.portfolio-review-item > span:last-child { min-width: 0; }.portfolio-review-item strong, .portfolio-review-item small { display: block; }.portfolio-review-item strong { color: #5b657a; font-size: 10px; }.portfolio-review-item small { margin-top: 4px; color: #99a1b0; font-size: 9px; line-height: 1.5; }
+.portfolio-review-item.needs-revision { border-color: #f0c7cc; background: #fff8f8; }.portfolio-review-item.needs-revision .portfolio-review-mark { color: #fff; background: #d86c77; }
 .portfolio-readiness-blockers, .portfolio-readiness-success { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; border-radius: 9px; padding: 10px 11px; font-size: 10px; line-height: 1.55; }.portfolio-readiness-blockers { color: #806831; background: #fff9e9; }.portfolio-readiness-success { color: #397958; background: #effaf4; }.portfolio-readiness-blockers > span, .portfolio-readiness-success > span { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: inherit; background: rgba(255,255,255,.72); font-weight: 800; }.portfolio-readiness-blockers p, .portfolio-readiness-success p { margin: 0; }
 @media (max-width: 860px) { .portfolio-readiness-heading { flex-direction: column; gap: 9px; }.portfolio-readiness-columns { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .portfolio-export-bar { align-items: flex-start; flex-direction: column; }.portfolio-export-actions { width: 100%; }.portfolio-export-button { flex: 1; } }
