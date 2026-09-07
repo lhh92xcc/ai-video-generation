@@ -103,6 +103,20 @@ docker compose up -d --build api worker
 
 ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。目标 GPU 主机应先在前台选择 `local_safe`，从单张严格 9:16 参考图和一个 3 秒、288×512、12fps 的低压 Wan I2V 镜头开始，并保持串行生成；确认稳定后再切换 `local_balanced`。低压档用于缩小失败范围，不建议直接作为最终成片档案。配置档案不要求某个固定显卡型号。
 
+Mac 本地真实生成前先执行只读检查：
+
+```bash
+./scripts/check-local-mac.sh
+```
+
+它默认读取 `config/config.local.toml`，检查 Ollama 模型、Flux/Wan workflow、ComfyUI API/节点、Apple MPS、宿主机模型与 custom nodes、FFmpeg/ffprobe、Docker API/Worker、容器内 `subtitles/libass` 和可用磁盘；不会下载模型、启动服务或修改配置。模型尚未下载时，可以暂时关闭深度模型检查：
+
+```bash
+CHECK_LOCAL_MAC_VALIDATE_MODELS=0 ./scripts/check-local-mac.sh
+```
+
+如果检查只剩 `ComfyUI /system_stats` 失败，说明代码和 Docker 运行时已就绪，但宿主机 ComfyUI 尚未启动；先启动 ComfyUI，再重新检查。只有检查通过后才进入单张参考图和单个视频镜头 smoke。
+
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
 
 ## 配置与安全
@@ -166,7 +180,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `355 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；参考图任务还会校验真实图片可读性和实际尺寸，失败重试会递增生成尝试号；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `359 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；参考图任务还会校验真实图片可读性和实际尺寸，失败重试会递增生成尝试号；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
