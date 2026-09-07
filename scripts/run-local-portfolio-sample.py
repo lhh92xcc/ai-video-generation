@@ -75,6 +75,7 @@ from app.media.identity_audit import IdentityConsistencyAuditor
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.video_duration import FFmpegVideoTailExtender, FFmpegVideoTrimmer
 from app.media.video_validation import FFprobeVideoValidator
+from app.media.video_motion import FFmpegMotionEvidenceValidator
 from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     DEFAULT_REFERENCE_STYLE,
@@ -327,6 +328,12 @@ def _assert_real_portfolio_video_artifact(
     metadata = artifact.metadata
     motion = _portfolio_provider_name(metadata.get("motion"))
     source = _portfolio_provider_name(metadata.get("source"))
+    motion_evidence = metadata.get("motion_evidence")
+    motion_status = (
+        _portfolio_provider_name(motion_evidence.get("status"))
+        if isinstance(motion_evidence, dict)
+        else None
+    )
     if (
         configured not in _PORTFOLIO_REAL_MOTION_PROVIDERS
         or actual not in _PORTFOLIO_REAL_MOTION_PROVIDERS
@@ -335,12 +342,66 @@ def _assert_real_portfolio_video_artifact(
         or motion == "ken_burns"
         or motion == "fixture-color-card"
         or source == "deterministic_color_fallback"
+        or motion_status == "frozen"
     ):
         raise RuntimeError(
             "PORTFOLIO_REAL_VIDEO_REQUIRED: "
             f"视频 Artifact provider={artifact.provider!r}, motion={metadata.get('motion')!r}, "
-            f"source={metadata.get('source')!r}，不符合真实运动模型作品集门禁。"
+            f"source={metadata.get('source')!r}, motion_evidence={motion_status!r}，"
+            "不符合真实运动模型作品集门禁。"
         )
+
+
+def _portfolio_motion_evidence_contract(
+    *,
+    clip_task_snapshots: list[GenerationTaskRecord],
+    clip_count: int,
+    mock_media: bool,
+) -> dict[str, object]:
+    if mock_media:
+        return {
+            "status": "not_applicable",
+            "blocking": False,
+            "evidence": "Mock 媒体不执行真实帧运动检测",
+        }
+    reports: list[dict[str, object]] = []
+    for task in clip_task_snapshots:
+        for artifact in task.artifacts:
+            if artifact.type != "video_clip":
+                continue
+            report = artifact.metadata.get("motion_evidence")
+            if isinstance(report, dict):
+                reports.append(report)
+    if not reports:
+        return {
+            "status": "pending",
+            "blocking": True,
+            "evidence": "视频 Artifact 尚未登记帧运动证据；需要用新版运行时重新生成或人工确认",
+        }
+    if len(reports) < clip_count:
+        return {
+            "status": "pending",
+            "blocking": True,
+            "evidence": f"仅收集到 {len(reports)}/{clip_count} 个视频片段的帧运动证据",
+        }
+    statuses = [str(report.get("status", "unknown")) for report in reports]
+    if "frozen" in statuses:
+        return {
+            "status": "failed",
+            "blocking": True,
+            "evidence": f"检测到 {statuses.count('frozen')}/{len(statuses)} 个视频片段接近冻结帧",
+        }
+    if any(status in {"unavailable", "indeterminate", "unknown"} for status in statuses):
+        return {
+            "status": "pending",
+            "blocking": True,
+            "evidence": f"帧运动证据不完整：{', '.join(statuses)}；仍需人工看片",
+        }
+    return {
+        "status": "passed",
+        "blocking": True,
+        "evidence": f"{len(reports)} 个视频片段均检测到相邻帧变化；该结果不代表动作质量通过",
+    }
 
 
 def _portfolio_readiness_report(
@@ -384,6 +445,11 @@ def _portfolio_readiness_report(
         preview_only=bool(getattr(args, "preview_only", False)),
         clip_task_snapshots=clip_task_snapshots,
     )
+    motion_evidence_contract = _portfolio_motion_evidence_contract(
+        clip_task_snapshots=clip_task_snapshots,
+        clip_count=clip_count,
+        mock_media=bool(getattr(args, "mock_media", False)),
+    )
 
     def count_status(count: int, target: int) -> str:
         if count == target:
@@ -411,6 +477,13 @@ def _portfolio_readiness_report(
             "status": motion_contract["status"],
             "blocking": motion_contract["blocking"],
             "evidence": motion_contract["evidence"],
+        },
+        {
+            "id": "motion_evidence",
+            "label": "帧运动证据",
+            "status": motion_evidence_contract["status"],
+            "blocking": motion_evidence_contract["blocking"],
+            "evidence": motion_evidence_contract["evidence"],
         },
         {
             "id": "shot_budget",
@@ -2615,6 +2688,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         video_provider,
         storage,
         video_validator=FFprobeVideoValidator(timeout_seconds=settings.video_probe_timeout_seconds),
+        motion_validator=FFmpegMotionEvidenceValidator(
+            binary=settings.video_binary,
+            timeout_seconds=settings.video_probe_timeout_seconds,
+        ),
         identity_auditor=(
             IdentityConsistencyAuditor(
                 python_path=settings.identity_audit_python_path,

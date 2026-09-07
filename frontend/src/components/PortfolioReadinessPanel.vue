@@ -303,6 +303,66 @@ const motionProviderSummary = computed(() => {
   return { state: 'passed' as GateState, providers, evidence: `${providers[0]} · ${artifacts.length} 个片段来自真实视频 Provider` }
 })
 
+const motionEvidenceSummary = computed(() => {
+  if (!props.episode) {
+    return { state: 'not_applicable' as GateState, evidence: '等待选择分集', reports: 0, clips: 0 }
+  }
+  const latestSuccessfulTaskByShot = new Map<number, GenerationTaskRecord>()
+  for (const task of props.tasks) {
+    if (
+      task.kind !== 'video_clip'
+      || task.status !== 'succeeded'
+      || String(task.input_data.episode_id ?? '') !== props.episode.id
+    ) continue
+    const shotIndex = numberFrom(task.input_data.shot_index)
+    if (!Number.isInteger(shotIndex) || shotIndex < 1) continue
+    if (!task.artifacts.some((artifact) => artifact.type === 'video_clip')) continue
+    const existing = latestSuccessfulTaskByShot.get(shotIndex)
+    if (!existing || existing.updated_at.localeCompare(task.updated_at) < 0) {
+      latestSuccessfulTaskByShot.set(shotIndex, task)
+    }
+  }
+  const artifacts = [...latestSuccessfulTaskByShot.values()]
+    .flatMap((task) => task.artifacts.filter((artifact) => artifact.type === 'video_clip'))
+  if (!artifacts.length) {
+    return { state: 'pending' as GateState, evidence: '尚无成功视频片段，等待帧运动检测结果', reports: 0, clips: 0 }
+  }
+  const reports = artifacts
+    .map((artifact) => artifact.metadata.motion_evidence)
+    .filter((report): report is Record<string, unknown> => Boolean(report && typeof report === 'object' && !Array.isArray(report)))
+  if (reports.length < artifacts.length) {
+    return {
+      state: 'pending' as GateState,
+      evidence: `仅有 ${reports.length}/${artifacts.length} 个片段登记帧运动证据；旧片段需重新生成或人工确认`,
+      reports: reports.length,
+      clips: artifacts.length,
+    }
+  }
+  const statuses = reports.map((report) => String(report.status ?? 'unknown'))
+  if (statuses.includes('frozen')) {
+    return {
+      state: 'blocked' as GateState,
+      evidence: `检测到 ${statuses.filter((status) => status === 'frozen').length}/${statuses.length} 个片段接近冻结帧，不能跳过人工返工`,
+      reports: reports.length,
+      clips: artifacts.length,
+    }
+  }
+  if (statuses.some((status) => ['unavailable', 'indeterminate', 'unknown'].includes(status))) {
+    return {
+      state: 'pending' as GateState,
+      evidence: `帧运动证据状态为 ${statuses.join('、')}；仍需人工看片`,
+      reports: reports.length,
+      clips: artifacts.length,
+    }
+  }
+  return {
+    state: 'passed' as GateState,
+    evidence: `${reports.length} 个片段均检测到相邻帧变化；这不代表动作质量已经通过`,
+    reports: reports.length,
+    clips: artifacts.length,
+  }
+})
+
 const machineGates = computed<ReadinessGate[]>(() => [
   {
     id: 'content',
@@ -370,15 +430,26 @@ const machineGates = computed<ReadinessGate[]>(() => [
       && props.subtitleArtifact
       && props.videoClipReadyCount > 0
       && props.videoClipSucceededCount >= props.videoClipReadyCount
-      && motionProviderSummary.value.state === 'passed',
+      && motionProviderSummary.value.state === 'passed'
+      && motionEvidenceSummary.value.state === 'passed',
     ), Boolean(props.episode), Boolean(
       props.audioArtifact
       || props.subtitleArtifact
       || props.videoClipSucceededCount > 0
-      || motionProviderSummary.value.state === 'blocked',
+      || motionProviderSummary.value.state === 'blocked'
+      || motionEvidenceSummary.value.state === 'blocked',
     )),
     blocking: true,
     target: 'creator-step-audio',
+  },
+  {
+    id: 'motion_evidence',
+    label: '帧运动证据',
+    description: '抽样相邻帧存在变化，排除完全冻结或静态图片回退；仍需人工判断动作自然度。',
+    evidence: motionEvidenceSummary.value.evidence,
+    state: motionEvidenceSummary.value.state,
+    blocking: Boolean(props.episode),
+    target: 'creator-step-quality',
   },
   {
     id: 'shot_budget',
@@ -478,6 +549,8 @@ const portfolioReport = computed(() => ({
     state: motionProviderSummary.value.state,
     providers: motionProviderSummary.value.providers,
     evidence: motionProviderSummary.value.evidence,
+    evidence_state: motionEvidenceSummary.value.state,
+    evidence_detail: motionEvidenceSummary.value.evidence,
   },
   machine_checks: machineGates.value.map((gate) => ({
     id: gate.id,

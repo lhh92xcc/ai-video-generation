@@ -27,6 +27,10 @@ from app.domain.models import (
     utc_now,
 )
 from app.media.video_validation import FFprobeVideoValidator, VideoArtifactValidator
+from app.media.video_motion import (
+    FFmpegMotionEvidenceValidator,
+    VideoMotionEvidenceValidator,
+)
 from app.media.identity_audit import IdentityAuditProvider
 from app.media.visual_prompts import (
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
@@ -62,6 +66,7 @@ class VideoClipTaskService:
         provider: VideoGenerationProvider,
         artifact_storage: ArtifactStorage,
         video_validator: VideoArtifactValidator | None = None,
+        motion_validator: VideoMotionEvidenceValidator | None = None,
         identity_auditor: IdentityAuditProvider | None = None,
         default_negative_prompt: str = DEFAULT_VIDEO_NEGATIVE_PROMPT,
         prompt_suffix: str = DEFAULT_VIDEO_PROMPT_SUFFIX,
@@ -72,6 +77,7 @@ class VideoClipTaskService:
         self._provider = provider
         self._artifact_storage = artifact_storage
         self._video_validator = video_validator or FFprobeVideoValidator()
+        self._motion_validator = motion_validator or FFmpegMotionEvidenceValidator()
         self._identity_auditor = identity_auditor
         self._default_negative_prompt = (
             default_negative_prompt.strip() or DEFAULT_VIDEO_NEGATIVE_PROMPT
@@ -513,6 +519,9 @@ class VideoClipTaskService:
             result.metadata = {
                 **result.metadata,
                 "ffprobe": probe_result.as_metadata(),
+                "motion_evidence": (
+                    await self._motion_validator.validate_bytes(content, result.mime_type)
+                ).as_metadata(),
             }
             input_data = task.input_data
             extension = self._extension_for_mime(result.mime_type)

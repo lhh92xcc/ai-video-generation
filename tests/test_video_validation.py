@@ -19,6 +19,7 @@ from app.domain.models import (
     VideoClipGenerationResult,
 )
 from app.media.video_validation import FFprobeVideoValidator
+from app.media.video_motion import FFmpegMotionEvidenceValidator
 from app.providers.errors_video import VideoArtifactValidationError
 from app.queue import InProcessTaskQueue
 from app.repositories.in_memory import InMemoryStore
@@ -78,6 +79,50 @@ def test_ffprobe_validator_rejects_unplayable_content() -> None:
         with pytest.raises(VideoArtifactValidationError) as error:
             await FFprobeVideoValidator().validate_bytes(b"not-a-video", "video/mp4")
         assert error.value.code == "VIDEO_ARTIFACT_NOT_PLAYABLE"
+
+    asyncio.run(exercise())
+
+
+def test_motion_evidence_distinguishes_frozen_and_changing_video(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is required for motion evidence validation")
+
+    static_frame = tmp_path / "frame.png"
+    static_video = tmp_path / "static.mp4"
+    moving_video = tmp_path / "moving.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=160x90:r=1", "-frames:v", "1",
+            str(static_frame),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-loop", "1", "-i", str(static_frame), "-t", "2", "-r", "10",
+            "-an", "-pix_fmt", "yuv420p", str(static_video),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=160x90:r=10", "-t", "2",
+            "-an", "-pix_fmt", "yuv420p", str(moving_video),
+        ],
+        check=True,
+    )
+
+    async def exercise() -> None:
+        validator = FFmpegMotionEvidenceValidator()
+        static_result = await validator.validate_bytes(static_video.read_bytes(), "video/mp4")
+        moving_result = await validator.validate_bytes(moving_video.read_bytes(), "video/mp4")
+        assert static_result.status == "frozen"
+        assert moving_result.status == "motion_detected"
+        assert moving_result.mean_frame_delta is not None
+        assert moving_result.mean_frame_delta > static_result.mean_frame_delta or static_result.mean_frame_delta is None
 
     asyncio.run(exercise())
 

@@ -43,6 +43,30 @@ _resolve_sample_config = _MODULE._resolve_sample_config
 _apply_visual_quality_profile = _MODULE._apply_visual_quality_profile
 
 
+def _clip_snapshots(count: int, identity_status: str = "passed"):
+    from app.domain.models import ArtifactSummary, GenerationTaskKind, GenerationTaskRecord, TaskStatus
+
+    return [
+        GenerationTaskRecord(
+            project_id=uuid4(),
+            kind=GenerationTaskKind.VIDEO_CLIP,
+            status=TaskStatus.SUCCEEDED,
+            input_data={"episode_id": str(uuid4()), "shot_index": index},
+            artifacts=[
+                ArtifactSummary(
+                    type="video_clip",
+                    provider="comfyui_wan_i2v",
+                    metadata={
+                        "identity_audit": {"status": identity_status},
+                        "motion_evidence": {"status": "motion_detected"},
+                    },
+                )
+            ],
+        )
+        for index in range(1, count + 1)
+    ]
+
+
 def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target() -> None:
     scenes = _narration_scenes()
     assert len(scenes) == _MODULE.PORTFOLIO_MAX_SHOTS == 12
@@ -93,20 +117,6 @@ def test_portfolio_readiness_report_separates_machine_gates_from_human_review() 
         provider="word_boundary",
         metadata={"cue_count": 8, "alignment_precision": "word_boundary"},
     )
-    clip_task = GenerationTaskRecord(
-        project_id=uuid4(),
-        kind=GenerationTaskKind.VIDEO_CLIP,
-        status=TaskStatus.SUCCEEDED,
-        input_data={"episode_id": str(uuid4()), "shot_index": 1},
-        artifacts=[
-            ArtifactSummary(
-                type="video_clip",
-                provider="comfyui_wan_i2v",
-                metadata={"identity_audit": {"status": "passed"}},
-            )
-        ],
-    )
-
     report = _portfolio_readiness_report(
         args=argparse.Namespace(mock_media=False),
         shot_count=8,
@@ -116,14 +126,14 @@ def test_portfolio_readiness_report_separates_machine_gates_from_human_review() 
         subtitle_artifact=subtitles,
         subtitle_metadata=subtitles.metadata,
         rendered_artifact=rendered,
-        clip_task_snapshots=[clip_task],
+        clip_task_snapshots=_clip_snapshots(8),
     )
 
     readiness = report["readiness"]
     assert readiness["status"] == "ready_for_human_review"
     assert readiness["ready_for_portfolio"] is False
-    assert readiness["machine_checks_passed"] == 9
-    assert readiness["machine_checks_total"] == 9
+    assert readiness["machine_checks_passed"] == 10
+    assert readiness["machine_checks_total"] == 10
     assert readiness["human_checks_completed"] == 0
     assert len(report["human_review"]["items"]) == 6
     assert {item["status"] for item in report["machine_checks"]} == {"passed"}
@@ -288,19 +298,6 @@ def test_real_portfolio_readiness_blocks_unavailable_identity_audit() -> None:
 def test_real_portfolio_readiness_ignores_not_applicable_identity_audits() -> None:
     from app.domain.models import ArtifactSummary, GenerationTaskKind, GenerationTaskRecord, TaskStatus
 
-    clip_task = GenerationTaskRecord(
-        project_id=uuid4(),
-        kind=GenerationTaskKind.VIDEO_CLIP,
-        status=TaskStatus.SUCCEEDED,
-        input_data={"episode_id": str(uuid4()), "shot_index": 1},
-        artifacts=[
-            ArtifactSummary(
-                type="video_clip",
-                provider="comfyui_wan_i2v",
-                metadata={"identity_audit": {"status": "not_applicable"}},
-            )
-        ],
-    )
     report = _portfolio_readiness_report(
         args=argparse.Namespace(mock_media=False),
         shot_count=8,
@@ -322,7 +319,7 @@ def test_real_portfolio_readiness_ignores_not_applicable_identity_audits() -> No
             provider="ffmpeg",
             metadata={"width": 576, "height": 1024, "duration_seconds": 50.0},
         ),
-        clip_task_snapshots=[clip_task],
+        clip_task_snapshots=_clip_snapshots(8, identity_status="not_applicable"),
         video_provider="comfyui_wan_i2v",
     )
 

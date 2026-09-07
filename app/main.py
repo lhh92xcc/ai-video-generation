@@ -18,6 +18,7 @@ from app.db import create_engine as create_database_engine, create_session_facto
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.audio_normalization import FFmpegAudioNormalizer
 from app.media.video_validation import FFprobeVideoValidator
+from app.media.video_motion import FFmpegMotionEvidenceValidator
 from app.media.identity_audit import IdentityConsistencyAuditor
 from app.media.identity_calibration import IdentityCalibrationService
 from app.media.pronunciation import load_pronunciation_dictionary
@@ -122,6 +123,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         artifact_storage,
         video_validator=FFprobeVideoValidator(
             timeout_seconds=app_settings.video_probe_timeout_seconds
+        ),
+        motion_validator=FFmpegMotionEvidenceValidator(
+            binary=app_settings.video_binary,
+            timeout_seconds=app_settings.video_probe_timeout_seconds,
         ),
         identity_auditor=(
             IdentityConsistencyAuditor(

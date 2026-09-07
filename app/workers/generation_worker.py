@@ -20,6 +20,7 @@ from app.domain.models import GenerationTaskKind, TaskStatus
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.audio_normalization import FFmpegAudioNormalizer
 from app.media.video_validation import FFprobeVideoValidator
+from app.media.video_motion import FFmpegMotionEvidenceValidator
 from app.media.identity_audit import IdentityConsistencyAuditor
 from app.media.pronunciation import load_pronunciation_dictionary
 from app.providers.factory import (
@@ -118,6 +119,10 @@ async def run_worker() -> None:
         artifact_storage,
         video_validator=FFprobeVideoValidator(
             timeout_seconds=settings.video_probe_timeout_seconds
+        ),
+        motion_validator=FFmpegMotionEvidenceValidator(
+            binary=settings.video_binary,
+            timeout_seconds=settings.video_probe_timeout_seconds,
         ),
         identity_auditor=(
             IdentityConsistencyAuditor(
