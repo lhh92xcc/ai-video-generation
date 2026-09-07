@@ -22,6 +22,7 @@ class Settings:
     runtime_profile: str
     visual_quality_profile: str
     environment: str
+    comfyui_base_url: str
     api_host: str
     api_port: int
     frontend_origin: str
@@ -218,6 +219,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     asr_config = raw_config.get("asr", {})
     worker_config = raw_config.get("worker", {})
     visual_quality_config = raw_config.get("visual_quality", {})
+    runtime_config = raw_config.get("runtime", {})
 
     def setting(section: dict[str, object], key: str, env_name: str, default: object) -> object:
         environment_value = os.getenv(env_name)
@@ -263,6 +265,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
             )
         ),
         environment=str(app_config.get("environment", "local")),
+        comfyui_base_url=str(
+            setting(
+                runtime_config,
+                "comfyui_base_url",
+                "AI_VIDEO_COMFYUI_BASE_URL",
+                "http://127.0.0.1:8188",
+            )
+        ).rstrip("/"),
         api_host=str(app_config.get("api_host", "0.0.0.0")),
         api_port=int(app_config.get("api_port", 8000)),
         frontend_origin=str(app_config.get("frontend_origin", "http://localhost:5173")),

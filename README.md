@@ -94,6 +94,10 @@ AI_VIDEO_VIDEO_BASE_URL=http://host.docker.internal:8188 \
 docker compose up -d --build api worker
 ```
 
+前台切换到本地 ComfyUI Profile 时，图片和视频共用 `AI_VIDEO_COMFYUI_BASE_URL`；Docker Compose 默认将它设为
+`http://host.docker.internal:8188`，宿主机直接运行 API/Worker 时则使用
+`http://127.0.0.1:8188`。因此不需要同时手动修改图片和视频两套 URL；若使用其他网络拓扑，只覆盖这一项即可。
+
 ComfyUI 的模型、工作流和显存参数属于宿主机配置，不会打包进本仓库。目标 GPU 主机应先在前台选择 `local_safe`，从单张严格 9:16 参考图和一个 3 秒、288×512、12fps 的低压 Wan I2V 镜头开始，并保持串行生成；确认稳定后再切换 `local_balanced`。低压档用于缩小失败范围，不建议直接作为最终成片档案。配置档案不要求某个固定显卡型号。
 
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
@@ -101,6 +105,7 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 ## 配置与安全
 
 - `config/config.example.toml`：不含密钥的配置示例。
+- `[runtime].comfyui_base_url` / `AI_VIDEO_COMFYUI_BASE_URL`：Provider Profile 切换到本地 ComfyUI 时使用的统一地址。
 - `config/pronunciation.toml`：TTS 发音替换表。
 - `config/comfyui/`：ComfyUI API workflow 模板。
 - `prompts/`：运行时 Prompt，不包含个人密钥。

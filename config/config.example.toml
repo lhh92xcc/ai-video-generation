@@ -11,6 +11,12 @@ api_port = 8000
 frontend_origin = "http://localhost:5173"
 log_level = "INFO"
 
+[runtime]
+# Provider Profile 页面切换到 ComfyUI 时使用的统一地址。
+# API/Worker 直接运行在宿主机时使用 127.0.0.1；Docker Compose 会通过
+# AI_VIDEO_COMFYUI_BASE_URL 覆盖为 host.docker.internal。
+comfyui_base_url = "http://127.0.0.1:8188"
+
 [visual_quality]
 # 运行时质量档案会写入每个新任务的快照；可在前台质量卡片中覆盖。
 # local_safe 适合首次联调，local_balanced 适合目标 GPU 主机验收。

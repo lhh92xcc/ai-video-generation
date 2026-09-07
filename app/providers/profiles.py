@@ -530,6 +530,7 @@ class VisualProviderProfileRegistry:
 
     @classmethod
     def _build_profiles(cls, settings: Settings) -> dict[str, RuntimeProviderProfile]:
+        comfyui_base_url = settings.comfyui_base_url or "http://127.0.0.1:8188"
         definitions = (
             ("image.mock", "本地 Mock 参考图", "image", "mock", "mock-reference-v1", "", None),
             (
@@ -538,7 +539,7 @@ class VisualProviderProfileRegistry:
                 "image",
                 "comfyui",
                 "flux1-schnell-Q4_K_S.gguf",
-                "http://127.0.0.1:8188",
+                comfyui_base_url,
                 None,
             ),
             (
@@ -584,7 +585,7 @@ class VisualProviderProfileRegistry:
                 "video",
                 "comfyui_wan_i2v",
                 "wan2.1-i2v",
-                "http://127.0.0.1:8188",
+                comfyui_base_url,
                 None,
             ),
             (
