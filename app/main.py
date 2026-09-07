@@ -246,7 +246,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_files_per_run=app_settings.worker_cleanup_max_files_per_run,
         min_free_gb=app_settings.worker_cleanup_min_free_gb,
     )
-    runtime_health_service = RuntimeHealthService(app_settings, task_queue, store)
+    runtime_health_service = RuntimeHealthService(
+        app_settings,
+        task_queue,
+        store,
+        visual_profile_registry=visual_profile_registry,
+    )
     production_orchestrator = ProductionOrchestrator(store, episode_task_plan_service)
 
     if isinstance(task_queue, InProcessTaskQueue):

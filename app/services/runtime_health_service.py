@@ -19,6 +19,7 @@ from app.domain.models import (
 )
 from app.queue import RedisTaskQueue
 from app.repositories.protocol import ProjectTaskStore
+from app.providers.profiles import VisualProviderProfileRegistry
 
 
 class RuntimeHealthService:
@@ -27,12 +28,19 @@ class RuntimeHealthService:
         settings: Settings,
         queue: object,
         store: ProjectTaskStore | None = None,
+        visual_profile_registry: VisualProviderProfileRegistry | None = None,
     ) -> None:
         self.settings = settings
         self.queue = queue
         self.store = store
+        self.visual_profile_registry = visual_profile_registry
 
-    async def check(self) -> OperationalHealthResponse:
+    async def check(
+        self,
+        *,
+        image_provider_profile_id: str | None = None,
+        video_provider_profile_id: str | None = None,
+    ) -> OperationalHealthResponse:
         components: list[OperationalComponentHealth] = []
         components.append(await self._check_redis())
         components.append(await self._check_http_provider(
@@ -40,11 +48,20 @@ class RuntimeHealthService:
             self._ollama_url(),
             configured=self.settings.llm_provider == "ollama",
         ))
+        image_provider, image_url = self._visual_runtime_profile(
+            "image",
+            image_provider_profile_id,
+        )
+        video_provider, video_url = self._visual_runtime_profile(
+            "video",
+            video_provider_profile_id,
+        )
+        comfyui_url = image_url if image_provider == "comfyui" else video_url
         components.append(await self._check_http_provider(
             "comfyui",
-            self._comfyui_url(),
-            configured=self.settings.image_provider == "comfyui"
-            or self.settings.video_provider == "comfyui_wan_i2v",
+            comfyui_url,
+            configured=image_provider == "comfyui"
+            or video_provider == "comfyui_wan_i2v",
             path="/system_stats",
         ))
         components.append(await self._check_http_provider(
@@ -275,9 +292,22 @@ class RuntimeHealthService:
             base = base[:-3]
         return f"{base}/api/tags"
 
-    def _comfyui_url(self) -> str:
-        base = self.settings.image_base_url or self.settings.video_base_url
-        return base
+    def _visual_runtime_profile(
+        self,
+        capability: str,
+        profile_id: str | None,
+    ) -> tuple[str, str]:
+        if self.visual_profile_registry is not None and profile_id:
+            try:
+                profile = self.visual_profile_registry.resolve(capability, profile_id)
+                return profile.provider, profile.base_url
+            except Exception:
+                # Invalid UI metadata must not make the health endpoint fail.
+                # The selected task will still be rejected by the provider registry.
+                return "", ""
+        if capability == "image":
+            return self.settings.image_provider, self.settings.image_base_url
+        return self.settings.video_provider, self.settings.video_base_url
 
     @staticmethod
     def _build_url(base: str, path: str | None) -> str:

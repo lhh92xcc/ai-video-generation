@@ -694,6 +694,33 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .creator-cloud-provider-warning { display: flex; align-items: flex-start; gap: 7px; margin-top: 9px; border-radius: 8px; padding: 8px 9px; color: #806831; background: #fff9e9; font-size: 8px; line-height: 1.5; }
 .creator-cloud-provider-warning > span { display: grid; place-items: center; flex: 0 0 16px; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: #d2a54a; font-size: 9px; font-weight: 800; }
 .creator-cloud-provider-warning p { margin: 0; }
+.creator-runtime-check { margin-top: 11px; border: 1px solid #e3e6f1; border-radius: 10px; padding: 11px 12px; background: #fafbfe; }
+.creator-runtime-check.ready { border-color: #cce8d9; background: linear-gradient(135deg, #f5fcf7, #fbfdff); }
+.creator-runtime-check.warning { border-color: #f0dfb8; background: linear-gradient(135deg, #fffaf0, #fbfcff); }
+.creator-runtime-check-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.creator-runtime-check-heading strong, .creator-runtime-check-heading small { display: block; }
+.creator-runtime-check-heading strong { margin-top: 3px; color: #4e5872; font-size: 10px; }
+.creator-runtime-check-heading small { max-width: 560px; margin-top: 4px; color: #8b94a8; font-size: 8px; line-height: 1.5; }
+.creator-runtime-refresh { flex: 0 0 auto; border: 1px solid #d6d9ef; border-radius: 7px; padding: 6px 8px; color: #6066c8; background: #fff; font-size: 8px; font-weight: 750; cursor: pointer; }
+.creator-runtime-refresh:hover:not(:disabled) { border-color: #999ee3; background: #f7f7ff; }
+.creator-runtime-refresh:disabled { cursor: wait; opacity: .55; }
+.creator-runtime-check-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+.creator-runtime-check-item { display: flex; align-items: flex-start; gap: 6px; min-width: 0; border: 1px solid #eceef5; border-radius: 8px; padding: 8px; background: #fff; }
+.creator-runtime-check-item > div { min-width: 0; flex: 1; }
+.creator-runtime-check-item strong, .creator-runtime-check-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creator-runtime-check-item strong { color: #596277; font-size: 8px; }
+.creator-runtime-check-item small { margin-top: 3px; color: #9aa2b3; font-size: 7px; }
+.creator-runtime-check-item em { flex: 0 0 auto; border-radius: 999px; padding: 3px 5px; font-size: 7px; font-style: normal; font-weight: 750; }
+.creator-runtime-check-dot { display: block; flex: 0 0 7px; width: 7px; height: 7px; margin-top: 3px; border-radius: 50%; background: #c5cbd8; }
+.creator-runtime-check-item.ok .creator-runtime-check-dot { background: #42a879; box-shadow: 0 0 0 3px #e5f7ed; }
+.creator-runtime-check-item.ok em { color: #31865e; background: #e5f7ed; }
+.creator-runtime-check-item.degraded .creator-runtime-check-dot { background: #d19d3d; box-shadow: 0 0 0 3px #fff1d2; }
+.creator-runtime-check-item.degraded em { color: #9c7023; background: #fff1d2; }
+.creator-runtime-check-item.unavailable .creator-runtime-check-dot { background: #d15b6b; box-shadow: 0 0 0 3px #ffe9ed; }
+.creator-runtime-check-item.unavailable em { color: #ae4656; background: #ffe9ed; }
+.creator-runtime-check-item.not_configured .creator-runtime-check-dot { background: #aeb5c5; }
+.creator-runtime-check-item.not_configured em { color: #737d91; background: #eef0f5; }
+.creator-runtime-check-error { margin: 8px 0 0; color: #ae4656; font-size: 8px; line-height: 1.5; }
 .creator-provider-grid .visual-quality-selector { grid-column: 1 / -1; }
 .creator-shot-keyframe-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; border: 1px solid #ececf8; border-radius: 9px; padding: 10px 11px; background: #fcfcff; }
 .creator-shot-keyframe-control > div { min-width: 0; }
@@ -747,6 +774,9 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
   .creator-provider-grid { grid-template-columns: 1fr; }
   .creator-local-mode-card { align-items: stretch; flex-direction: column; }
   .creator-local-mode-button, .creator-local-mode-badge { align-self: flex-start; }
+  .creator-runtime-check-heading { align-items: stretch; flex-direction: column; }
+  .creator-runtime-refresh { align-self: flex-start; }
+  .creator-runtime-check-grid { grid-template-columns: 1fr; }
   .creator-shot-keyframe-control { align-items: stretch; flex-direction: column; }
   .creator-shot-keyframe-control select { flex-basis: auto; min-width: 0; width: 100%; }
   .visual-quality-options { grid-template-columns: 1fr; }

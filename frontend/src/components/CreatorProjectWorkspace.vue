@@ -5,6 +5,7 @@ import { createAudioBGMTask, createAudioNarrationTask } from '../api/audio'
 import { createSubtitleASRTask, createSubtitleAlignmentTask } from '../api/subtitles'
 import { createVideoAssemblyTask, createVideoClipTask } from '../api/video'
 import type { VideoAssemblyCreateRequest } from '../api/video'
+import { getOperationalHealth } from '../api/productionQueue'
 import {
   createEpisodePlanTask,
   createEpisodeTaskPlan,
@@ -40,6 +41,9 @@ import type {
   TaskStatus,
   EpisodeTaskPlanResponse,
   ProductionRunResponse,
+  OperationalComponentHealth,
+  OperationalComponentStatus,
+  OperationalHealthResponse,
 } from '../types/task'
 
 type SubtitleMode = 'asr' | 'align'
@@ -130,6 +134,9 @@ const refreshing = ref(false)
 const errorMessage = ref<string | null>(null)
 const noticeMessage = ref<string | null>(null)
 const action = ref<string | null>(null)
+const operationalHealth = ref<OperationalHealthResponse | null>(null)
+const operationalHealthLoading = ref(false)
+const operationalHealthError = ref<string | null>(null)
 let pollTimer: number | null = null
 let loadedRenderedVideoArtifactId: string | null = null
 
@@ -139,12 +146,51 @@ const selectedImageProfile = computed(() => imageProfiles.value.find((profile) =
 const selectedVideoProfile = computed(() => videoProfiles.value.find((profile) => profile.profile_id === selectedVideoProfileId.value) ?? null)
 const localVisualProvidersConfigured = computed(() => Boolean(localImageProfile.value?.configured && localVideoProfile.value?.configured))
 const usingLocalVisualProviders = computed(() => selectedImageProfileId.value === 'image.comfyui' && selectedVideoProfileId.value === 'video.comfyui_wan_i2v')
+const providerSelectionReady = computed(() => Boolean(
+  selectedImageProfileId.value
+  && selectedVideoProfileId.value
+  && selectedVisualQualityProfileId.value,
+))
 const usingCloudVisualProvider = computed(() => Boolean(
   selectedImageProfile.value
   && selectedVideoProfile.value
   && (!['mock', 'comfyui'].includes(selectedImageProfile.value.provider)
     || !['mock', 'local_fixture', 'ffmpeg_motion', 'comfyui_wan_i2v'].includes(selectedVideoProfile.value.provider)),
 ))
+
+const localComfyUIHealth = computed(() => runtimeComponent('comfyui'))
+const localOllamaHealth = computed(() => runtimeComponent('ollama'))
+const localRuntimeWorkerReady = computed(() => ['online', 'starting', 'in_process'].includes(
+  String(operationalHealth.value?.worker?.status ?? ''),
+))
+const localRuntimeReady = computed(() => Boolean(
+  usingLocalVisualProviders.value
+  && localVisualProvidersConfigured.value
+  && operationalHealth.value
+  && localComfyUIHealth.value?.status === 'ok'
+  && !['degraded', 'unavailable'].includes(localOllamaHealth.value?.status ?? 'unavailable')
+  && localRuntimeWorkerReady.value
+  && runtimeDiskStatus() === 'ok'
+))
+const runtimeCheckReady = computed(() => !usingLocalVisualProviders.value || localRuntimeReady.value)
+const productionRunCanSubmit = computed(() => Boolean(
+  sourceReady.value
+  && providerSelectionReady.value
+  && !action.value
+  && (!usingLocalVisualProviders.value || localRuntimeReady.value),
+))
+const localRuntimeGateMessage = computed(() => {
+  if (!usingLocalVisualProviders.value) return '当前使用云端或其他视觉档案；本地运行时检查不会阻止提交。'
+  if (operationalHealthLoading.value) return '正在检查本机 ComfyUI、Ollama、Worker 和 GPU 锁…'
+  if (operationalHealthError.value) return operationalHealthError.value
+  if (!localVisualProvidersConfigured.value) return 'API 尚未发现本地 ComfyUI Provider 档案。'
+  if (!operationalHealth.value) return '尚未取得运行时状态，完成检查后才能启动本地完整生产。'
+  if (localComfyUIHealth.value?.status !== 'ok') return `ComfyUI 未就绪：${localComfyUIHealth.value?.message ?? '请先启动 ComfyUI。'}`
+  if (['degraded', 'unavailable'].includes(localOllamaHealth.value?.status ?? 'unavailable')) return `Ollama 未就绪：${localOllamaHealth.value?.message ?? '请先启动 Ollama 或切换长文本 Provider。'}`
+  if (!localRuntimeWorkerReady.value) return `Worker 未就绪：${String(operationalHealth.value.worker?.message ?? '请先启动 Worker。')}`
+  if (runtimeDiskStatus() !== 'ok') return `可用磁盘不足：当前 ${operationalHealth.value.disk_free_gb} GB，建议至少保留 10 GB。`
+  return 'ComfyUI、Worker 和本地生产门禁已通过；GPU 锁会保证任务串行运行。'
+})
 
 const selectedEpisode = computed(() => episodes.value.find((episode) => episode.id === selectedEpisodeId.value) ?? null)
 const sourceReady = computed(() => Boolean(projectData.value.source_id))
@@ -153,7 +199,6 @@ const storyBibleReady = computed(() => Boolean(projectData.value.story_bible_id)
 const episodePlanTask = computed(() => latestTask('novel_episode_plan'))
 const episodesReady = computed(() => episodes.value.length > 0)
 const planCanSubmit = computed(() => planEpisodeIds.value.length > 0 && !action.value)
-const productionRunCanSubmit = computed(() => sourceReady.value && !action.value)
 const scriptTask = computed(() => selectedEpisodeId.value ? latestTask('novel_episode_script', selectedEpisodeId.value) : null)
 const shotTask = computed(() => selectedEpisodeId.value ? latestTask('novel_shot_list', selectedEpisodeId.value) : null)
 const audioTask = computed(() => selectedEpisodeId.value ? latestTask('audio_narration', selectedEpisodeId.value) : null)
@@ -575,6 +620,7 @@ function selectLocalVisualProviders() {
   selectedImageProfileId.value = localImageProfile.value?.profile_id ?? null
   selectedVideoProfileId.value = localVideoProfile.value?.profile_id ?? null
   noticeMessage.value = '已切换到本地免费模式：ComfyUI Flux Schnell + Wan2.1 I2V。新任务不会调用云端视觉 API。'
+  void refreshOperationalHealth()
 }
 
 function focusFailedShots() {
@@ -669,6 +715,63 @@ function buildNarrationText(script: EpisodeScriptRecord): string {
 function displayError(error: unknown) {
   if (error instanceof ApiClientError) return taskErrorDetail({ code: error.code, message: error.message })
   return '工作区暂时无法读取，请稍后重试。'
+}
+
+function runtimeComponent(name: string): OperationalComponentHealth | null {
+  return operationalHealth.value?.components.find((component) => component.name === name) ?? null
+}
+
+function runtimeStatusLabel(status: OperationalComponentStatus | undefined): string {
+  if (status === 'ok') return '正常'
+  if (status === 'degraded') return '降级'
+  if (status === 'unavailable') return '不可用'
+  if (status === 'not_configured') return '未启用'
+  return '待检查'
+}
+
+function runtimeWorkerLabel(): string {
+  const status = String(operationalHealth.value?.worker?.status ?? '')
+  if (status === 'online') return '在线'
+  if (status === 'starting') return '启动中'
+  if (status === 'in_process') return '进程内'
+  if (status === 'offline') return '离线'
+  if (status === 'unavailable') return '不可用'
+  return '待检查'
+}
+
+function runtimeWorkerStatus(): OperationalComponentStatus {
+  if (localRuntimeWorkerReady.value) return 'ok'
+  if (operationalHealth.value?.worker?.status === 'offline') return 'unavailable'
+  return operationalHealth.value ? 'degraded' : 'unavailable'
+}
+
+function runtimeLockStatus(): OperationalComponentStatus {
+  if (!operationalHealth.value) return 'unavailable'
+  if (!operationalHealth.value.gpu_lock_enabled) return 'not_configured'
+  return operationalHealth.value.gpu_lock_busy ? 'degraded' : 'ok'
+}
+
+function runtimeDiskStatus(): OperationalComponentStatus {
+  if (!operationalHealth.value) return 'unavailable'
+  return operationalHealth.value.disk_free_gb >= 10 ? 'ok' : 'degraded'
+}
+
+async function refreshOperationalHealth() {
+  if (operationalHealthLoading.value) return
+  operationalHealthLoading.value = true
+  operationalHealthError.value = null
+  try {
+    operationalHealth.value = await getOperationalHealth({
+      imageProviderProfileId: selectedImageProfileId.value ?? undefined,
+      videoProviderProfileId: selectedVideoProfileId.value ?? undefined,
+    })
+  } catch (error) {
+    operationalHealthError.value = error instanceof ApiClientError
+      ? `${error.message} · ${error.code}`
+      : '无法读取本地运行时状态，请确认 API 已启动。'
+  } finally {
+    operationalHealthLoading.value = false
+  }
 }
 
 function newIdempotencyKey(actionName: string) {
@@ -892,6 +995,7 @@ async function refreshWorkspace() {
     await loadSelectedScript(selectedEpisodeId.value)
     await loadSelectedShots(selectedEpisodeId.value)
     await loadRenderedVideoArtifact()
+    await refreshOperationalHealth()
   } catch (error) {
     errorMessage.value = displayError(error)
   } finally {
@@ -1067,8 +1171,13 @@ watch(() => props.project, (project) => {
   void refreshWorkspace()
 })
 
+watch([selectedImageProfileId, selectedVideoProfileId], () => {
+  if (selectedImageProfileId.value || selectedVideoProfileId.value) void refreshOperationalHealth()
+})
+
 onMounted(() => {
   void refreshWorkspace()
+  void refreshOperationalHealth()
   pollTimer = window.setInterval(() => {
     if (activeTaskCount.value > 0 || productionRun.value?.auto_advance) void refreshWorkspace()
   }, 2500)
@@ -1172,6 +1281,34 @@ onUnmounted(() => {
               <span>!</span>
               <p>当前至少有一项视觉 Provider 是云端配置（{{ selectedImageProfile?.label ?? '参考图' }} / {{ selectedVideoProfile?.label ?? '视频' }}）。确认预算后再启动；如果只想本地运行，请点击上方“一键切换本地”。</p>
             </div>
+            <div class="creator-runtime-check" :class="{ ready: runtimeCheckReady, warning: !runtimeCheckReady }" aria-live="polite">
+              <div class="creator-runtime-check-heading">
+                <div>
+                  <p class="creator-eyebrow">LOCAL RUNTIME CHECK</p>
+                  <strong>{{ usingLocalVisualProviders ? (localRuntimeReady ? '本地运行时已就绪' : operationalHealthLoading ? '正在检查本地运行时' : '本地运行时未就绪') : '当前配置不受本地门禁限制' }}</strong>
+                  <small>{{ localRuntimeGateMessage }}</small>
+                </div>
+                <button type="button" class="creator-runtime-refresh" :disabled="operationalHealthLoading" @click="refreshOperationalHealth">{{ operationalHealthLoading ? '检查中…' : '刷新检查' }}</button>
+              </div>
+              <div class="creator-runtime-check-grid">
+                <div class="creator-runtime-check-item" :class="localComfyUIHealth?.status ?? 'unavailable'">
+                  <span class="creator-runtime-check-dot" /><div><strong>ComfyUI</strong><small>{{ localComfyUIHealth?.message ?? '等待检查' }}</small></div><em>{{ runtimeStatusLabel(localComfyUIHealth?.status) }}</em>
+                </div>
+                <div class="creator-runtime-check-item" :class="localOllamaHealth?.status ?? 'unavailable'">
+                  <span class="creator-runtime-check-dot" /><div><strong>Ollama</strong><small>{{ localOllamaHealth?.message ?? '等待检查' }}</small></div><em>{{ runtimeStatusLabel(localOllamaHealth?.status) }}</em>
+                </div>
+                <div class="creator-runtime-check-item" :class="runtimeWorkerStatus()">
+                  <span class="creator-runtime-check-dot" /><div><strong>Worker</strong><small>{{ String(operationalHealth?.worker?.message ?? '等待检查') }}</small></div><em>{{ runtimeWorkerLabel() }}</em>
+                </div>
+                <div class="creator-runtime-check-item" :class="runtimeLockStatus()">
+                  <span class="creator-runtime-check-dot" /><div><strong>GPU 锁</strong><small>{{ operationalHealth?.gpu_lock_enabled ? (operationalHealth.gpu_lock_busy ? '当前有任务占用' : '已启用，等待任务') : '当前配置未启用' }}</small></div><em>{{ runtimeStatusLabel(runtimeLockStatus()) }}</em>
+                </div>
+                <div class="creator-runtime-check-item" :class="runtimeDiskStatus()">
+                  <span class="creator-runtime-check-dot" /><div><strong>磁盘</strong><small>{{ operationalHealth ? `${operationalHealth.disk_free_gb} GB 可用` : '等待检查' }}</small></div><em>{{ runtimeStatusLabel(runtimeDiskStatus()) }}</em>
+                </div>
+              </div>
+              <p v-if="operationalHealthError" class="creator-runtime-check-error">{{ operationalHealthError }}</p>
+            </div>
             <div class="creator-provider-grid">
               <VisualQualityProfileSelect
                 v-model="selectedVisualQualityProfileId"
@@ -1219,7 +1356,7 @@ onUnmounted(() => {
           </div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
             <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
-            <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
+            <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" :title="productionRunCanSubmit ? '' : localRuntimeGateMessage" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
           </div>
           <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRun.status === 'completed' ? '✓' : productionRun.status === 'failed' ? '!' : productionRun.status === 'blocked' ? '!' : '↻' }}</span><div><strong>Run {{ productionRun.status === 'active' ? '运行中' : productionRun.status === 'blocked' ? '等待人工处理' : productionRun.status === 'completed' ? '已完成' : '失败' }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
         </section>

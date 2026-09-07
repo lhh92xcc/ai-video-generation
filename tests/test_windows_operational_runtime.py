@@ -89,6 +89,17 @@ def test_operational_health_and_remote_queue_endpoints_are_queryable(client: Tes
     assert queue_body["tasks"] == []
 
 
+def test_operational_health_can_probe_frontend_selected_local_profiles(client: TestClient) -> None:
+    health = client.get(
+        "/api/v1/system/health"
+        "?image_provider_profile_id=image.comfyui"
+        "&video_provider_profile_id=video.comfyui_wan_i2v"
+    )
+    assert health.status_code == 200, health.text
+    comfyui = next(item for item in health.json()["components"] if item["name"] == "comfyui")
+    assert comfyui["status"] != "not_configured"
+
+
 def test_one_click_production_run_starts_and_reuses_same_idempotency_key(client: TestClient) -> None:
     project = client.post(
         "/api/v1/novel-projects",

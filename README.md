@@ -114,6 +114,8 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 
 创作者前台对视觉 Provider 默认采用本地优先策略：如果发现 `image.comfyui` 和 `video.comfyui_wan_i2v` 档案，就优先选中 ComfyUI Flux Schnell + Wan2.1 I2V；页面同时提供“一键切换本地”按钮。只有用户主动选择云端档案时才会显示费用提醒。该策略只影响创作者前台新任务选择，不会偷偷修改服务端默认配置，也不会改变已经运行的任务快照。
 
+工作区还会在本地模式卡片下执行一次运行前门禁：按当前选择的视觉 Profile 检查 ComfyUI、Ollama、Worker、GPU 锁和可用磁盘，并明确区分“Provider 已选择”和“本地运行时已就绪”。ComfyUI 未响应、Ollama 被启用但不可用、Worker 离线、磁盘低于 10 GB 或 API 无法取得健康状态时，“一键启动完整生产”会保持禁用；这只阻止新的本地完整 Run，不会隐藏已有任务，也不会替代 Windows 主机上的严格前置检查。
+
 后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
 视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 GPU 主机人工验收。
@@ -175,6 +177,7 @@ docker compose config --quiet
 - 已具备：小说上传、StoryBible/剧本/分镜 JSON、资产审核门禁、参考图与视频 Provider 抽象、异步 Worker、失败重试、音频/字幕/成片 Artifact、远程队列和创作者前台。
 - 本地低压基线：使用严格 9:16 的 `432×768` 参考图、Wan2.1 I2V `288×512`/`12fps`/`6 steps`/串行生成；参考图锚点采用正面中性人设、2D 漫画线稿和无道具背景，视频 Prompt 默认包含身份连续性、防变脸和风格锁定约束。模型仍在宿主机，不进入仓库。
 - 仍需人工完成：实际跑一遍完整样片，筛掉变脸/手部/动作崩坏镜头，听审旁白并核对字幕，填写身份与声音质量评分。
+- 运行前门禁：创作者工作区会显示当前选择档案对应的 ComfyUI、Ollama、Worker、GPU 锁和磁盘状态；本地完整 Run 只有在 ComfyUI、已启用的 Ollama、Worker 和磁盘门槛通过后才允许提交。该门禁只能证明“可开始运行”，不能证明画面或声音质量。
 - 运行报告：`scripts/run-local-portfolio-sample.py` 完成或通过 `--stop-after-shot` 暂停后都会写出统一结构的 `report.json`，其中包含 `portfolio_readiness`、目标规格、机器门禁、人工审核模板和阻塞原因；暂停阶段的未执行步骤标记为 `pending`，真实运行的身份初审没有结果时仍会阻塞就绪状态，`--mock-media` 结果只能作为工程联调证据，不能直接作为作品集成片。
 - 作品集 runner 的配置不会绑定某一台机器：优先使用显式 `--config`，其次使用 `AI_VIDEO_CONFIG`/`AI_VIDEO_PROFILE`，只有未选择运行档案时才在本机自动采用存在的 `config/config.local.toml`，否则回退公开的 `config/config.example.toml`。Windows 拉取公开仓库后应设置 `AI_VIDEO_PROFILE=windows_gpu`，不需要也不会依赖 Mac 私有配置。
 - 作品集报告版本：本地 runner 与创作者前台导出的 JSON 报告当前使用 schema version `2`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。
@@ -255,4 +258,4 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
 
 如果要把 MuseTalk 作为正式对话镜头的必需依赖，再追加 `-RequireMuseTalk`；启动器也支持同名参数。如果暂时只检查 Docker/API 基础设施，可省略媒体检查参数。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
 
-远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue` 和 `POST /api/v1/system/cleanup`。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。
+远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue` 和 `POST /api/v1/system/cleanup`。健康接口可带 `image_provider_profile_id` / `video_provider_profile_id`，让创作者前台按当前选择的视觉档案探测 ComfyUI。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。

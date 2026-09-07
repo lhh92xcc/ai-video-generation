@@ -503,10 +503,17 @@ async def healthz(request: Request) -> HealthResponse:
     response_model=OperationalHealthResponse,
     tags=["system"],
 )
-async def system_health(request: Request) -> OperationalHealthResponse:
+async def system_health(
+    request: Request,
+    image_provider_profile_id: str | None = Query(default=None, max_length=120),
+    video_provider_profile_id: str | None = Query(default=None, max_length=120),
+) -> OperationalHealthResponse:
     """Run a one-shot dependency check for the remote production console."""
 
-    return await _runtime_health_service(request).check()
+    return await _runtime_health_service(request).check(
+        image_provider_profile_id=image_provider_profile_id,
+        video_provider_profile_id=video_provider_profile_id,
+    )
 
 
 @router.get(
