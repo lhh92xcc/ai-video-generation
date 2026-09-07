@@ -87,6 +87,7 @@ from app.providers.factory import (
     create_tts_provider,
     create_video_generation_provider,
 )
+from app.providers.profiles import VisualProviderProfileRegistry
 from app.queue import InProcessTaskQueue
 from app.repositories.in_memory import InMemoryStore
 from app.services.reference_image_service import ReferenceImageTaskService
@@ -676,6 +677,15 @@ def parse_args() -> argparse.Namespace:
         help="Seconds per Wan I2V shot; use 3 for the first hardware smoke.",
     )
     parser.add_argument(
+        "--quality-profile",
+        choices=("local_safe", "local_balanced", "high_quality"),
+        default=None,
+        help=(
+            "Visual quality preset. When omitted, use the selected config or "
+            "AI_VIDEO_VISUAL_QUALITY_PROFILE value."
+        ),
+    )
+    parser.add_argument(
         "--mock-media",
         action="store_true",
         help="Use Mock image/TTS and local fixture video for orchestration tests.",
@@ -726,6 +736,19 @@ def _resolve_sample_config(config: str | None) -> str | None:
     return str(local_config) if local_config.is_file() else "config/config.example.toml"
 
 
+def _apply_visual_quality_profile(
+    settings: Settings,
+    requested_profile_id: str | None,
+) -> tuple[Settings, VisualProviderProfileRegistry, dict[str, object]]:
+    """Apply one immutable visual preset to every local runner component."""
+
+    registry = VisualProviderProfileRegistry(settings)
+    selected_profile_id = requested_profile_id or settings.visual_quality_profile
+    profile = registry.resolve_quality_profile(selected_profile_id)
+    applied_settings = registry.settings_for_quality(profile.profile_id)
+    return applied_settings, registry, profile.as_snapshot()
+
+
 CHECKPOINT_VERSION = 1
 
 
@@ -741,6 +764,7 @@ def _new_checkpoint(
     args: argparse.Namespace,
     *,
     video_provider: str | None = None,
+    quality_profile_id: str | None = None,
 ) -> dict[str, object]:
     checkpoint: dict[str, object] = {
         "schema_version": CHECKPOINT_VERSION,
@@ -751,6 +775,11 @@ def _new_checkpoint(
         "shot_duration_seconds": args.shot_duration,
         "mock_media": bool(args.mock_media),
         "preview_only": bool(getattr(args, "preview_only", False)),
+        "quality_profile_id": (
+            quality_profile_id
+            or getattr(args, "quality_profile", None)
+            or "local_safe"
+        ),
         "shots": {},
     }
     if video_provider is not None:
@@ -763,6 +792,7 @@ def _load_or_create_checkpoint(
     args: argparse.Namespace,
     *,
     video_provider: str | None = None,
+    quality_profile_id: str | None = None,
 ) -> dict[str, object]:
     path = _checkpoint_path(output_dir)
     if not args.resume:
@@ -770,7 +800,11 @@ def _load_or_create_checkpoint(
             raise RuntimeError(
                 f"Checkpoint already exists: {path}. Use --resume to continue or choose a new --output-dir."
             )
-        checkpoint = _new_checkpoint(args, video_provider=video_provider)
+        checkpoint = _new_checkpoint(
+            args,
+            video_provider=video_provider,
+            quality_profile_id=quality_profile_id,
+        )
         _write_checkpoint(path, checkpoint)
         return checkpoint
 
@@ -795,6 +829,20 @@ def _load_or_create_checkpoint(
         getattr(args, "preview_only", False)
     ):
         raise RuntimeError("--resume must use the same --preview-only mode as the original run")
+    expected_quality_profile = (
+        quality_profile_id
+        or getattr(args, "quality_profile", None)
+        or "local_safe"
+    )
+    checkpoint_quality_profile = checkpoint.get("quality_profile_id")
+    if (
+        checkpoint_quality_profile is not None
+        and checkpoint_quality_profile != expected_quality_profile
+    ):
+        raise RuntimeError(
+            "--resume must use the same --quality-profile value as the original run"
+        )
+    checkpoint.setdefault("quality_profile_id", expected_quality_profile)
     checkpoint_provider = checkpoint.get("video_provider")
     if (
         video_provider is not None
@@ -2479,7 +2527,13 @@ def _recent_reference_files(artifact_root: Path, count: int = 4) -> list[Path]:
 
 async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     config_path = _resolve_sample_config(getattr(args, "config", None))
-    settings = load_settings(config_path)
+    base_settings = load_settings(config_path)
+    settings, visual_profile_registry, visual_quality_snapshot = _apply_visual_quality_profile(
+        base_settings,
+        getattr(args, "quality_profile", None),
+    )
+    quality_profile_id = str(visual_quality_snapshot["profile_id"])
+    setattr(args, "quality_profile", quality_profile_id)
     preview_only = bool(getattr(args, "preview_only", False))
     if args.mock_media and preview_only:
         raise RuntimeError("--mock-media and --preview-only cannot be used together")
@@ -2498,6 +2552,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         output_dir,
         args,
         video_provider=video_provider_name,
+        quality_profile_id=quality_profile_id,
     )
     artifact_root = Path(settings.storage_base_path)
     store = InMemoryStore()
@@ -2523,6 +2578,11 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         video_provider = LocalFixtureVideoGenerationProvider()
         tts_provider = MockTTSProvider()
 
+    # The real path uses the same Provider registry as the API/Worker so the
+    # selected quality profile is persisted in each task and applied again
+    # when the task runs. Mock mode keeps its deterministic fixture Providers.
+    task_provider_registry = None if args.mock_media else visual_profile_registry
+
     queue = InProcessTaskQueue()
     image_service = ReferenceImageTaskService(
         store,
@@ -2532,6 +2592,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         default_width=settings.image_width,
         default_height=settings.image_height,
         identity_provider=identity_provider,
+        default_style=settings.image_default_style,
+        default_negative_prompt=settings.image_default_negative_prompt,
+        provider_registry=task_provider_registry,
     )
     if identity_provider is not None:
         identity_service = ReferenceImageTaskService(
@@ -2542,6 +2605,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             default_width=settings.image_width,
             default_height=settings.image_height,
             identity_provider=identity_provider,
+            default_style=settings.image_default_style,
+            default_negative_prompt=settings.image_default_negative_prompt,
+            provider_registry=task_provider_registry,
         )
     video_service = VideoClipTaskService(
         store,
@@ -2561,6 +2627,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             if settings.identity_audit_enabled and not args.mock_media
             else None
         ),
+        default_negative_prompt=settings.video_default_negative_prompt,
+        prompt_suffix=settings.video_prompt_suffix,
+        provider_registry=task_provider_registry,
     )
     tts_service = TTSTaskService(
         store,
@@ -2740,7 +2809,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 }
                 for index, (title, voiceover, visual_prompt) in enumerate(scenes, start=1)
             ],
-            risk_notes=["参考图只保证人设/道具方向一致，FFmpeg Motion 不生成新动作"],
+            risk_notes=[
+                "本地 Wan I2V 只使用审核通过的首帧和单一微动作；角色一致性、动作自然度仍需人工看片。"
+            ],
         ),
         provider="portfolio-fixture",
         model="human-reviewed-v1",
@@ -2763,7 +2834,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             audio_requirements=["旁白", "雨夜环境氛围"],
             asset_requirements=required,
             asset_refs=[_asset_ref(by_name[name]) for name in required],
-            continuity_notes="沿用已审核参考图；本地方案使用 Ken Burns 动态化，不生成新的角色动作。",
+            continuity_notes=(
+                "沿用已审核参考图作为精确首帧；本镜头只保留一种连续、低幅度的微动作，"
+                "不换脸、不换装、不新增角色、不切镜。"
+            ),
         )
         for index, ((_, _, visual_prompt), required) in enumerate(zip(scenes, shot_assets, strict=True), start=1)
     ]
@@ -2828,6 +2902,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                     prompt_override=_reference_prompt(asset_name),
                     width=settings.image_width,
                     height=settings.image_height,
+                    visual_quality_profile_id=(
+                        quality_profile_id if task_provider_registry is not None else None
+                    ),
                 ),
                 idempotency_key=f"portfolio-reference-{asset_name}",
             )
@@ -2914,6 +2991,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                         shot_index=shot.shot_index,
                         identity_lock=True,
                         identity_reference_image_id=reference_image_ids[reference_name],
+                        visual_quality_profile_id=quality_profile_id,
                     ),
                     idempotency_key=f"portfolio-identity-shot-{shot.shot_index}",
                 )
@@ -2929,6 +3007,9 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                     prompt_override=shot.visual_prompt,
                     reference_image_id=(
                         None if args.mock_media else shot_reference_ids[shot.shot_index]
+                    ),
+                    visual_quality_profile_id=(
+                        quality_profile_id if task_provider_registry is not None else None
                     ),
                 ),
                 idempotency_key=f"portfolio-clip-{shot.shot_index}",
@@ -3017,6 +3098,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         partial_report = {
             "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
             "status": "paused",
+            "quality_profile_id": quality_profile_id,
+            "quality_profile": visual_quality_snapshot,
             "sample_mode": (
                 "mock" if args.mock_media else "preview_only" if preview_only else "formal"
             ),
@@ -3045,6 +3128,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 f"{config_prefix}"
                 f"python scripts/run-local-portfolio-sample.py --shots {args.shots} "
                 f"--shot-duration {args.shot_duration} "
+                f"--quality-profile {quality_profile_id} "
                 f"{'--preview-only ' if preview_only else ''}"
                 f"--resume --output-dir {output_dir}"
             ),
@@ -3057,6 +3141,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         await _close_provider(identity_provider)
         await _close_provider(video_provider)
         await _close_provider(tts_provider)
+        await visual_profile_registry.close()
         await storage.close()
         return partial_report
 
@@ -3358,6 +3443,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     )
     report = {
         "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
+        "quality_profile_id": quality_profile_id,
+        "quality_profile": visual_quality_snapshot,
         "sample_mode": (
             "mock" if args.mock_media else "preview_only" if preview_only else "formal"
         ),
@@ -3514,6 +3601,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     await _close_provider(identity_provider)
     await _close_provider(video_provider)
     await _close_provider(tts_provider)
+    await visual_profile_registry.close()
     await storage.close()
     return report
 

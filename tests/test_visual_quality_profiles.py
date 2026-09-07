@@ -31,3 +31,13 @@ def test_unknown_quality_snapshot_maps_to_stable_provider_error() -> None:
         )
 
     assert caught.value.code == "VISUAL_QUALITY_SNAPSHOT_INVALID"
+
+
+def test_quality_settings_keep_the_selected_profile_id() -> None:
+    registry = VisualProviderProfileRegistry(load_settings("config/config.windows_gpu.toml"))
+
+    selected = registry.settings_for_quality("local_safe")
+
+    assert selected.visual_quality_profile == "local_safe"
+    assert (selected.image_width, selected.image_height) == (432, 768)
+    assert (selected.video_output_width, selected.video_output_height) == (288, 512)

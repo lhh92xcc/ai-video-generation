@@ -4,6 +4,7 @@ import asyncio
 import shutil
 import time
 from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -55,6 +56,16 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     assert settings.worker_cleanup_enabled is True
     assert settings.lip_sync_provider == "musetalk_http"
     assert settings.lip_sync_base_url == "http://host.docker.internal:8090"
+
+
+def test_windows_smoke_uses_host_paths_and_passes_quality_profile() -> None:
+    launcher = Path("scripts/start-windows-gpu.ps1").read_text(encoding="utf-8")
+
+    assert '$env:AI_VIDEO_STORAGE_PROVIDER = "local"' in launcher
+    assert '$env:AI_VIDEO_STORAGE_BASE_PATH = (Join-Path $ProjectRoot ".tmp/windows-portfolio-artifacts")' in launcher
+    assert '$env:AI_VIDEO_IMAGE_BASE_URL = "http://127.0.0.1:8188"' in launcher
+    assert '$env:AI_VIDEO_VIDEO_BASE_URL = "http://127.0.0.1:8188"' in launcher
+    assert '"--quality-profile", $SmokeQualityProfile' in launcher
 
 
 def test_operational_health_and_remote_queue_endpoints_are_queryable(client: TestClient) -> None:

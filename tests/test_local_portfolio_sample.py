@@ -40,6 +40,7 @@ _portfolio_readiness_report = _MODULE._portfolio_readiness_report
 _ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
 _assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
 _resolve_sample_config = _MODULE._resolve_sample_config
+_apply_visual_quality_profile = _MODULE._apply_visual_quality_profile
 
 
 def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target() -> None:
@@ -406,6 +407,36 @@ def test_portfolio_runner_accepts_the_full_twelve_shot_range(monkeypatch: pytest
     assert args.stop_after_shot == _MODULE.PORTFOLIO_MAX_SHOTS
 
 
+def test_runner_quality_profile_is_applied_to_runtime_settings() -> None:
+    from app.config import load_settings
+
+    settings, _registry, snapshot = _apply_visual_quality_profile(
+        load_settings("config/config.example.toml"),
+        "local_safe",
+    )
+
+    assert snapshot["profile_id"] == "local_safe"
+    assert settings.visual_quality_profile == "local_safe"
+    assert (settings.image_width, settings.image_height) == (432, 768)
+    assert (settings.video_output_width, settings.video_output_height) == (288, 512)
+    assert settings.video_fps == 12
+    assert settings.video_steps == 6
+
+
+def test_runner_quality_profile_can_override_windows_default() -> None:
+    from app.config import load_settings
+
+    settings, _registry, snapshot = _apply_visual_quality_profile(
+        load_settings("config/config.windows_gpu.toml"),
+        "local_safe",
+    )
+
+    assert snapshot["profile_id"] == "local_safe"
+    assert (settings.image_width, settings.image_height) == (432, 768)
+    assert (settings.video_output_width, settings.video_output_height) == (288, 512)
+    assert settings.video_fps == 12
+
+
 def test_reference_prompts_are_single_subject_or_scene() -> None:
     assert "no collage" in _reference_prompt("林默")
     assert "no split screen" in _reference_prompt("林默")
@@ -485,6 +516,35 @@ def test_checkpoint_can_extend_to_more_shots_without_discarding_progress(tmp_pat
     assert resumed["shots_requested"] == 3
     assert resumed["extended_from_shots"] == 2
     assert resumed["shots"]["1"]["status"] == "succeeded"
+
+
+def test_checkpoint_rejects_mixing_quality_profiles(tmp_path: Path) -> None:
+    initial_args = argparse.Namespace(
+        shots=1,
+        shot_duration=3,
+        mock_media=True,
+        resume=False,
+        quality_profile="local_safe",
+    )
+    _load_or_create_checkpoint(
+        tmp_path,
+        initial_args,
+        quality_profile_id="local_safe",
+    )
+
+    resume_args = argparse.Namespace(
+        shots=1,
+        shot_duration=3,
+        mock_media=True,
+        resume=True,
+        quality_profile="local_balanced",
+    )
+    with pytest.raises(RuntimeError, match="quality-profile"):
+        _load_or_create_checkpoint(
+            tmp_path,
+            resume_args,
+            quality_profile_id="local_balanced",
+        )
 
 
 def test_total_video_duration_reads_ffprobe_metadata() -> None:

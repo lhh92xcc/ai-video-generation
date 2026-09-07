@@ -184,10 +184,20 @@ if ($RunPortfolioSmoke) {
     try {
         Write-Host "正在执行一镜头真实媒体 Smoke（质量档案: $SmokeQualityProfile，时长: ${SmokeShotDuration}s）..." -ForegroundColor Cyan
         $env:AI_VIDEO_VISUAL_QUALITY_PROFILE = $SmokeQualityProfile
+        # The runner executes on the Windows host, not inside the Docker
+        # container. Override container-only paths/endpoints for this smoke so
+        # Artifacts stay local and ComfyUI is reached through localhost.
+        $env:AI_VIDEO_STORAGE_PROVIDER = "local"
+        $env:AI_VIDEO_STORAGE_BASE_PATH = (Join-Path $ProjectRoot ".tmp/windows-portfolio-artifacts")
+        $env:AI_VIDEO_STORAGE_URI_PREFIX = "local://"
+        $env:AI_VIDEO_IMAGE_BASE_URL = "http://127.0.0.1:8188"
+        $env:AI_VIDEO_VIDEO_BASE_URL = "http://127.0.0.1:8188"
+        $env:AI_VIDEO_LLM_BASE_URL = "http://127.0.0.1:11434/v1"
         $runnerArguments = @(
             "scripts/run-local-portfolio-sample.py",
             "--shots", "1",
             "--shot-duration", [string]$SmokeShotDuration,
+            "--quality-profile", $SmokeQualityProfile,
             "--output-dir", $SmokeOutputDir
         )
         $uvCommand = Get-Command uv -ErrorAction SilentlyContinue

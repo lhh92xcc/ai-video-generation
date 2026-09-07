@@ -298,6 +298,7 @@ class VisualProviderProfileRegistry:
         profile = self._profile_from_snapshot(quality_snapshot, quality_profile_id)
         return replace(
             self._settings,
+            visual_quality_profile=profile.profile_id,
             image_width=profile.image_width,
             image_height=profile.image_height,
             image_steps=profile.image_steps,
