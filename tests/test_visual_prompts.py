@@ -24,6 +24,11 @@ def test_reference_baseline_contains_single_subject_and_clean_composition_guards
     assert "duplicate person" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
     assert "multiple views" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
     assert "harmonious color palette" in DEFAULT_REFERENCE_STYLE
+    assert "same cohesive series visual bible" in DEFAULT_REFERENCE_STYLE
+    assert "never photorealistic or photographic" in DEFAULT_REFERENCE_STYLE
+    assert "semi-realistic" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
+    assert "product photograph" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
+    assert "painterly brushwork" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
     assert "subtitles" in DEFAULT_REFERENCE_NEGATIVE_PROMPT
 
 
@@ -50,6 +55,10 @@ def test_video_baseline_contains_short_shot_and_temporal_consistency_guards() ->
     assert "clean linework" in DEFAULT_VIDEO_PROMPT_SUFFIX
     assert "temporal inconsistency" in DEFAULT_VIDEO_NEGATIVE_PROMPT
     assert "motion smear" in DEFAULT_VIDEO_NEGATIVE_PROMPT
+    assert "different art style" in DEFAULT_VIDEO_NEGATIVE_PROMPT
+    assert "same cohesive 2D manhwa series visual bible" in DEFAULT_VIDEO_PROMPT_SUFFIX
+    assert "never photographic" in DEFAULT_VIDEO_PROMPT_SUFFIX
+    assert "product photograph" in DEFAULT_VIDEO_NEGATIVE_PROMPT
     assert "no frozen still frame or slideshow" in DEFAULT_VIDEO_PROMPT_SUFFIX
 
 

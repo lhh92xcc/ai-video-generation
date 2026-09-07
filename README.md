@@ -30,6 +30,8 @@
 - 作品集真实运动门禁：当前分集按镜头只读取最新的成功视频任务和对应 Artifact，拒绝 `mock`、`local_fixture`、`ffmpeg_motion`、未知 Provider 及静态/Fixture 元数据，避免历史重试产物污染正式样片判断。
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
 - 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
+- 统一视觉 Bible：参考图和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2` 与 `video-motion-generation-v3`。
+- 参考图绑定防串图：作品集 runner 会写出 `reference-manifest.json`，按资产名称、`asset_key`、版本和 `storage_key` 精确复用参考图；不再按目录 mtime 猜测“最近四张图片”，避免角色、场景和道具首帧错配。
 - 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
@@ -161,7 +163,7 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 `app/media/visual_prompts.py` 的 `build_video_motion_prompt()` 统一补充当前镜头的景别、运镜、地点、已审核可见角色、当前镜头精确绑定的 `ready` 资产视觉事实和连续性要求；运行时说明见
 [`prompts/video-motion-generation.txt`](prompts/video-motion-generation.txt)。每个镜头被限制为一个 3～5 秒连续镜头和一种可读的轻微动作（例如呼吸、一次眨眼、小幅转头或衣物轻动），并明确禁止新增人物、切镜、换场、大幅变形和同时发生多个复杂动作。
 
-参考图 Prompt 还会把“单一主体、清晰轮廓、明确视觉焦点、干净背景和稳定比例”等正向质量护栏直接写入最终 Prompt，以兼容没有独立 negative-conditioning 分支的 Flux workflow。多角色镜头会明确标记主角色身份，其他角色降为侧脸、剪影或视觉次要对象，减少关键帧阶段的换脸风险。
+参考图 Prompt 还会把“单一主体、清晰轮廓、明确视觉焦点、干净背景和稳定比例”等正向质量护栏直接写入最终 Prompt，以兼容没有独立 negative-conditioning 分支的 Flux workflow；角色、场景和道具共同遵循扁平 2D 漫剧视觉 Bible（统一线稿、赛璐璐色块和插画光照），并在 negative Prompt 中排除摄影感、商品摄影、半写实、油画笔触、3D 渲染和不同画风。多角色镜头会明确标记主角色身份，其他角色降为侧脸、剪影或视觉次要对象，减少关键帧阶段的换脸风险。
 
 角色、场景和道具事实按 `asset_key` + `version` 从仓储读取，并把外观、氛围、材质与连续性字段写入 `approved_asset_facts` 任务快照和 `video_clip` Artifact metadata；未审核或找不到的资产不会被猜测补全。这样每个视频任务都能复盘“哪一版资产 → 哪段 Prompt → 哪个 Artifact”，减少同一角色跨镜头换脸和道具漂移。
 
@@ -180,7 +182,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `360 passed、7 skipped`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查与 Prompt 长度回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `366 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查、Prompt 长度、参考图 manifest 和关键帧模式回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -266,7 +268,37 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
   -SmokeShotDuration 3
 ```
 
-该命令只生成 1 个 3 秒镜头，报告和产物默认写入 `.tmp/windows-portfolio-smoke/`，也可通过 `-SmokeOutputDir` 修改目录。Smoke 会调用真实配置的 Provider；Mock、FFprobe 通过或静态预览都不能证明画面质量。确认单镜头稳定并人工检查身份、动作和声音后，再逐步切换到 `local_balanced` 和 8～12 镜头正式作品集运行。
+该命令只生成 1 个 3 秒镜头，报告和产物默认写入 `.tmp/windows-portfolio-smoke/`，也可通过 `-SmokeOutputDir` 修改目录。Smoke 会调用真实配置的 Provider；Mock、FFprobe 通过或静态预览都不能证明画面质量。确认单镜头稳定并人工检查身份、动作和声音后，再逐步切换到 `local_balanced` 和 8～12 镜头正式作品集运行。每轮真实参考图都会写出 `reference-manifest.json`；复用参考图时必须按资产 manifest 精确绑定，不要按目录时间猜测图片。
+
+Mac runner 复用参考图示例：
+
+```bash
+uv run python scripts/run-local-portfolio-sample.py \
+  --config config/config.local.toml \
+  --quality-profile local_safe \
+  --shots 1 \
+  --shot-duration 3 \
+  --reuse-recent-references \
+  --reference-manifest .tmp/portfolio-mac-smoke-v2/reference-manifest.json
+```
+
+旧版本没有 manifest 时请重新生成参考图；不要手动按文件时间排序替换，否则可能把道具图送入角色镜头。
+
+如果 Apple Silicon 16GB 在 PuLID 逐镜头关键帧阶段进入长时间 `stuck`，可以只为“验证 Wan/旁白/字幕/Assembly 全链路”显式关闭关键帧：
+
+```bash
+uv run python scripts/run-local-portfolio-sample.py \
+  --config config/config.local.toml \
+  --quality-profile local_safe \
+  --shots 1 \
+  --shot-duration 3 \
+  --shot-keyframe-mode off \
+  --reuse-recent-references \
+  --reference-manifest .tmp/portfolio-mac-smoke-v2/reference-manifest.json \
+  --output-dir .tmp/portfolio-mac-smoke-v6
+```
+
+`auto` 是默认模式，正式作品集应在身份 Provider 稳定的 GPU 主机上使用 `auto` 或 `always`；`off` 只把标准人设图直接送入 Wan，报告会明确标记为低内存 smoke，不具备正式身份锁定证据，也不会被作品集就绪门禁放行。
 
 也可以单独执行严格检查：
 

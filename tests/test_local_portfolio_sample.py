@@ -37,6 +37,7 @@ _frame_aligned_scene_durations = _MODULE._frame_aligned_scene_durations
 _build_continuous_narration_timeline = _MODULE._build_continuous_narration_timeline
 _fit_narration_artifact_to_shot = _MODULE._fit_narration_artifact_to_shot
 _portfolio_readiness_report = _MODULE._portfolio_readiness_report
+_formal_portfolio_eligible = _MODULE._formal_portfolio_eligible
 _ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
 _assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
 _resolve_sample_config = _MODULE._resolve_sample_config
@@ -147,6 +148,21 @@ def test_real_portfolio_rejects_non_model_motion_provider() -> None:
 
 def test_real_portfolio_accepts_registered_model_motion_provider() -> None:
     _ensure_portfolio_video_provider("comfyui_wan_i2v", mock_media=False)
+
+
+def test_formal_portfolio_eligibility_requires_identity_keyframes() -> None:
+    assert _formal_portfolio_eligible(
+        mock_media=False,
+        preview_only=False,
+        video_provider="comfyui_wan_i2v",
+        shot_keyframe_mode="auto",
+    ) is True
+    assert _formal_portfolio_eligible(
+        mock_media=False,
+        preview_only=False,
+        video_provider="comfyui_wan_i2v",
+        shot_keyframe_mode="off",
+    ) is False
 
 
 def test_preview_only_report_cannot_be_ready_for_portfolio() -> None:
@@ -542,6 +558,27 @@ def test_checkpoint_rejects_mixing_quality_profiles(tmp_path: Path) -> None:
             resume_args,
             quality_profile_id="local_balanced",
         )
+
+
+def test_checkpoint_rejects_mixing_shot_keyframe_modes(tmp_path: Path) -> None:
+    initial_args = argparse.Namespace(
+        shots=1,
+        shot_duration=3,
+        mock_media=True,
+        resume=False,
+        shot_keyframe_mode="off",
+    )
+    _load_or_create_checkpoint(tmp_path, initial_args)
+
+    resume_args = argparse.Namespace(
+        shots=1,
+        shot_duration=3,
+        mock_media=True,
+        resume=True,
+        shot_keyframe_mode="auto",
+    )
+    with pytest.raises(RuntimeError, match="shot-keyframe-mode"):
+        _load_or_create_checkpoint(tmp_path, resume_args)
 
 
 def test_total_video_duration_reads_ffprobe_metadata() -> None:

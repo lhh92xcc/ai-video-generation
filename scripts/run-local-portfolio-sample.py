@@ -26,7 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Awaitable, Callable, NamedTuple
+from typing import Awaitable, Callable, NamedTuple, Sequence
 from uuid import UUID, uuid4
 
 project_root = Path(__file__).resolve().parents[1]
@@ -316,6 +316,23 @@ def _ensure_portfolio_video_provider(
     )
 
 
+def _formal_portfolio_eligible(
+    *,
+    mock_media: bool,
+    preview_only: bool,
+    video_provider: str | None,
+    shot_keyframe_mode: str,
+) -> bool:
+    """Return whether the run used the minimum formal portfolio path."""
+
+    return (
+        not mock_media
+        and not preview_only
+        and _portfolio_provider_name(video_provider) in _PORTFOLIO_REAL_MOTION_PROVIDERS
+        and shot_keyframe_mode != "off"
+    )
+
+
 def _assert_real_portfolio_video_artifact(
     artifact: ArtifactSummary,
     *,
@@ -566,6 +583,17 @@ def _portfolio_readiness_report(
             "evidence": identity_evidence,
         }
     )
+    shot_keyframe_mode = getattr(args, "shot_keyframe_mode", "auto")
+    if not args.mock_media and not bool(getattr(args, "preview_only", False)) and shot_keyframe_mode == "off":
+        checks.append(
+            {
+                "id": "shot_keyframes",
+                "label": "逐镜头身份关键帧",
+                "status": "failed",
+                "blocking": True,
+                "evidence": "当前使用 off，仅适合低内存流程 smoke；正式作品集必须启用 auto 或 always。",
+            }
+        )
 
     blocking_checks = [item for item in checks if item["blocking"]]
     blocking_failures = [
@@ -774,7 +802,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reuse-recent-references",
         action="store_true",
-        help="Reuse the four newest local PNG Artifacts instead of generating Flux references.",
+        help=(
+            "Reuse references from --reference-manifest instead of generating Flux images; "
+            "the legacy name is retained for CLI compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--reference-manifest",
+        default=None,
+        help=(
+            "JSON manifest produced by a previous run, mapping each asset name to its "
+            "exact local Artifact storage_key. Required with --reuse-recent-references."
+        ),
+    )
+    parser.add_argument(
+        "--shot-keyframe-mode",
+        choices=("auto", "always", "off"),
+        default="auto",
+        help=(
+            "Identity keyframe policy: auto/always keeps the standard-reference -> "
+            "shot-keyframe -> Wan chain; off is an explicit low-memory pipeline smoke "
+            "fallback and is not eligible as a formal portfolio sample."
+        ),
     )
     parser.add_argument(
         "--resume",
@@ -853,6 +902,7 @@ def _new_checkpoint(
             or getattr(args, "quality_profile", None)
             or "local_safe"
         ),
+        "shot_keyframe_mode": getattr(args, "shot_keyframe_mode", "auto"),
         "shots": {},
     }
     if video_provider is not None:
@@ -915,6 +965,13 @@ def _load_or_create_checkpoint(
         raise RuntimeError(
             "--resume must use the same --quality-profile value as the original run"
         )
+    expected_keyframe_mode = getattr(args, "shot_keyframe_mode", "auto")
+    checkpoint_keyframe_mode = checkpoint.get("shot_keyframe_mode", "auto")
+    if checkpoint_keyframe_mode != expected_keyframe_mode:
+        raise RuntimeError(
+            "--resume must use the same --shot-keyframe-mode value as the original run"
+        )
+    checkpoint["shot_keyframe_mode"] = expected_keyframe_mode
     checkpoint.setdefault("quality_profile_id", expected_quality_profile)
     checkpoint_provider = checkpoint.get("video_provider")
     if (
@@ -2563,7 +2620,7 @@ def _reference_prompt(asset_name: str) -> str:
             "single 2D manhwa prop design plate, exactly one antique bronze mechanical pocket watch, "
             "front-facing circular watch, hands stopped at twelve o'clock, "
             "on a dark wooden clockmaker counter with a black seamless background, "
-            "dramatic cinematic light, centered object, product photograph, " + single_frame
+            "dramatic controlled light, centered object, clean 2D illustration plate, " + single_frame
         ),
     }
     return f"{DEFAULT_REFERENCE_STYLE}. {prompts[asset_name]}"
@@ -2585,7 +2642,61 @@ async def _wait_for_task(
     return task
 
 
+def _load_reference_manifest(
+    manifest_path: Path,
+    artifact_root: Path,
+    asset_names: Sequence[str],
+) -> dict[str, Path]:
+    """Load an explicit asset-to-Artifact mapping for reference reuse.
+
+    A directory-wide mtime sort is unsafe: the newest four images can belong to
+    different assets or an older run, which silently feeds the wrong identity or
+    location into I2V. Reuse therefore requires a manifest written by a prior
+    portfolio run and validates every storage key stays inside Artifact storage.
+    """
+
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Reference manifest was not found: {manifest_path}. "
+            "Run once without --reuse-recent-references to create it."
+        ) from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Reference manifest is not valid JSON: {manifest_path}") from exc
+
+    assets = payload.get("assets") if isinstance(payload, dict) else None
+    if not isinstance(assets, dict):
+        raise RuntimeError("Reference manifest must contain an object field named 'assets'")
+
+    root = artifact_root.resolve()
+    resolved: dict[str, Path] = {}
+    for asset_name in asset_names:
+        entry = assets.get(asset_name)
+        storage_key = entry.get("storage_key") if isinstance(entry, dict) else None
+        if not isinstance(storage_key, str) or not storage_key.strip():
+            raise RuntimeError(
+                f"Reference manifest is missing storage_key for asset {asset_name!r}"
+            )
+        candidate = (artifact_root / storage_key).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise RuntimeError(f"Reference Artifact escapes storage root: {storage_key}")
+        if not candidate.is_file():
+            raise RuntimeError(
+                f"Reference Artifact for {asset_name!r} does not exist: {candidate}"
+            )
+        resolved[asset_name] = candidate
+    return resolved
+
+
 def _recent_reference_files(artifact_root: Path, count: int = 4) -> list[Path]:
+    """Legacy inspection helper retained for old tests and local tooling.
+
+    The production reuse path deliberately does not call this function because
+    mtime ordering cannot identify which asset a PNG belongs to. Use an explicit
+    ``reference-manifest.json`` for any real run.
+    """
+
     files = sorted(
         artifact_root.glob("reference-images/*/*/*.png"),
         key=lambda item: item.stat().st_mtime,
@@ -2593,7 +2704,7 @@ def _recent_reference_files(artifact_root: Path, count: int = 4) -> list[Path]:
     )
     if len(files) < count:
         raise RuntimeError(
-            f"--reuse-recent-references needs {count} PNG files under {artifact_root}/reference-images"
+            f"reference inspection needs {count} PNG files under {artifact_root}/reference-images"
         )
     return files[:count]
 
@@ -2632,9 +2743,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     storage = LocalFileArtifactStorage(artifact_root)
 
     image_provider = create_image_generation_provider(settings)
+    shot_keyframe_mode = getattr(args, "shot_keyframe_mode", "auto")
     identity_provider = None
     identity_service = None
-    if not args.mock_media:
+    if not args.mock_media and shot_keyframe_mode != "off":
         identity_provider = create_identity_image_generation_provider(settings)
     video_provider = create_video_generation_provider(settings)
     tts_provider = create_tts_provider(settings)
@@ -2681,6 +2793,11 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             default_style=settings.image_default_style,
             default_negative_prompt=settings.image_default_negative_prompt,
             provider_registry=task_provider_registry,
+        )
+    if not args.mock_media and shot_keyframe_mode == "always" and identity_service is None:
+        raise RuntimeError(
+            "SHOT_KEYFRAME_PROVIDER_UNSUPPORTED: --shot-keyframe-mode always requires "
+            "an identity-capable image Provider"
         )
     video_service = VideoClipTaskService(
         store,
@@ -2933,15 +3050,28 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
     reference_image_ids: dict[str, UUID] = {}
     reference_tasks: list[UUID] = []
     image_assets = ["林默", "黑伞女孩", "旧城区钟表店", "铜色怀表"]
+    reference_manifest_path = (
+        Path(args.reference_manifest)
+        if args.reference_manifest
+        else output_dir / "reference-manifest.json"
+    )
+    reused_reference_paths = (
+        _load_reference_manifest(reference_manifest_path, artifact_root, image_assets)
+        if args.reuse_recent_references and not args.mock_media
+        else {}
+    )
+    reference_manifest: dict[str, object] = {
+        "schema_version": 1,
+        "created_at": _utc_timestamp(),
+        "artifact_root": str(artifact_root.resolve()),
+        "assets": {},
+    }
     if args.reuse_recent_references and not args.mock_media:
-        for asset_name, path in zip(
-            image_assets,
-            _recent_reference_files(artifact_root),
-            strict=True,
-        ):
+        for asset_name in image_assets:
+            path = reused_reference_paths[asset_name]
             reference_image_id = uuid4()
             reference_task_id = uuid4()
-            storage_key = str(path.relative_to(artifact_root))
+            storage_key = str(path.relative_to(artifact_root.resolve()))
             await store.save_reference_image(
                 ReferenceImageRecord(
                     id=reference_image_id,
@@ -2970,6 +3100,14 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             )
             reference_image_ids[asset_name] = reference_image_id
             reference_tasks.append(reference_task_id)
+            reference_manifest["assets"][asset_name] = {
+                "asset_key": str(by_name[asset_name].asset_key),
+                "asset_version": by_name[asset_name].version,
+                "reference_image_id": str(reference_image_id),
+                "storage_key": storage_key,
+                "source_path": str(path),
+                "reused": True,
+            }
     else:
         for asset_name in image_assets:
             task, _ = await image_service.create_task(
@@ -2989,7 +3127,30 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             await _wait_for_task(store, queue, task.id, f"reference image {asset_name}")
             completed = await store.get_task(task.id)
             assert completed is not None
-            reference_image_ids[asset_name] = UUID(str(completed.input_data["reference_image_id"]))
+            reference_image_id = UUID(str(completed.input_data["reference_image_id"]))
+            reference_image = await store.get_reference_image(reference_image_id)
+            if reference_image is None:
+                raise RuntimeError(f"reference image record is missing for asset {asset_name!r}")
+            storage_key = reference_image.metadata.get("storage_key")
+            if not isinstance(storage_key, str) or not storage_key:
+                raise RuntimeError(
+                    f"reference image Artifact is missing storage_key for {asset_name!r}"
+                )
+            reference_image_ids[asset_name] = reference_image_id
+            reference_manifest["assets"][asset_name] = {
+                "asset_key": str(by_name[asset_name].asset_key),
+                "asset_version": by_name[asset_name].version,
+                "reference_image_id": str(reference_image_id),
+                "storage_key": storage_key,
+                "source_path": str((artifact_root / storage_key).resolve()),
+                "reused": False,
+            }
+
+    reference_manifest_path_out = output_dir / "reference-manifest.json"
+    reference_manifest_path_out.write_text(
+        json.dumps(reference_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     clip_tasks: list[UUID] = []
     shot_reference_names = _PORTFOLIO_REFERENCE_NAMES[: args.shots]
@@ -3044,9 +3205,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         selected_reference_id = reference_image_ids[reference_name]
         try:
             if (
+                shot_keyframe_mode != "off"
+                and
                 identity_service is not None
                 and reference_name in {"林默", "黑伞女孩"}
-                and not args.reuse_recent_references
             ):
                 identity_task, _ = await identity_service.create_task(
                     by_name[reference_name].id,
@@ -3522,13 +3684,15 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
         "quality_profile_id": quality_profile_id,
         "quality_profile": visual_quality_snapshot,
+        "shot_keyframe_mode": getattr(args, "shot_keyframe_mode", "auto"),
         "sample_mode": (
             "mock" if args.mock_media else "preview_only" if preview_only else "formal"
         ),
-        "formal_portfolio_eligible": (
-            not args.mock_media
-            and not preview_only
-            and settings.video_provider in _PORTFOLIO_REAL_MOTION_PROVIDERS
+        "formal_portfolio_eligible": _formal_portfolio_eligible(
+            mock_media=args.mock_media,
+            preview_only=preview_only,
+            video_provider=settings.video_provider,
+            shot_keyframe_mode=getattr(args, "shot_keyframe_mode", "auto"),
         ),
         "project_id": str(project_id),
         "episode_id": str(episode.id),
@@ -3666,6 +3830,13 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "reference_review": "needs_review" if not args.mock_media else "not_applicable",
             "human_review_required": True,
             "reference_reused": bool(args.reuse_recent_references and not args.mock_media),
+            "reference_manifest": str(reference_manifest_path_out),
+            "shot_keyframe_mode": getattr(args, "shot_keyframe_mode", "auto"),
+            "identity_keyframe_quality_note": (
+                "标准人设图直接送入 Wan；仅用于低内存流程 smoke，不具备正式作品集身份锁定证据。"
+                if getattr(args, "shot_keyframe_mode", "auto") == "off"
+                else "角色镜头按配置尝试生成逐镜头身份关键帧；仍需检查任务结果和人工画面质量。"
+            ),
         },
         "portfolio_readiness": portfolio_readiness,
     }
