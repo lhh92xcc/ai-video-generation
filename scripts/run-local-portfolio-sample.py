@@ -3019,7 +3019,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             path = reused_reference_paths[asset_name]
             reference_image_id = uuid4()
             reference_task_id = uuid4()
-            storage_key = str(path.relative_to(artifact_root))
+            storage_key = str(path.relative_to(artifact_root.resolve()))
             await store.save_reference_image(
                 ReferenceImageRecord(
                     id=reference_image_id,

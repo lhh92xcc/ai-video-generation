@@ -43,6 +43,23 @@ def test_reference_manifest_rejects_missing_asset_or_path_escape(tmp_path) -> No
         _load_reference_manifest(manifest, artifact_root, ["林默"])
 
 
+def test_reference_manifest_supports_relative_artifact_root(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    artifact_root = Path("artifacts")
+    artifact = artifact_root / "reference-images" / "asset-key" / "1" / "image.png"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"png-fixture")
+    manifest = tmp_path / "reference-manifest.json"
+    manifest.write_text(
+        json.dumps({"schema_version": 1, "assets": {"林默": {"storage_key": str(artifact.relative_to(artifact_root))}}}),
+        encoding="utf-8",
+    )
+
+    resolved = _load_reference_manifest(manifest, artifact_root, ["林默"])
+
+    assert resolved["林默"] == artifact.resolve()
+
+
 def test_portfolio_reference_prompts_keep_props_in_the_2d_style() -> None:
     prompt = _reference_prompt("铜色怀表")
 
