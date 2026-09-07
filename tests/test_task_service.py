@@ -51,3 +51,41 @@ def test_retrying_video_task_increments_generation_attempt() -> None:
         assert enqueued == [task.id]
 
     asyncio.run(exercise())
+
+
+def test_retrying_reference_image_task_increments_generation_attempt() -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        enqueued: list = []
+
+        async def handler(task_id) -> None:
+            enqueued.append(task_id)
+
+        queue.set_handler(handler)
+        task = GenerationTaskRecord(
+            project_id=uuid4(),
+            kind=GenerationTaskKind.ASSET_REFERENCE_IMAGE,
+            input_data={"generation_attempt": 1},
+            status=TaskStatus.FAILED,
+            current_stage=StageName.REFERENCE_IMAGE,
+            stages=[
+                StageRun(
+                    stage=StageName.REFERENCE_IMAGE,
+                    status=TaskStatus.FAILED,
+                    attempt=1,
+                )
+            ],
+        )
+        await store.create_task(task)
+        service = TaskService(store, None, queue)  # type: ignore[arg-type]
+
+        retried = await service.retry_task(task.id)
+        await queue.close()
+
+        assert retried.input_data["generation_attempt"] == 2
+        assert retried.stages[0].attempt == 2
+        assert retried.status == TaskStatus.QUEUED
+        assert enqueued == [task.id]
+
+    asyncio.run(exercise())

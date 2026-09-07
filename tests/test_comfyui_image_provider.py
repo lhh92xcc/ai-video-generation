@@ -160,6 +160,19 @@ def test_comfyui_provider_replaces_quality_parameters_as_numbers() -> None:
     assert inputs["identity_weight"] == 0.9
 
 
+def test_comfyui_reference_seed_changes_only_when_generation_attempt_changes() -> None:
+    request = image_request()
+
+    first = ComfyUIImageGenerationProvider._seed_for(request)
+    same_attempt = ComfyUIImageGenerationProvider._seed_for(request)
+    retry = ComfyUIImageGenerationProvider._seed_for(
+        request.model_copy(update={"generation_attempt": 2})
+    )
+
+    assert first == same_attempt
+    assert retry != first
+
+
 def test_comfyui_provider_rejects_non_object_prompt_response(tmp_path: Path) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/prompt"

@@ -293,7 +293,10 @@ class TaskService:
             stage_run.error_code = None
             stage_run.started_at = None
             stage_run.finished_at = None
-        if task.kind == GenerationTaskKind.VIDEO_CLIP:
+        if task.kind in {
+            GenerationTaskKind.VIDEO_CLIP,
+            GenerationTaskKind.ASSET_REFERENCE_IMAGE,
+        }:
             task.input_data["generation_attempt"] = stage_run.attempt
         saved_task = await self._store.update_task(task)
 

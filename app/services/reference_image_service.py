@@ -27,6 +27,11 @@ from app.domain.models import (
 from app.providers.errors import ImageProviderError
 from app.providers.image_generation import ImageGenerationProvider
 from app.providers.profiles import VisualProviderProfileError, VisualProviderProfileRegistry
+from app.media.image_validation import (
+    FFprobeImageValidator,
+    ImageArtifactValidationError,
+    ImageArtifactValidator,
+)
 from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
     DEFAULT_REFERENCE_STYLE,
@@ -58,6 +63,7 @@ class ReferenceImageTaskService:
         default_style: str = DEFAULT_REFERENCE_STYLE,
         default_negative_prompt: str = DEFAULT_REFERENCE_NEGATIVE_PROMPT,
         provider_registry: VisualProviderProfileRegistry | None = None,
+        image_validator: ImageArtifactValidator | None = None,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -71,6 +77,7 @@ class ReferenceImageTaskService:
             default_negative_prompt.strip() or DEFAULT_REFERENCE_NEGATIVE_PROMPT
         )
         self._provider_registry = provider_registry
+        self._image_validator = image_validator or FFprobeImageValidator()
 
     def supports_identity_variants(self, provider_profile_id: str | None = None) -> bool:
         """Return whether the selected image route can consume an identity anchor."""
@@ -205,6 +212,7 @@ class ReferenceImageTaskService:
                     else {}
                 ),
                 "reference_role": task_reference_role,
+                "generation_attempt": 1,
                 **(
                     {
                         "episode_id": str(request.episode_id),
@@ -325,6 +333,7 @@ class ReferenceImageTaskService:
                         "An identity-locked character image requires a configured identity image Provider",
                     )
                 provider = identity_provider
+            stage_run = self._stage_run(task)
             result = await provider.generate_reference_image(
                 ReferenceImageGenerationRequest(
                     asset_id=reference_image.asset_id,
@@ -342,6 +351,7 @@ class ReferenceImageTaskService:
                         if quality_settings is not None
                         else None
                     ),
+                    generation_attempt=max(1, stage_run.attempt),
                     identity_image_bytes=identity_image_bytes,
                     identity_image_mime_type=identity_image_mime_type,
                 )
@@ -672,6 +682,26 @@ class ReferenceImageTaskService:
                     "IMAGE_PROVIDER_INVALID_RESPONSE",
                     "Image provider returned invalid base64 content",
                 ) from exc
+            if result.provider == "comfyui" or result.metadata.get("local") is True:
+                probe = await self._image_validator.validate_bytes(
+                    content,
+                    getattr(result, "mime_type", "image/png"),
+                )
+                if probe.width != reference_image.width or probe.height != reference_image.height:
+                    raise ImageProviderError(
+                        "IMAGE_ARTIFACT_DIMENSION_MISMATCH",
+                        "ComfyUI reference image dimensions do not match the selected quality profile",
+                    )
+                result.metadata = {
+                    **result.metadata,
+                    "image_quality": {
+                        "status": "passed",
+                        "method": "ffprobe_dimensions_v1",
+                        "expected_width": reference_image.width,
+                        "expected_height": reference_image.height,
+                        **probe.as_metadata(),
+                    },
+                }
             extension = self._extension_for_mime(getattr(result, "mime_type", "image/png"))
             storage_key = (
                 f"reference-images/{reference_image.asset_key}/"
@@ -713,5 +743,7 @@ class ReferenceImageTaskService:
         if isinstance(exc, ImageProviderError):
             return exc.code
         if isinstance(exc, StorageError):
+            return exc.code
+        if isinstance(exc, ImageArtifactValidationError):
             return exc.code
         return "REFERENCE_IMAGE_GENERATION_FAILED"

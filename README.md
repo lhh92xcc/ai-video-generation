@@ -29,6 +29,8 @@
 - 作品集创建引导：创作者前台新建项目默认使用 60 秒单集，并提供 45 秒短样片选项；作品集面板可为改编、角色、动作、声音、字幕和完整观感记录 1～5 分、备注和审核时间，随 Markdown/JSON 报告导出。
 - 作品集真实运动门禁：当前分集按镜头只读取最新的成功视频任务和对应 Artifact，拒绝 `mock`、`local_fixture`、`ffmpeg_motion`、未知 Provider 及静态/Fixture 元数据，避免历史重试产物污染正式样片判断。
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
+- 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
+- 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
 - 自动生产 Run 完成态已闭环：Worker/scheduler 在推进 DAG 时只把 `created`/`reused` 任务视为下一波工作，不会把用于界面追踪的已完成任务 ID误判为新任务；最终 Assembly 成功后 Run 会稳定进入 `completed`。
@@ -188,6 +190,7 @@ docker compose config --quiet
 - 作品集 runner 的配置不会绑定某一台机器：优先使用显式 `--config`，其次使用 `AI_VIDEO_CONFIG`/`AI_VIDEO_PROFILE`，只有未选择运行档案时才在本机自动采用存在的 `config/config.local.toml`，否则回退公开的 `config/config.example.toml`。Windows 拉取公开仓库后应设置 `AI_VIDEO_PROFILE=windows_gpu`，不需要也不会依赖 Mac 私有配置。
 - 作品集报告版本：本地 runner 与创作者前台导出的 JSON 报告当前使用 schema version `2`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。
 - 作品集运动报告：正式运行还要求所有成功视频片段都有 `motion_evidence.status=motion_detected`；`frozen` 直接阻塞，`indeterminate`/`unavailable` 等状态要求补生成或人工确认。该检测只排除完全冻结/静态回退，不评价动作是否自然、人物是否崩坏。
+- 参考图抽卡策略：首次失败的角色锚点或镜头关键帧可直接重试；不要手动改 Prompt 只为制造随机性，先让任务重试递增 `generation_attempt`，这样失败原因、seed 和 Artifact 历史仍然可追踪。
 - 正式样片门禁：非 Mock 且非预览模式只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。需要在 Mac 上只验证流程时可使用 `--preview-only`，但报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。
 - 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
 

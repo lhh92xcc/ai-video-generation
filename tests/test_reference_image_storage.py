@@ -25,6 +25,7 @@ from app.providers.image_generation import ImageGenerationProvider
 from app.providers.errors import ImageProviderError
 from app.providers.openai_compatible_image import OpenAICompatibleImageGenerationProvider
 from app.providers.siliconflow_image import SiliconFlowImageGenerationProvider
+from app.media.image_validation import ImageProbeResult
 from app.queue import InProcessTaskQueue
 from app.repositories.in_memory import InMemoryStore
 from app.services.reference_image_service import ReferenceImageTaskService
@@ -58,6 +59,41 @@ class RecordingIdentityImageProvider(Base64ImageProvider):
     ) -> ReferenceImageGenerationResult:
         self.requests.append(request)
         return await super().generate_reference_image(request)
+
+
+class LocalComfyImageProvider(Base64ImageProvider):
+    async def generate_reference_image(
+        self,
+        request: ReferenceImageGenerationRequest,
+    ) -> ReferenceImageGenerationResult:
+        return ReferenceImageGenerationResult(
+            image_base64=base64.b64encode(b"generated-image").decode("ascii"),
+            mime_type="image/png",
+            provider="comfyui",
+            model="flux-test",
+            width=request.width,
+            height=request.height,
+            duration_ms=3,
+            metadata={"local": True},
+        )
+
+
+class RecordingImageValidator:
+    def __init__(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+        self.calls = 0
+
+    async def validate_bytes(self, content: bytes, content_type: str) -> ImageProbeResult:
+        self.calls += 1
+        assert content == b"generated-image"
+        assert content_type == "image/png"
+        return ImageProbeResult(
+            width=self.width,
+            height=self.height,
+            codec_name="png",
+            format_name="png_pipe",
+        )
 
 
 def test_reference_image_task_stores_base64_output_and_metadata(tmp_path) -> None:
@@ -96,6 +132,99 @@ def test_reference_image_task_stores_base64_output_and_metadata(tmp_path) -> Non
         assert images[0].output_uri.startswith("local://")
         assert images[0].metadata["size_bytes"] == len(b"generated-image")
         assert (tmp_path / images[0].metadata["storage_key"]).read_bytes() == b"generated-image"
+        await storage.close()
+
+    asyncio.run(exercise())
+
+
+def test_local_comfy_reference_requires_actual_quality_dimensions(tmp_path) -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        storage = LocalFileArtifactStorage(tmp_path)
+        validator = RecordingImageValidator(width=432, height=768)
+        service = ReferenceImageTaskService(
+            store,
+            queue,
+            LocalComfyImageProvider(),
+            storage,
+            image_validator=validator,
+        )
+        queue.set_handler(service.run_task)
+        asset = await store.save_asset_version(
+            AssetRecord(
+                project_id=uuid4(),
+                story_bible_id=uuid4(),
+                asset_type=AssetType.CHARACTER,
+                name="质量门禁角色",
+                status=AssetStatus.READY,
+                content=CharacterAssetContent(
+                    role="protagonist",
+                    traits=["稳定"],
+                    appearance="黑发、深色外套",
+                ),
+                provider="test",
+                model="test",
+                duration_ms=0,
+            )
+        )
+
+        task, _ = await service.create_task(asset.id, _request(width=432, height=768))
+        await queue.close()
+
+        saved_task = await store.get_task(task.id)
+        assert saved_task is not None
+        assert saved_task.status == TaskStatus.SUCCEEDED
+        image = (await store.list_reference_images(asset.id))[0]
+        assert image.metadata["image_quality"]["status"] == "passed"
+        assert validator.calls == 1
+        await storage.close()
+
+    asyncio.run(exercise())
+
+
+def test_local_comfy_reference_dimension_mismatch_fails_before_anchor(tmp_path) -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        queue = InProcessTaskQueue()
+        storage = LocalFileArtifactStorage(tmp_path)
+        service = ReferenceImageTaskService(
+            store,
+            queue,
+            LocalComfyImageProvider(),
+            storage,
+            image_validator=RecordingImageValidator(width=512, height=512),
+        )
+        queue.set_handler(service.run_task)
+        asset = await store.save_asset_version(
+            AssetRecord(
+                project_id=uuid4(),
+                story_bible_id=uuid4(),
+                asset_type=AssetType.CHARACTER,
+                name="错误画幅角色",
+                status=AssetStatus.READY,
+                content=CharacterAssetContent(
+                    role="protagonist",
+                    traits=["待筛选"],
+                    appearance="短发、灰色外套",
+                ),
+                provider="test",
+                model="test",
+                duration_ms=0,
+            )
+        )
+
+        task, _ = await service.create_task(asset.id, _request(width=432, height=768))
+        await queue.close()
+
+        saved_task = await store.get_task(task.id)
+        assert saved_task is not None
+        assert saved_task.status == TaskStatus.FAILED
+        assert saved_task.error is not None
+        assert saved_task.error.code == "IMAGE_ARTIFACT_DIMENSION_MISMATCH"
+        image = (await store.list_reference_images(asset.id))[0]
+        assert image.status == ReferenceImageStatus.FAILED
+        assert image.metadata.get("identity_anchor") is None
         await storage.close()
 
     asyncio.run(exercise())

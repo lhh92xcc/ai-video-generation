@@ -158,6 +158,7 @@ class ComfyUIImageGenerationProvider:
                 "filename": image_info["filename"],
                 "subfolder": image_info["subfolder"],
                 "seed": seed,
+                "generation_attempt": request.generation_attempt,
                 "steps": steps,
                 "guidance": guidance,
                 "identity_weight": identity_weight,
@@ -305,7 +306,8 @@ class ComfyUIImageGenerationProvider:
     @staticmethod
     def _seed_for(request: ReferenceImageGenerationRequest) -> int:
         digest = hashlib.sha256(
-            f"{request.asset_key}:{request.asset_version}:{request.prompt}".encode("utf-8")
+            f"{request.asset_key}:{request.asset_version}:{request.generation_attempt}:"
+            f"{request.prompt}".encode("utf-8")
         ).hexdigest()
         return int(digest[:12], 16) % 2_147_483_647
 

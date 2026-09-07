@@ -958,6 +958,12 @@ class ReferenceImageGenerationRequest(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=50)
     guidance: float | None = Field(default=None, ge=0, le=20)
     identity_weight: float | None = Field(default=None, ge=0, le=1.5)
+    generation_attempt: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="Retry attempt used by deterministic local providers to derive a new seed.",
+    )
     identity_image_bytes: bytes | None = Field(default=None, exclude=True)
     identity_image_mime_type: str | None = Field(default=None, max_length=100, exclude=True)
 
