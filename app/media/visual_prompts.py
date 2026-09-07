@@ -19,11 +19,12 @@ from app.domain.models import (
 )
 
 DEFAULT_REFERENCE_STYLE = (
-    "polished 2D manhwa animation key art, clean single-frame 9:16 vertical composition, "
-    "crisp consistent ink linework, clear facial planes, soft cel shading, controlled "
-    "cinematic lighting, restrained harmonious color palette, clean silhouette and readable "
-    "intentional focal hierarchy, uncluttered background, professional webtoon production "
-    "design, consistent design language for later image-to-video shots"
+    "polished flat 2D manhwa animation key art, same cohesive series visual bible across "
+    "all characters and locations, clean single-frame 9:16 vertical composition, crisp "
+    "consistent ink linework and line weight, clear facial planes, soft cel shading, "
+    "controlled cinematic lighting, restrained harmonious color palette, clean silhouette "
+    "and readable intentional focal hierarchy, uncluttered background, professional webtoon "
+    "production design, consistent design language for later image-to-video shots"
 )
 
 DEFAULT_REFERENCE_NEGATIVE_PROMPT = (
@@ -32,7 +33,8 @@ DEFAULT_REFERENCE_NEGATIVE_PROMPT = (
     "deformed hands, extra fingers, cropped head, cut-off subject, duplicate person, "
     "duplicate object, split screen, split frame, diptych, triptych, collage, comic panels, "
     "character sheet, multiple views, inset image, repeated face, extra limbs, "
-    "photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
+    "photorealistic, realistic skin texture, semi-realistic, painterly brushwork, glossy "
+    "3d render, different art style, style drift, text, subtitles, logo, watermark"
 )
 
 DEFAULT_VIDEO_NEGATIVE_PROMPT = (
@@ -40,14 +42,16 @@ DEFAULT_VIDEO_NEGATIVE_PROMPT = (
     "unstable exposure, temporal inconsistency, frame-to-frame detail changes, identity drift, "
     "face morphing, changing hairstyle, changing clothes, distorted anatomy, deformed hands, "
     "extra limbs, duplicate person, new person, crowded frame, scene change, camera cut, "
-    "hard zoom, overshoot, photorealistic, 3d render, style drift, text, subtitles, logo, watermark"
+    "hard zoom, overshoot, photorealistic, realistic skin texture, semi-realistic, painterly "
+    "brushwork, glossy 3d render, different art style, style drift, text, subtitles, logo, watermark"
 )
 
 DEFAULT_VIDEO_PROMPT_SUFFIX = (
     "start from the exact reference frame, single continuous shot, 3 to 5 seconds, "
     "one coherent camera take, choose only one restrained micro-motion such as breathing, "
-    "one blink, a small head turn or gentle cloth movement, preserve the 2D manhwa "
-    "illustration style, clean linework and crisp cel-shaded surfaces, stable exposure, preserve "
+    "one blink, a small head turn or gentle cloth movement, preserve the same cohesive "
+    "2D manhwa series visual bible, clean linework and crisp cel-shaded surfaces, stable "
+    "exposure, preserve "
     "the exact reference identity, face shape, hairstyle, clothing, colors and silhouette, "
     "keep the original composition, no new characters, no cuts, no scene change, no large "
     "body transformation, no simultaneous complex actions, no frozen still frame or slideshow, "
@@ -58,7 +62,8 @@ DEFAULT_VIDEO_PROMPT_SUFFIX = (
 DEFAULT_REFERENCE_QUALITY_GUARDRAIL = (
     "Reference quality guardrails: one coherent full-frame composition, one dominant readable "
     "subject or environment, clear focal point, stable proportions, clean silhouette, "
-    "controlled lighting and palette, no text or interface elements."
+    "controlled lighting and palette, same 2D manhwa art direction, no style mixing, no text "
+    "or interface elements."
 )
 
 
