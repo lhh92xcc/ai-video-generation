@@ -180,7 +180,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `359 passed、7 skipped、1 warning`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。新增回归覆盖自动 Run 从小说入口推进到旁白、字幕、视频片段和最终 Assembly，并验证完成态；参考图任务还会校验真实图片可读性和实际尺寸，失败重试会递增生成尝试号；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+本次提交前全量回归为 `360 passed、7 skipped`；前端生产构建为 `61 modules transformed`，并通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查与 Prompt 长度回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 

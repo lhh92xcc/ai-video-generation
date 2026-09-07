@@ -36,6 +36,13 @@ def test_reference_prompt_adds_positive_guardrails_for_flux_workflows() -> None:
     assert len(prompt) <= 2000
 
 
+def test_reference_prompt_never_exceeds_provider_request_limit() -> None:
+    prompt = strengthen_reference_prompt("高质量参考图约束。" * 600, max_chars=1500)
+
+    assert len(prompt) <= 1500
+    assert "Reference quality guardrails:" in prompt
+
+
 def test_video_baseline_contains_short_shot_and_temporal_consistency_guards() -> None:
     assert "3 to 5 seconds" in DEFAULT_VIDEO_PROMPT_SUFFIX
     assert "restrained micro-motion" in DEFAULT_VIDEO_PROMPT_SUFFIX

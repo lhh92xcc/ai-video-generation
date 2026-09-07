@@ -85,10 +85,14 @@ def strengthen_reference_prompt(prompt: str, *, max_chars: int = 2000) -> str:
         return DEFAULT_REFERENCE_QUALITY_GUARDRAIL[:max_chars]
     if "Reference quality guardrails:" in source:
         return source[:max_chars]
-    available = max_chars - len(DEFAULT_REFERENCE_QUALITY_GUARDRAIL) - 1
+    # Reserve both the period and space inserted between the bounded source
+    # and the guardrail. Without both characters, max_chars=1500 produced a
+    # 1501-character prompt and violated ReferenceImageCreateRequest.
+    available = max_chars - len(DEFAULT_REFERENCE_QUALITY_GUARDRAIL) - 2
     if available <= 0:
         return DEFAULT_REFERENCE_QUALITY_GUARDRAIL[:max_chars]
-    return f"{source[:available].rstrip(' .')}. {DEFAULT_REFERENCE_QUALITY_GUARDRAIL}"
+    result = f"{source[:available].rstrip(' .')}. {DEFAULT_REFERENCE_QUALITY_GUARDRAIL}"
+    return result[:max_chars]
 
 
 def build_approved_asset_facts(
