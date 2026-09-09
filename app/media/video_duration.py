@@ -95,6 +95,10 @@ class FFmpegVideoTailExtender:
             )
 
         extension_seconds = target_duration_seconds - source_duration_seconds
+        # FFmpeg versions differ in how they round the final frame at `-t`.
+        # Leave enough cloned tail for the encoder to reach the requested
+        # timestamp; `-t` still clamps the delivered video to the target.
+        padding_guard_seconds = 0.5
         with TemporaryDirectory(prefix="ai-video-duration-fit-") as directory:
             root = Path(directory)
             input_path = root / f"input{self._suffix_for_mime(normalized_type)}"
@@ -112,7 +116,7 @@ class FFmpegVideoTailExtender:
                 "-vf",
                 (
                     "tpad=stop_mode=clone:"
-                    f"stop_duration={extension_seconds:.6f},"
+                    f"stop_duration={extension_seconds + padding_guard_seconds:.6f},"
                     "setpts=PTS-STARTPTS"
                 ),
                 "-an",
@@ -124,6 +128,8 @@ class FFmpegVideoTailExtender:
                 "yuv420p",
                 "-movflags",
                 "+faststart",
+                "-fps_mode",
+                "cfr",
                 "-t",
                 f"{target_duration_seconds:.6f}",
                 str(output_path),
@@ -178,6 +184,7 @@ class FFmpegVideoTailExtender:
                 "source_duration_seconds": round(source_duration_seconds, 6),
                 "target_duration_seconds": round(target_duration_seconds, 6),
                 "extension_seconds": round(extension_seconds, 6),
+                "padding_guard_seconds": padding_guard_seconds,
                 "output_codec": "libx264",
                 "audio_removed": True,
             },
