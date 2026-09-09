@@ -187,6 +187,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configured_provider=app_settings.tts_provider,
         multi_voice_ffmpeg_binary=app_settings.tts_ffmpeg_binary,
         multi_voice_timeout_seconds=app_settings.tts_multi_voice_timeout_seconds,
+        multi_voice_transition_fade_ms=app_settings.tts_multi_voice_transition_fade_ms,
+        multi_voice_room_tone_enabled=app_settings.tts_multi_voice_room_tone_enabled,
+        multi_voice_room_tone_db=app_settings.tts_multi_voice_room_tone_db,
     )
     bgm_task_service = BGMTaskService(
         store,

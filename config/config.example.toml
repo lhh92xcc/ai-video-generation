@@ -226,6 +226,12 @@ crossfade_ms = 120
 binary = "say"
 ffmpeg_binary = "ffmpeg"
 multi_voice_timeout_seconds = 120
+# Multi-role lines use one measured timeline. A short edge fade removes clicks
+# and a barely audible room-tone bed avoids hard digital-silence cuts. Voice
+# duration is never time-stretched; set room tone false for a fully dry mix.
+multi_voice_transition_fade_ms = 24
+multi_voice_room_tone_enabled = true
+multi_voice_room_tone_db = -52.0
 runtime_path = "local-runtimes/chattts/.venv/bin/python"
 script_path = "scripts/chattts_generate.py"
 device = "mps"

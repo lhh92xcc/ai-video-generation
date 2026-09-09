@@ -132,6 +132,9 @@ probe_timeout_seconds = 60
 max_text_characters = 5000
 pacing_enabled = false
 pause_compaction_enabled = false
+multi_voice_transition_fade_ms = 24
+multi_voice_room_tone_enabled = true
+multi_voice_room_tone_db = -52.0
 pronunciation_dictionary_path = "config/pronunciation.toml"
 
 [lip_sync]

@@ -64,6 +64,9 @@ class TTSTaskService:
         configured_provider: str | None = None,
         multi_voice_ffmpeg_binary: str = "ffmpeg",
         multi_voice_timeout_seconds: int = 120,
+        multi_voice_transition_fade_ms: int = 24,
+        multi_voice_room_tone_enabled: bool = True,
+        multi_voice_room_tone_db: float = -52.0,
     ) -> None:
         self._store = store
         self._task_queue = task_queue
@@ -79,6 +82,9 @@ class TTSTaskService:
         self._configured_provider = configured_provider
         self._multi_voice_ffmpeg_binary = multi_voice_ffmpeg_binary
         self._multi_voice_timeout_seconds = max(1, multi_voice_timeout_seconds)
+        self._multi_voice_transition_fade_ms = max(0, multi_voice_transition_fade_ms)
+        self._multi_voice_room_tone_enabled = multi_voice_room_tone_enabled
+        self._multi_voice_room_tone_db = multi_voice_room_tone_db
 
     async def create_task(
         self,
@@ -351,6 +357,7 @@ class TTSTaskService:
         started = monotonic()
         segments: list[bytes] = []
         content_types: list[str] = []
+        durations: list[float] = []
         pauses: list[float] = []
         timeline: list[dict[str, object]] = []
         cursor = 0.0
@@ -378,6 +385,7 @@ class TTSTaskService:
 
             segments.append(content)
             content_types.append(result.mime_type)
+            durations.append(duration_seconds)
             pause = float(line.get("pause_after_seconds", 0.12))
             pauses.append(pause)
             providers.append(result.provider)
@@ -420,6 +428,10 @@ class TTSTaskService:
                 pauses,
                 binary=self._multi_voice_ffmpeg_binary,
                 timeout_seconds=self._multi_voice_timeout_seconds,
+                segment_durations_seconds=durations,
+                transition_fade_ms=self._multi_voice_transition_fade_ms,
+                room_tone_enabled=self._multi_voice_room_tone_enabled,
+                room_tone_db=self._multi_voice_room_tone_db,
             )
         except MultiVoiceAudioError:
             raise
@@ -433,9 +445,12 @@ class TTSTaskService:
             duration_seconds=0,
             duration_ms=max(1, round((monotonic() - started) * 1000)),
             metadata={
-                "synthesis_mode": "multi_voice_segmented",
+                "synthesis_mode": "multi_voice_timeline_mix",
                 "segmentation": "speaker_lines",
-                "waveform_join_strategy": "ffmpeg_concat_with_silence",
+                "waveform_join_strategy": "ffmpeg_timeline_mix_with_edge_fades",
+                "transition_fade_ms": self._multi_voice_transition_fade_ms,
+                "room_tone_enabled": self._multi_voice_room_tone_enabled,
+                "room_tone_db": self._multi_voice_room_tone_db,
                 "independent_waveform_count": len(lines),
                 "speaker_count": len({str(line["speaker"]) for line in lines}),
                 "voice_lines": timeline,

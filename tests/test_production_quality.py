@@ -185,7 +185,7 @@ def test_identity_retry_is_attempt_ordered_and_idempotent() -> None:
     asyncio.run(exercise())
 
 
-def test_multi_voice_tts_uses_bound_voice_assets_and_ffmpeg_concat(tmp_path: Path) -> None:
+def test_multi_voice_tts_uses_bound_voice_assets_and_timeline_mix(tmp_path: Path) -> None:
     async def exercise() -> None:
         store = InMemoryStore()
         project = NovelProjectRecord(title="多角色项目", language="zh-CN", target_episode_count=1, target_episode_duration_seconds=30)
@@ -252,8 +252,11 @@ def test_multi_voice_tts_uses_bound_voice_assets_and_ffmpeg_concat(tmp_path: Pat
         assert saved is not None
         assert saved.status == TaskStatus.SUCCEEDED
         artifact = saved.artifacts[0]
-        assert artifact.metadata["synthesis_mode"] == "multi_voice_segmented"
+        assert artifact.metadata["synthesis_mode"] == "multi_voice_timeline_mix"
         assert artifact.metadata["independent_waveform_count"] == 2
+        assert artifact.metadata["waveform_join_strategy"] == "ffmpeg_timeline_mix_with_edge_fades"
+        assert artifact.metadata["transition_fade_ms"] == 24
+        assert artifact.metadata["room_tone_enabled"] is True
         assert len(artifact.metadata["voice_lines"]) == 2
         assert artifact.metadata["voice_lines"][0]["voice_asset_id"] == str(voice_asset.id)
         assert artifact.metadata["ffprobe"]["audio_stream_count"] == 1

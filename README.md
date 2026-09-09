@@ -15,7 +15,7 @@
 - 逐镜头身份关键帧：标准人设图完成后，含角色镜头可按 `auto`、`always` 或 `off` 策略生成身份锁定关键帧；视频任务优先使用当前镜头的关键帧。
 - 镜头身份初审：对含角色的视频抽样执行 InsightFace 相似度检查。
 - 身份阈值校准：只读比较候选阈值，不修改生产配置；身份失败镜头支持幂等批量重试。
-- 角色声音资产库：可按角色绑定 Edge TTS、ChatTTS、macOS say 或 Mock 声音档案，并按对白行生成多角色音频。
+- 角色声音资产库：可按角色绑定 Edge TTS、ChatTTS、macOS say 或 Mock 声音档案，并按对白行生成多角色音频；多角色时间轴默认使用小幅边缘淡化和极低 room tone 减少硬切，不对对白变速。
 - MuseTalk 接口：支持从视频/音频 Artifact 创建唇形同步任务，完成后可在成片编排中选择 `lip_synced_video`，原始片段可回退。
 - Windows GPU 主机运行档案：串行 GPU 锁、自动推进、失败恢复、磁盘清理和一键健康检查；参数按显存和实测结果调整，不绑定具体显卡型号。
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。

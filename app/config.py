@@ -124,6 +124,9 @@ class Settings:
     tts_binary: str
     tts_ffmpeg_binary: str
     tts_multi_voice_timeout_seconds: int
+    tts_multi_voice_transition_fade_ms: int
+    tts_multi_voice_room_tone_enabled: bool
+    tts_multi_voice_room_tone_db: float
     tts_runtime_path: str
     tts_script_path: str
     tts_device: str
@@ -717,6 +720,28 @@ def load_settings(path: str | Path | None = None) -> Settings:
                 "multi_voice_timeout_seconds",
                 "AI_VIDEO_TTS_MULTI_VOICE_TIMEOUT_SECONDS",
                 120,
+            )
+        ),
+        tts_multi_voice_transition_fade_ms=int(
+            setting(
+                tts_config,
+                "multi_voice_transition_fade_ms",
+                "AI_VIDEO_TTS_MULTI_VOICE_TRANSITION_FADE_MS",
+                24,
+            )
+        ),
+        tts_multi_voice_room_tone_enabled=bool_setting(
+            tts_config,
+            "multi_voice_room_tone_enabled",
+            "AI_VIDEO_TTS_MULTI_VOICE_ROOM_TONE_ENABLED",
+            True,
+        ),
+        tts_multi_voice_room_tone_db=float(
+            setting(
+                tts_config,
+                "multi_voice_room_tone_db",
+                "AI_VIDEO_TTS_MULTI_VOICE_ROOM_TONE_DB",
+                -52.0,
             )
         ),
         tts_runtime_path=str(

@@ -56,6 +56,9 @@ def test_windows_gpu_profile_contains_serial_gpu_runtime_defaults() -> None:
     assert settings.worker_cleanup_enabled is True
     assert settings.lip_sync_provider == "musetalk_http"
     assert settings.lip_sync_base_url == "http://host.docker.internal:8090"
+    assert settings.tts_multi_voice_transition_fade_ms == 24
+    assert settings.tts_multi_voice_room_tone_enabled is True
+    assert settings.tts_multi_voice_room_tone_db == -52.0
 
 
 def test_windows_smoke_uses_host_paths_and_passes_quality_profile() -> None:
