@@ -8,19 +8,41 @@ from scripts.mac_runtime_preflight import MacRuntimePreflight, resolve_config_pa
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_mac_preflight_resolves_local_profile_config(monkeypatch) -> None:
+def _write_minimal_local_config(project_root: Path) -> Path:
+    config_path = project_root / "config/config.local.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        """
+[image_generation]
+provider = "comfyui"
+workflow_path = "config/comfyui/flux-schnell-t2i-api.json"
+identity_workflow_path = "config/comfyui/flux-schnell-faceid-reference-api.json"
+
+[video_generation]
+provider = "comfyui_wan_i2v"
+workflow_path = "config/comfyui/wan2.1-i2v-api.json"
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_mac_preflight_resolves_local_profile_config(monkeypatch, tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    local_config = _write_minimal_local_config(project_root)
     monkeypatch.setenv("AI_VIDEO_PROFILE", "local_mac_16gb")
     monkeypatch.delenv("AI_VIDEO_CONFIG", raising=False)
 
-    path = resolve_config_path(PROJECT_ROOT)
+    path = resolve_config_path(project_root)
 
-    assert path.name == "config.local.toml"
+    assert path == local_config
 
 
-def test_mac_preflight_validates_repository_workflows() -> None:
+def test_mac_preflight_validates_repository_workflows(tmp_path: Path) -> None:
+    config_path = _write_minimal_local_config(tmp_path)
     checker = MacRuntimePreflight(
         project_root=PROJECT_ROOT,
-        config_path=PROJECT_ROOT / "config/config.local.toml",
+        config_path=config_path,
         comfyui_root=PROJECT_ROOT / ".tmp/nonexistent-comfyui",
         validate_models=False,
     )
@@ -32,10 +54,11 @@ def test_mac_preflight_validates_repository_workflows() -> None:
     assert all(result.ok for result in checker.results)
 
 
-def test_mac_preflight_reports_missing_model_root() -> None:
+def test_mac_preflight_reports_missing_model_root(tmp_path: Path) -> None:
+    config_path = _write_minimal_local_config(tmp_path)
     checker = MacRuntimePreflight(
         project_root=PROJECT_ROOT,
-        config_path=PROJECT_ROOT / "config/config.local.toml",
+        config_path=config_path,
         comfyui_root=PROJECT_ROOT / ".tmp/nonexistent-comfyui",
         validate_models=True,
     )
