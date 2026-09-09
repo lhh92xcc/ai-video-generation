@@ -167,4 +167,31 @@ describe('creator home', () => {
       wrapper.unmount()
     }
   })
+
+  it('does not overlap topic task polls and ignores a response after dismissal', async () => {
+    let resolveSlowPoll!: (task: ReturnType<typeof infoTask>) => void
+    vi.mocked(getTask)
+      .mockResolvedValueOnce(infoTask('topic-task-1', 'topic-project-1', 'queued'))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSlowPoll = resolve }))
+
+    const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
+    try {
+      await flushPromises()
+      await wrapper.findAll('button').find((button) => button.text().includes('主题短视频'))!.trigger('click')
+      await wrapper.get('input[placeholder="例如：新手露营装备怎么选"]').setValue('露营装备清单')
+      await wrapper.get('textarea[placeholder*="第一次周末露营"]').setValue('面向第一次周末露营的人，讲清帐篷、睡袋和照明的选择顺序。')
+      await wrapper.findAll('button').find((button) => button.text().includes('创建并生成脚本'))!.trigger('click')
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(getTask).toHaveBeenCalledTimes(2)
+
+      await wrapper.get('button[aria-label="关闭主题任务提示"]').trigger('click')
+      resolveSlowPoll(infoTask('topic-task-1', 'topic-project-1', 'succeeded'))
+      await flushPromises()
+      expect(wrapper.find('[data-test="topic-launch-card"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
+  })
 })

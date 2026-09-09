@@ -55,6 +55,8 @@ const topicTaskError = ref<string | null>(null)
 let dashboardRequestId = 0
 let dashboardRefreshTimer: ReturnType<typeof window.setInterval> | null = null
 let topicTaskPollTimer: ReturnType<typeof window.setInterval> | null = null
+let topicTaskRequestInFlight = false
+let topicTaskRequestSequence = 0
 
 const activeTasks = computed(() => tasks.value.filter((task) => ['created', 'queued', 'running'].includes(task.status)).length)
 const totalProjects = computed(() => projects.value.length + topicProjects.value.length)
@@ -271,20 +273,27 @@ function stopTopicTaskPolling() {
 
 async function refreshTopicTask() {
   const launch = topicLaunch.value
-  if (!launch) return
+  if (!launch || topicTaskRequestInFlight) return
+  const requestSequence = ++topicTaskRequestSequence
+  topicTaskRequestInFlight = true
   topicTaskLoading.value = true
   try {
     const task = await getTask(launch.task.id)
-    if (!topicLaunch.value || topicLaunch.value.task.id !== task.id) return
+    if (
+      requestSequence !== topicTaskRequestSequence
+      || !topicLaunch.value
+      || topicLaunch.value.task.id !== task.id
+    ) return
     topicLaunch.value = { ...topicLaunch.value, task }
     if (!['created', 'queued', 'running'].includes(task.status)) {
       stopTopicTaskPolling()
       void refreshDashboard()
     }
   } catch (error) {
-    topicTaskError.value = displayError(error)
+    if (requestSequence === topicTaskRequestSequence) topicTaskError.value = displayError(error)
   } finally {
-    topicTaskLoading.value = false
+    topicTaskRequestInFlight = false
+    if (requestSequence === topicTaskRequestSequence) topicTaskLoading.value = false
   }
 }
 
@@ -295,6 +304,7 @@ function startTopicTaskPolling() {
 }
 
 function dismissTopicLaunch() {
+  topicTaskRequestSequence += 1
   stopTopicTaskPolling()
   topicLaunch.value = null
   topicTaskError.value = null
