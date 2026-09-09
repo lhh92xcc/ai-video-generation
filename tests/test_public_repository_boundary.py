@@ -7,6 +7,24 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _private_or_generated_paths(tracked: set[str]) -> set[str]:
+    return {
+        path
+        for path in tracked
+        if (
+            path == ".env"
+            or (path.startswith(".env.") and path != ".env.example")
+            or path == "AGENTS.md"
+            or path.startswith(".ai/")
+            or path.startswith("docs/")
+            or path == "config/config.local.toml"
+            or path.startswith(".tmp/")
+            or path.startswith(".models/")
+            or path.startswith("local-runtimes/")
+        )
+    }
+
+
 def test_private_collaboration_and_runtime_files_are_not_tracked() -> None:
     completed = subprocess.run(
         ["git", "ls-files", "-z"],
@@ -21,23 +39,13 @@ def test_private_collaboration_and_runtime_files_are_not_tracked() -> None:
         for item in completed.stdout.split(b"\0")
         if item
     }
-    forbidden = {
-        path
-        for path in tracked
-        if (
-            path == ".env"
-            or path.startswith(".env.")
-            or path == "AGENTS.md"
-            or path.startswith(".ai/")
-            or path.startswith("docs/")
-            or path == "config/config.local.toml"
-            or path.startswith(".tmp/")
-            or path.startswith(".models/")
-            or path.startswith("local-runtimes/")
-        )
-    }
+    forbidden = _private_or_generated_paths(tracked)
 
     assert not forbidden, "private or generated paths are tracked: " + ", ".join(sorted(forbidden))
+
+
+def test_public_env_example_is_allowed() -> None:
+    assert _private_or_generated_paths({".env.example"}) == set()
 
 
 def test_public_runtime_guidance_is_not_bound_to_one_gpu_model() -> None:
