@@ -198,6 +198,22 @@ docker compose config --quiet
 
 `POST /api/v1/novel-projects/{project_id}/production-runs` 是完整小说到成片的专用入口，默认且强制开启 `production_mode`；如果旧客户端显式传入 `false`，接口会拒绝请求，避免误创建只生成剧本/分镜的内容层计划。需要保持内容层兼容行为时，请使用 `POST /api/v1/novel-projects/{project_id}/episode-task-plans`，该接口仍默认 `production_mode=false`。
 
+### 命令行一键启动与恢复
+
+仓库提供 `scripts/run-novel-production.py` 作为 API 的薄客户端，可以从本地 `.txt/.md` 小说启动完整生产 Run，并持续轮询 StoryBible、分集、剧本、分镜、资产审核、参考图、旁白、字幕、视频片段和 Assembly。它不绕过人工审核，也不把 Provider 逻辑复制到脚本中：
+
+```bash
+uv run python scripts/run-novel-production.py \
+  --novel ./my-novel.txt \
+  --title "我的短剧 Demo" \
+  --episodes 1 \
+  --episode-duration 60 \
+  --quality-profile local_balanced \
+  --shot-keyframe-mode auto
+```
+
+遇到资产/剧本审核门禁时，命令会退出码 `2` 并打印项目 ID、Run ID、幂等键和恢复命令。审核完成后，用输出的相同 `--project-id` 与 `--idempotency-key` 继续，不要再次上传原文；`--no-wait` 可只提交任务并交给前台“远程生产队列”观察。退出码 `1` 表示输入、API 或不可自动恢复的终态失败。脚本默认连接 `http://127.0.0.1:8000`，可用 `--base-url` 覆盖。
+
 ## 当前边界
 
 手机后台提供页面切换下拉框和返回创作者入口，避免侧栏隐藏后无法导航。运行日志已验证按任务编号筛选并展开阶段失败详情。
