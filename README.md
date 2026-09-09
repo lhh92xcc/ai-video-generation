@@ -335,7 +335,7 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
 .\scripts\start-windows-gpu.ps1 -ProjectRoot (Get-Location).Path
 ```
 
-启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次媒体前置检查。前置检查除了端口，还会读取仓库中的三个 workflow JSON，核对必需节点/占位符，并在设置 `COMFYUI_ROOT` 后检查 Flux、Wan、PuLID、Wan 文本编码器、VAE、InsightFace 和 ComfyUI custom nodes 是否实际存在；检查过程只读，不会下载或覆盖模型。
+启动器会检查 Docker Desktop、Ollama 和 ComfyUI，启动 Compose 的 API、Worker、前端和基础设施，并执行一次媒体前置检查。MuseTalk 在首次 Flux/Wan Smoke 中是可选项：没有配置 `MUSETALK_WRAPPER_PATH` 和 `MUSETALK_MODEL_ROOT` 时会告警并跳过 bridge，不会因为缺少 Windows Python 或 MuseTalk 模型阻塞视觉链路；只有使用 `-RequireMuseTalk` 时才作为严格门禁。前置检查除了端口，还会读取仓库中的三个 workflow JSON，核对必需节点/占位符，并在设置 `COMFYUI_ROOT` 后检查 Flux、Wan、PuLID、Wan 文本编码器、VAE、InsightFace 和 ComfyUI custom nodes 是否实际存在；检查过程只读，不会下载或覆盖模型。
 
 Windows 也可以使用 PowerShell 包装器启动小说完整生产。新建项目使用 `-Novel`，恢复已有 Run 使用 `-ProjectId`；包装器会自动调用仓库的 Python CLI，并把 `windows_gpu` profile 传给子进程：
 

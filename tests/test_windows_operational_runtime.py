@@ -71,6 +71,16 @@ def test_windows_smoke_uses_host_paths_and_passes_quality_profile() -> None:
     assert '"--quality-profile", $SmokeQualityProfile' in launcher
 
 
+def test_windows_visual_smoke_does_not_require_musetalk_runtime() -> None:
+    launcher = Path("scripts/start-windows-gpu.ps1").read_text(encoding="utf-8")
+
+    assert "MUSETALK_WRAPPER_PATH" in launcher
+    assert "MUSETALK_MODEL_ROOT" in launcher
+    assert "首次 Flux/Wan Smoke 将跳过 MuseTalk bridge" in launcher
+    assert "-SkipMuseTalk 与 -RequireMuseTalk 不能同时使用" in launcher
+    assert "找不到 MuseTalk Python" in launcher
+
+
 def test_operational_health_and_remote_queue_endpoints_are_queryable(client: TestClient) -> None:
     health = client.get("/api/v1/system/health")
     assert health.status_code == 200, health.text

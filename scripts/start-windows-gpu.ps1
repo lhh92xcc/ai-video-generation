@@ -22,6 +22,10 @@ $ProjectRoot = (Resolve-Path $ProjectRoot).Path
 $env:AI_VIDEO_PROFILE = "windows_gpu"
 $env:AI_VIDEO_CONFIG = "config/config.windows_gpu.toml"
 
+if ($SkipMuseTalk -and $RequireMuseTalk) {
+    throw "-SkipMuseTalk 与 -RequireMuseTalk 不能同时使用"
+}
+
 function Test-Endpoint {
     param([string]$Uri)
     try {
@@ -114,23 +118,40 @@ if (-not $SkipComfyUI) {
 }
 
 if (-not $SkipMuseTalk) {
-    if (-not (Test-Endpoint -Uri "http://127.0.0.1:8090/healthz")) {
-        if ([string]::IsNullOrWhiteSpace($MuseTalkPython)) {
-            $MuseTalkPython = "python"
-        }
-        if ([string]::IsNullOrWhiteSpace($env:MUSETALK_WRAPPER_PATH)) {
-            Write-Warning "MUSETALK_WRAPPER_PATH 未设置，将启动 bridge 但健康状态会是 degraded。"
-        }
-        Write-Host "正在启动 MuseTalk HTTP bridge..."
-        $bridgeArguments = @("scripts/musetalk_http_runner.py")
-        Start-BackgroundProcess -FilePath $MuseTalkPython -Arguments $bridgeArguments `
-            -WorkingDirectory $ProjectRoot -Environment @{
-                "MUSETALK_HOST" = "0.0.0.0"
-                "MUSETALK_PORT" = "8090"
-            } | Out-Null
-        Wait-Endpoint -Name "MuseTalk bridge" -Uri "http://127.0.0.1:8090/healthz" -TimeoutSeconds 30 | Out-Null
+    $museTalkConfigured = (
+        -not [string]::IsNullOrWhiteSpace($env:MUSETALK_WRAPPER_PATH) -and
+        -not [string]::IsNullOrWhiteSpace($env:MUSETALK_MODEL_ROOT)
+    )
+    if (-not $museTalkConfigured -and -not $RequireMuseTalk) {
+        # The first Flux/Wan smoke does not use lip-sync.  Do not require a
+        # Windows Python installation or a MuseTalk model before the visual
+        # pipeline can be validated; the health check will show this as an
+        # optional warning.  Passing -RequireMuseTalk opts into the strict
+        # runtime gate for dialogue/lip-sync production.
+        Write-Warning "未配置 MUSETALK_WRAPPER_PATH/MUSETALK_MODEL_ROOT，首次 Flux/Wan Smoke 将跳过 MuseTalk bridge；需要唇形同步时请补齐配置并使用 -RequireMuseTalk。"
     } else {
-        Write-Host "MuseTalk bridge 已在运行" -ForegroundColor Green
+        if ($RequireMuseTalk -and -not $museTalkConfigured) {
+            throw "已要求 MuseTalk，但 MUSETALK_WRAPPER_PATH 或 MUSETALK_MODEL_ROOT 未设置"
+        }
+        if (-not (Test-Endpoint -Uri "http://127.0.0.1:8090/healthz")) {
+            if ([string]::IsNullOrWhiteSpace($MuseTalkPython)) {
+                $MuseTalkPython = "python"
+            }
+            if (-not (Get-Command $MuseTalkPython -ErrorAction SilentlyContinue) -and
+                -not (Test-Path -LiteralPath $MuseTalkPython -PathType Leaf)) {
+                throw "找不到 MuseTalk Python：$MuseTalkPython；首次 Flux/Wan Smoke 可不配置 MuseTalk，正式唇形同步需要安装 Python 或传入 -MuseTalkPython。"
+            }
+            Write-Host "正在启动 MuseTalk HTTP bridge..."
+            $bridgeArguments = @("scripts/musetalk_http_runner.py")
+            Start-BackgroundProcess -FilePath $MuseTalkPython -Arguments $bridgeArguments `
+                -WorkingDirectory $ProjectRoot -Environment @{
+                    "MUSETALK_HOST" = "0.0.0.0"
+                    "MUSETALK_PORT" = "8090"
+                } | Out-Null
+            Wait-Endpoint -Name "MuseTalk bridge" -Uri "http://127.0.0.1:8090/healthz" -TimeoutSeconds 30 | Out-Null
+        } else {
+            Write-Host "MuseTalk bridge 已在运行" -ForegroundColor Green
+        }
     }
 }
 
