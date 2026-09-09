@@ -4,6 +4,9 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:8000",
     [string]$Novel,
     [string]$ProjectId,
+    [string]$RunId,
+    [ValidateSet("pause", "resume", "cancel", "status")]
+    [string]$Control,
     [string]$Title,
     [string]$Language = "zh-CN",
     [ValidateRange(1, 100)]
@@ -33,9 +36,26 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path $ProjectRoot).Path
 $hasNovel = -not [string]::IsNullOrWhiteSpace($Novel)
 $hasProject = -not [string]::IsNullOrWhiteSpace($ProjectId)
+$hasRun = -not [string]::IsNullOrWhiteSpace($RunId)
+$hasControl = -not [string]::IsNullOrWhiteSpace($Control)
 
-if ($hasNovel -eq $hasProject) {
-    throw "请提供 -Novel（新建项目）或 -ProjectId（恢复已有项目）中的一个"
+if ($hasControl) {
+    if (-not $hasProject -or -not $hasRun) {
+        throw "使用 -Control 时必须同时提供 -ProjectId 和 -RunId"
+    }
+    if ($hasNovel) {
+        throw "控制已有 Run 时不要提供 -Novel"
+    }
+    if ($NoWait) {
+        throw "-Control 不需要与 -NoWait 一起使用"
+    }
+} else {
+    if ($hasRun) {
+        throw "-RunId 只能与 -Control 一起使用"
+    }
+    if ($hasNovel -eq $hasProject) {
+        throw "请提供 -Novel（新建项目）或 -ProjectId（恢复已有项目）中的一个"
+    }
 }
 
 Push-Location $ProjectRoot
@@ -55,7 +75,9 @@ try {
     $env:AI_VIDEO_CONFIG = "config/config.windows_gpu.toml"
 
     $arguments = @($cliPath, "--base-url", $BaseUrl)
-    if ($hasNovel) {
+    if ($hasControl) {
+        $arguments += @("--project-id", $ProjectId, "--run-id", $RunId, "--control", $Control)
+    } elseif ($hasNovel) {
         $arguments += @("--novel", (Resolve-Path -LiteralPath $Novel).Path)
         if (-not [string]::IsNullOrWhiteSpace($Title)) {
             $arguments += @("--title", $Title)

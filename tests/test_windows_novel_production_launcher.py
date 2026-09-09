@@ -12,6 +12,9 @@ def test_windows_novel_launcher_forwards_new_and_resume_modes() -> None:
     assert '请提供 -Novel（新建项目）或 -ProjectId（恢复已有项目）中的一个' in source
     assert '"--novel"' in source
     assert '"--project-id"' in source
+    assert '"--run-id"' in source
+    assert '"--control"' in source
+    assert '使用 -Control 时必须同时提供 -ProjectId 和 -RunId' in source
     assert '"--quality-profile"' in source
     assert '"--shot-keyframe-mode"' in source
     assert '"--no-wait"' in source

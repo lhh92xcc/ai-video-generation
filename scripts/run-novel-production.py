@@ -22,6 +22,7 @@ import httpx
 MAX_SOURCE_BYTES = 5 * 1024 * 1024
 ALLOWED_SUFFIXES = {".txt": "text/plain", ".md": "text/markdown"}
 BLOCKED_EXIT_CODE = 2
+CONTROL_ACTIONS = ("pause", "resume", "cancel", "status")
 
 
 class ProductionCliError(RuntimeError):
@@ -145,12 +146,35 @@ class ProductionApi:
             f"/api/v1/novel-projects/{project_id}/production-runs/{run_id}",
         )
 
+    def control_production(
+        self,
+        project_id: str,
+        run_id: str,
+        action: str,
+    ) -> dict[str, Any]:
+        """Read or change one existing Production Run's lifecycle state."""
+
+        if action == "status":
+            return self.get_production(project_id, run_id)
+        if action not in CONTROL_ACTIONS:
+            raise ProductionCliError(f"不支持的 Run 操作：{action}")
+        return self._request(
+            "POST",
+            f"/api/v1/novel-projects/{project_id}/production-runs/{run_id}/{action}",
+        )
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--novel", type=Path, help="TXT/Markdown 小说文件；使用 --project-id 恢复时可省略")
     parser.add_argument("--project-id", help="已有项目 ID；提供后跳过创建项目和上传文件")
+    parser.add_argument("--run-id", help="已有 Production Run ID；与 --control 一起使用")
+    parser.add_argument(
+        "--control",
+        choices=CONTROL_ACTIONS,
+        help="读取或控制已有 Run：pause、resume、cancel、status",
+    )
     parser.add_argument("--title", help="新项目名称；省略时使用小说文件名")
     parser.add_argument("--language", default="zh-CN")
     parser.add_argument("--episodes", type=int, default=1, choices=tuple(range(1, 101)))
@@ -205,20 +229,51 @@ def _print_run(run: dict[str, Any], *, first: bool = False) -> None:
     print(f"{prefix}：{status} · 阶段 {stage} · {message}")
 
 
+def _status_exit_code(status: str) -> int:
+    """Map a queried Run state to a useful shell exit code."""
+
+    if status == "blocked":
+        return BLOCKED_EXIT_CODE
+    if status == "failed":
+        return 1
+    return 0
+
+
 def run(args: argparse.Namespace, *, client: httpx.Client | None = None) -> int:
     if args.poll_interval <= 0:
         raise ProductionCliError("--poll-interval 必须大于 0")
     if args.timeout_seconds < 0:
         raise ProductionCliError("--timeout-seconds 不能小于 0")
-    if args.project_id is not None and args.novel is not None:
-        raise ProductionCliError("恢复已有项目时不要同时提供 --novel")
-    if args.project_id is None and args.novel is None:
-        raise ProductionCliError("新建项目时必须提供 --novel")
+    if args.control is not None:
+        if args.novel is not None:
+            raise ProductionCliError("控制已有 Run 时不要提供 --novel")
+        if args.project_id is None or args.run_id is None:
+            raise ProductionCliError("使用 --control 时必须同时提供 --project-id 和 --run-id")
+        if args.no_wait:
+            raise ProductionCliError("--control 不需要与 --no-wait 一起使用")
+    else:
+        if args.run_id is not None:
+            raise ProductionCliError("--run-id 只能与 --control 一起使用")
+        if args.project_id is not None and args.novel is not None:
+            raise ProductionCliError("恢复已有项目时不要同时提供 --novel")
+        if args.project_id is None and args.novel is None:
+            raise ProductionCliError("新建项目时必须提供 --novel")
 
     owns_client = client is None
     http_client = client or httpx.Client(timeout=30.0)
     api = ProductionApi(http_client, args.base_url)
     try:
+        if args.control is not None:
+            assert args.project_id is not None and args.run_id is not None
+            run_payload = api.control_production(args.project_id, args.run_id, args.control)
+            _print_run(run_payload)
+            print(f"项目 ID：{args.project_id}")
+            print(f"Run ID：{args.run_id}")
+            if args.control == "status":
+                return _status_exit_code(str(run_payload.get("status") or "unknown"))
+            print(f"Run 操作已提交：{args.control}")
+            return 0
+
         project_id = args.project_id
         episodes = args.episodes
         if project_id is None:
@@ -287,6 +342,11 @@ def run(args: argparse.Namespace, *, client: httpx.Client | None = None) -> int:
             if status == "blocked":
                 print(
                     "Run 在人工审核或配置门禁处暂停；完成前台审核后，用相同项目 ID 和幂等键重新执行。",
+                    file=sys.stderr,
+                )
+                print(
+                    f"推荐恢复命令：uv run python scripts/run-novel-production.py --project-id {project_id} "
+                    f"--run-id {run_id} --control resume",
                     file=sys.stderr,
                 )
                 print(

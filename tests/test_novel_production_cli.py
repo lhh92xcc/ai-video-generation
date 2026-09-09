@@ -164,3 +164,87 @@ def test_cli_rejects_novel_and_project_id_together(tmp_path: Path) -> None:
         assert "不要同时提供" in str(exc)
     else:
         raise AssertionError("expected conflicting CLI arguments to fail")
+
+
+def test_cli_controls_existing_run_without_starting_a_new_run(capsys) -> None:
+    module = _load_cli_module()
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "project_id": "project-123",
+                    "run_id": "run-123",
+                    "status": "paused",
+                    "stage": "asset_reference_image",
+                    "message": "等待审核",
+                },
+            )
+        return httpx.Response(
+            202,
+            json={
+                "project_id": "project-123",
+                "run_id": "run-123",
+                "status": "paused",
+                "stage": "asset_reference_image",
+                "message": "已暂停",
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        for action in ("pause", "resume", "cancel"):
+            args = module._parser().parse_args(
+                [
+                    "--base-url",
+                    "https://example.test",
+                    "--project-id",
+                    "project-123",
+                    "--run-id",
+                    "run-123",
+                    "--control",
+                    action,
+                ]
+            )
+            assert module.run(args, client=client) == 0
+
+        status_args = module._parser().parse_args(
+            [
+                "--base-url",
+                "https://example.test",
+                "--project-id",
+                "project-123",
+                "--run-id",
+                "run-123",
+                "--control",
+                "status",
+            ]
+        )
+        assert module.run(status_args, client=client) == 0
+    finally:
+        client.close()
+
+    assert calls == [
+        ("POST", "/api/v1/novel-projects/project-123/production-runs/run-123/pause"),
+        ("POST", "/api/v1/novel-projects/project-123/production-runs/run-123/resume"),
+        ("POST", "/api/v1/novel-projects/project-123/production-runs/run-123/cancel"),
+        ("GET", "/api/v1/novel-projects/project-123/production-runs/run-123"),
+    ]
+    assert "Run 操作已提交：cancel" in capsys.readouterr().out
+
+
+def test_cli_rejects_incomplete_run_control_arguments() -> None:
+    module = _load_cli_module()
+    args = module._parser().parse_args(
+        ["--project-id", "project-123", "--control", "pause"]
+    )
+
+    try:
+        module.run(args)
+    except module.ProductionCliError as exc:
+        assert "--project-id 和 --run-id" in str(exc)
+    else:
+        raise AssertionError("expected incomplete Run control arguments to fail")

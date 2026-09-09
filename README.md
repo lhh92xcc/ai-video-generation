@@ -227,6 +227,24 @@ uv run python scripts/run-novel-production.py \
 
 遇到资产/剧本审核门禁时，命令会退出码 `2` 并打印项目 ID、Run ID、幂等键和恢复命令。审核完成后，用输出的相同 `--project-id` 与 `--idempotency-key` 继续，不要再次上传原文；`--no-wait` 可只提交任务并交给前台“远程生产队列”观察。退出码 `1` 表示输入、API 或不可自动恢复的终态失败。脚本默认连接 `http://127.0.0.1:8000`，可用 `--base-url` 覆盖。
 
+如果已经拿到项目 ID 和 Run ID，也可以直接用 CLI 控制生命周期，不会重新上传小说或创建新的 Run：
+
+```bash
+# 查看状态
+uv run python scripts/run-novel-production.py \
+  --project-id <project-id> --run-id <run-id> --control status
+
+# 暂停、恢复或取消
+uv run python scripts/run-novel-production.py \
+  --project-id <project-id> --run-id <run-id> --control pause
+uv run python scripts/run-novel-production.py \
+  --project-id <project-id> --run-id <run-id> --control resume
+uv run python scripts/run-novel-production.py \
+  --project-id <project-id> --run-id <run-id> --control cancel
+```
+
+`status` 在 Run 为 `blocked` 时返回退出码 `2`，为不可恢复的 `failed` 时返回退出码 `1`，便于 Windows 计划任务或其他外部监控判断；暂停、恢复、取消请求成功提交则返回 `0`。PowerShell 包装器支持等价的 `-Control` 与 `-RunId` 参数。
+
 ## 当前边界
 
 手机后台提供页面切换下拉框和返回创作者入口，避免侧栏隐藏后无法导航。运行日志已验证按任务编号筛选并展开阶段失败详情。
