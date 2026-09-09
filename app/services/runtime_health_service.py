@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.domain.production_run import run_status_from_tasks
 from app.domain.models import (
     OperationalComponentHealth,
     OperationalHealthResponse,
@@ -127,14 +128,7 @@ class RuntimeHealthService:
             succeeded = sum(task.status == TaskStatus.SUCCEEDED for task in run_tasks)
             failed = sum(task.status == TaskStatus.FAILED for task in run_tasks)
             progress = round(sum(task.progress for task in run_tasks) / len(run_tasks))
-            marker_status = next(
-                (
-                    str(task.input_data.get("auto_run_status"))
-                    for task in run_tasks
-                    if task.input_data.get("auto_run_status")
-                ),
-                "active",
-            )
+            marker_status = run_status_from_tasks(run_tasks)
             if failed and marker_status == "active":
                 marker_status = "blocked"
             episode_ids = sorted(
@@ -148,6 +142,7 @@ class RuntimeHealthService:
             auto_runs.append(
                 {
                     "id": run_id,
+                    "project_id": str(run_tasks[0].project_id),
                     "status": marker_status,
                     "task_count": len(run_tasks),
                     "active_count": active,

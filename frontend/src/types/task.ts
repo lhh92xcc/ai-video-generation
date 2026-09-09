@@ -137,7 +137,7 @@ export interface EpisodeTaskPlanResponse {
   blocked_count: number
 }
 
-export type ProductionRunStatus = 'active' | 'blocked' | 'completed' | 'failed'
+export type ProductionRunStatus = 'active' | 'blocked' | 'paused' | 'completed' | 'failed' | 'canceled'
 
 export interface ProductionRunResponse {
   project_id: string
@@ -173,6 +173,7 @@ export interface OperationalHealthResponse {
 
 export interface ProductionQueueRun {
   id: string
+  project_id: string
   status: string
   task_count: number
   active_count: number

@@ -12,11 +12,14 @@ import {
   createEpisodeScriptTask,
   createEpisodeShotTask,
   createStoryBibleTask,
+  cancelProductionRun,
   getEpisodes,
   getNovelChapters,
   getNovelProject,
   startProductionRun,
   getLatestProductionRun,
+  pauseProductionRun,
+  resumeProductionRun,
   uploadNovelSource,
 } from '../api/novels'
 import { getEpisodeScript, getEpisodeShots } from '../api/novelWorkbench'
@@ -178,6 +181,21 @@ const productionRunCanSubmit = computed(() => Boolean(
   && providerSelectionReady.value
   && !action.value
   && (!usingLocalVisualProviders.value || localRuntimeReady.value),
+))
+const productionRunCanPause = computed(() => Boolean(
+  productionRun.value
+  && ['active', 'blocked'].includes(productionRun.value.status)
+  && !action.value,
+))
+const productionRunCanResume = computed(() => Boolean(
+  productionRun.value
+  && productionRun.value.status === 'paused'
+  && !action.value,
+))
+const productionRunCanCancel = computed(() => Boolean(
+  productionRun.value
+  && ['active', 'blocked', 'paused'].includes(productionRun.value.status)
+  && !action.value,
 ))
 const localRuntimeGateMessage = computed(() => {
   if (!usingLocalVisualProviders.value) return '当前使用云端或其他视觉档案；本地运行时检查不会阻止提交。'
@@ -529,6 +547,30 @@ const bgmCanSubmit = computed(() => Boolean(
 
 function isActive(status: TaskStatus) {
   return ['created', 'queued', 'running'].includes(status)
+}
+
+function productionRunStatusLabel(status: ProductionRunResponse['status']) {
+  const labels: Record<ProductionRunResponse['status'], string> = {
+    active: '运行中',
+    blocked: '等待处理',
+    paused: '已暂停',
+    completed: '已完成',
+    failed: '失败',
+    canceled: '已取消',
+  }
+  return labels[status]
+}
+
+function productionRunStatusIcon(status: ProductionRunResponse['status']) {
+  return status === 'completed'
+    ? '✓'
+    : ['failed', 'blocked'].includes(status)
+      ? '!'
+      : status === 'canceled'
+        ? '×'
+        : status === 'paused'
+          ? 'Ⅱ'
+          : '↻'
 }
 
 function latestTask(kind: string, episodeId?: string): GenerationTaskRecord | null {
@@ -1125,6 +1167,21 @@ async function startFullProduction() {
   })
 }
 
+async function controlFullProduction(control: 'pause' | 'resume' | 'cancel') {
+  const run = productionRun.value
+  if (!run) return
+  if (control === 'cancel' && !window.confirm('确认取消这个生产 Run？已生成的 Artifact 会保留，未开始的任务不会继续执行。')) return
+  const actions = {
+    pause: { notice: '生产 Run 已暂停；正在运行的任务会自然结束。', execute: pauseProductionRun },
+    resume: { notice: '生产 Run 已恢复，未执行任务已重新入队。', execute: resumeProductionRun },
+    cancel: { notice: '生产 Run 已取消，已生成的 Artifact 已保留。', execute: cancelProductionRun },
+  } as const
+  const current = actions[control]
+  await runAction(`production-run-${control}`, current.notice, async () => {
+    productionRun.value = await current.execute(projectData.value.id, run.run_id)
+  })
+}
+
 async function startScript() {
   if (!selectedEpisode.value) return
   await runAction('episode-script', '分场剧本任务已提交，完成后可以在这里预览剧本。', () =>
@@ -1179,7 +1236,7 @@ onMounted(() => {
   void refreshWorkspace()
   void refreshOperationalHealth()
   pollTimer = window.setInterval(() => {
-    if (activeTaskCount.value > 0 || productionRun.value?.auto_advance) void refreshWorkspace()
+    if (activeTaskCount.value > 0 || productionRun.value?.auto_advance || productionRun.value?.status === 'paused') void refreshWorkspace()
   }, 2500)
 })
 
@@ -1358,7 +1415,12 @@ onUnmounted(() => {
             <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
             <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" :title="productionRunCanSubmit ? '' : localRuntimeGateMessage" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
           </div>
-          <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRun.status === 'completed' ? '✓' : productionRun.status === 'failed' ? '!' : productionRun.status === 'blocked' ? '!' : '↻' }}</span><div><strong>Run {{ productionRun.status === 'active' ? '运行中' : productionRun.status === 'blocked' ? '等待人工处理' : productionRun.status === 'completed' ? '已完成' : '失败' }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
+          <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRunStatusIcon(productionRun.status) }}</span><div><strong>Run {{ productionRunStatusLabel(productionRun.status) }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
+          <div v-if="productionRun && (productionRunCanPause || productionRunCanResume || productionRunCanCancel)" class="creator-auto-run-controls">
+            <button v-if="productionRunCanPause" class="creator-ghost-button" type="button" :disabled="Boolean(action)" @click="controlFullProduction('pause')">{{ action === 'production-run-pause' ? '暂停中…' : '暂停 Run' }}</button>
+            <button v-if="productionRunCanResume" class="creator-primary-button" type="button" :disabled="Boolean(action)" @click="controlFullProduction('resume')">{{ action === 'production-run-resume' ? '恢复中…' : '恢复 Run' }}</button>
+            <button v-if="productionRunCanCancel" class="creator-danger-button" type="button" :disabled="Boolean(action)" @click="controlFullProduction('cancel')">{{ action === 'production-run-cancel' ? '取消中…' : '取消 Run' }}</button>
+          </div>
         </section>
 
         <section id="creator-step-story" class="creator-workspace-card" :class="{ muted: !sourceReady }">

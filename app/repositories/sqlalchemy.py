@@ -58,6 +58,7 @@ from app.domain.models import (
     VoiceAssetRecord,
     utc_now,
 )
+from app.domain.production_run import merge_run_control_markers
 
 
 class SqlAlchemyStore:
@@ -219,6 +220,10 @@ class SqlAlchemyStore:
                 row = self._task_to_row(task, None)
                 session.add(row)
             else:
+                task.input_data = merge_run_control_markers(
+                    row.input_json,
+                    task.input_data,
+                )
                 self._copy_task_to_row(task, row)
             await self._sync_artifact_rows(session, task)
             await session.commit()

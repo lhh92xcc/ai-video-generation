@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ApiClientError } from '../api/client'
+import { cancelProductionRun, pauseProductionRun, resumeProductionRun } from '../api/novels'
 import { cleanupTemporaryFiles, getOperationalHealth, getProductionQueue } from '../api/productionQueue'
 import { retryTask } from '../api/tasks'
 import type {
@@ -19,6 +20,8 @@ const loading = ref(true)
 const refreshing = ref(false)
 const cleaning = ref(false)
 const retryingId = ref<string | null>(null)
+const runControlId = ref<string | null>(null)
+const runControlAction = ref<'pause' | 'resume' | 'cancel' | null>(null)
 const errorMessage = ref<string | null>(null)
 const noticeMessage = ref<string | null>(null)
 let timer: number | undefined
@@ -54,9 +57,14 @@ function formatRunStatus(run: ProductionQueueRun) {
   if (run.status === 'completed') return '已完成'
   if (run.status === 'failed') return '失败 · 需处理'
   if (run.status === 'canceled') return '已取消'
+  if (run.status === 'paused') return '已暂停'
   if (run.status === 'blocked') return '需处理'
   return run.active_count ? '自动运行中' : '等待推进'
 }
+function canPauseRun(run: ProductionQueueRun) { return ['active', 'blocked'].includes(run.status) }
+function canResumeRun(run: ProductionQueueRun) { return run.status === 'paused' }
+function canCancelRun(run: ProductionQueueRun) { return ['active', 'blocked', 'paused'].includes(run.status) }
+function isControllingRun(run: ProductionQueueRun) { return runControlId.value === run.id }
 function formatTime(value: string | undefined) {
   if (!value) return '—'
   const date = new Date(value)
@@ -117,6 +125,33 @@ async function retry(task: GenerationTaskRecord) {
   }
 }
 
+async function controlRun(run: ProductionQueueRun, control: 'pause' | 'resume' | 'cancel') {
+  if (control === 'cancel' && !window.confirm('确认取消这个生产 Run？已生成的 Artifact 会保留，未开始的任务不会继续执行。')) return
+  runControlId.value = run.id
+  runControlAction.value = control
+  errorMessage.value = null
+  noticeMessage.value = null
+  const actions: Record<'pause' | 'resume' | 'cancel', (projectId: string, runId: string) => Promise<unknown>> = {
+    pause: pauseProductionRun,
+    resume: resumeProductionRun,
+    cancel: cancelProductionRun,
+  }
+  try {
+    await actions[control](run.project_id, run.id)
+    noticeMessage.value = control === 'pause'
+      ? '生产 Run 已暂停；正在运行的任务会自然结束。'
+      : control === 'resume'
+        ? '生产 Run 已恢复，未执行任务已重新入队。'
+        : '生产 Run 已取消，已生成的 Artifact 已保留。'
+    await refresh()
+  } catch (error) {
+    errorMessage.value = displayError(error)
+  } finally {
+    runControlId.value = null
+    runControlAction.value = null
+  }
+}
+
 onMounted(() => {
   refresh(true)
   timer = window.setInterval(() => refresh(), 5000)
@@ -169,7 +204,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
     <section class="card queue-runs-card">
       <div class="task-toolbar"><div><h2>自动生产 DAG</h2><p>失败任务会先按退避策略自动恢复；需要人工处理的 Run 会显示为“需处理”。</p></div><span class="table-count">{{ snapshot?.auto_runs.length ?? 0 }} 个 Run</span></div>
       <div v-if="!snapshot?.auto_runs.length" class="queue-empty">还没有自动生产 Run。可在创作者前台的分集生产计划中开启自动推进。</div>
-      <div v-else class="queue-run-list"><article v-for="run in snapshot.auto_runs" :key="run.id" class="queue-run-row"><div class="queue-run-copy"><strong>{{ run.id }}</strong><small>{{ run.succeeded_count }}/{{ run.task_count }} 完成 · {{ run.failed_count }} 失败 · 更新于 {{ formatTime(run.updated_at) }}</small></div><div class="queue-run-progress"><i><b :style="{ width: `${run.progress}%` }" /></i><small>{{ run.progress }}%</small></div><span class="task-status" :class="run.status"><i />{{ formatRunStatus(run) }}</span></article></div>
+      <div v-else class="queue-run-list"><article v-for="run in snapshot.auto_runs" :key="run.id" class="queue-run-row"><div class="queue-run-copy"><strong>{{ run.id }}</strong><small>{{ run.succeeded_count }}/{{ run.task_count }} 完成 · {{ run.failed_count }} 失败 · 更新于 {{ formatTime(run.updated_at) }}</small></div><div class="queue-run-progress"><i><b :style="{ width: `${run.progress}%` }" /></i><small>{{ run.progress }}%</small></div><span class="task-status" :class="run.status"><i />{{ formatRunStatus(run) }}</span><div v-if="canPauseRun(run) || canResumeRun(run) || canCancelRun(run)" class="queue-run-controls"><button v-if="canPauseRun(run)" class="table-action" type="button" :aria-label="`暂停 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'pause')">{{ isControllingRun(run) && runControlAction === 'pause' ? '暂停中…' : '暂停' }}</button><button v-if="canResumeRun(run)" class="table-action primary" type="button" :aria-label="`恢复 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'resume')">{{ isControllingRun(run) && runControlAction === 'resume' ? '恢复中…' : '恢复' }}</button><button v-if="canCancelRun(run)" class="table-action danger" type="button" :aria-label="`取消 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'cancel')">{{ isControllingRun(run) && runControlAction === 'cancel' ? '取消中…' : '取消' }}</button></div></article></div>
     </section>
 
     <section class="card queue-task-card">

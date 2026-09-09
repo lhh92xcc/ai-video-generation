@@ -36,6 +36,7 @@ from app.domain.models import (
     EpisodeScriptDraftRecord,
     utc_now,
 )
+from app.domain.production_run import merge_run_control_markers
 
 
 class InMemoryStore:
@@ -167,6 +168,12 @@ class InMemoryStore:
 
     async def update_task(self, task: GenerationTaskRecord) -> GenerationTaskRecord:
         async with self._lock:
+            existing = self._tasks.get(task.id)
+            if existing is not None:
+                task.input_data = merge_run_control_markers(
+                    existing.input_data,
+                    task.input_data,
+                )
             self._tasks[task.id] = task
             self._sync_artifacts(task)
             return task.model_copy(deep=True)

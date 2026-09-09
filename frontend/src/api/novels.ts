@@ -170,3 +170,26 @@ export function getProductionRun(projectId: string, runId: string): Promise<Prod
     `/api/v1/novel-projects/${projectId}/production-runs/${runId}`,
   )
 }
+
+function controlProductionRun(
+  projectId: string,
+  runId: string,
+  action: 'pause' | 'resume' | 'cancel',
+): Promise<ProductionRunResponse> {
+  return apiRequest<ProductionRunResponse>(
+    `/api/v1/novel-projects/${projectId}/production-runs/${runId}/${action}`,
+    { method: 'POST' },
+  )
+}
+
+export function pauseProductionRun(projectId: string, runId: string): Promise<ProductionRunResponse> {
+  return controlProductionRun(projectId, runId, 'pause')
+}
+
+export function resumeProductionRun(projectId: string, runId: string): Promise<ProductionRunResponse> {
+  return controlProductionRun(projectId, runId, 'resume')
+}
+
+export function cancelProductionRun(projectId: string, runId: string): Promise<ProductionRunResponse> {
+  return controlProductionRun(projectId, runId, 'cancel')
+}

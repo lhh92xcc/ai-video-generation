@@ -19,6 +19,7 @@ from app.domain.models import (
     TaskStatus,
     utc_now,
 )
+from app.domain.production_run import AUTO_RUN_ID, AUTO_RUN_STATUS, run_status_from_tasks
 from app.providers.errors import TextProviderError
 from app.providers.protocol import TextProvider
 from app.queue import TaskQueue
@@ -134,6 +135,18 @@ class TaskService:
 
     async def run_task(self, task_id: UUID) -> None:
         task = await self.get_task(task_id)
+        run_status = await self._run_control_status(task)
+        if task.status == TaskStatus.CANCELED:
+            return
+        if run_status == "paused":
+            # A paused Run keeps queued tasks durable so resume can enqueue
+            # them again; it must not start a Provider call in the meantime.
+            return
+        if run_status == "canceled":
+            if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+                self._mark_canceled_task(task)
+                await self._store.update_task(task)
+            return
         if task.kind == GenerationTaskKind.ASSET_REFERENCE_IMAGE:
             if self._reference_image_task_runner is None:
                 raise RuntimeError("Reference image task runner has not been configured")
@@ -265,6 +278,10 @@ class TaskService:
         if task.status != TaskStatus.FAILED:
             raise TaskNotRetryableError
 
+        run_status = await self._run_control_status(task)
+        if run_status == "canceled":
+            raise TaskNotRetryableError
+
         stage = task.current_stage or (task.stages[-1].stage if task.stages else None)
         if stage is None:
             raise TaskNotRetryableError
@@ -279,7 +296,7 @@ class TaskService:
         # second copy, while preserving the retry counter for observability.
         task.input_data["auto_retry_pending"] = False
         task.input_data.pop("next_retry_at", None)
-        if task.input_data.get("auto_run_id"):
+        if task.input_data.get("auto_run_id") and run_status != "paused":
             task.input_data["auto_advance"] = True
             task.input_data["auto_run_status"] = "active"
         stage_run = next((item for item in task.stages if item.stage == stage), None)
@@ -308,6 +325,46 @@ class TaskService:
 
         await self._task_queue.enqueue(saved_task.id)
         return saved_task
+
+    @staticmethod
+    def _mark_canceled_task(task: GenerationTaskRecord) -> None:
+        now = utc_now()
+        task.status = TaskStatus.CANCELED
+        task.updated_at = now
+        task.error = TaskError(
+            code="PRODUCTION_RUN_CANCELED",
+            message="The production Run was canceled before this task started.",
+        )
+        if task.current_stage is None and task.stages:
+            task.current_stage = task.stages[-1].stage
+        if task.current_stage is None:
+            return
+        stage_run = next(
+            (item for item in task.stages if item.stage == task.current_stage),
+            None,
+        )
+        if stage_run is None:
+            stage_run = StageRun(stage=task.current_stage, status=TaskStatus.CANCELED)
+            task.stages.append(stage_run)
+        else:
+            stage_run.status = TaskStatus.CANCELED
+            stage_run.error_code = "PRODUCTION_RUN_CANCELED"
+            stage_run.finished_at = now
+
+    async def _run_control_status(self, task: GenerationTaskRecord) -> str | None:
+        """Read the aggregate marker to close the pause/cancel dequeue race."""
+
+        raw_run_id = task.input_data.get(AUTO_RUN_ID)
+        if not raw_run_id:
+            return None
+        run_tasks = [
+            item
+            for item in await self._store.list_tasks(project_id=task.project_id, limit=5000)
+            if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
+        ]
+        if not run_tasks:
+            return str(task.input_data.get(AUTO_RUN_STATUS, "active"))
+        return run_status_from_tasks(run_tasks)
 
     async def mark_failed(
         self,

@@ -36,6 +36,7 @@
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
 - 自动生产 Run 完成态已闭环：Worker/scheduler 在推进 DAG 时只把 `created`/`reused` 任务视为下一波工作，不会把用于界面追踪的已完成任务 ID误判为新任务；最终 Assembly 成功后 Run 会稳定进入 `completed`。
+- 自动生产 Run 生命周期控制已闭环：创作者前台和远程生产队列支持暂停、恢复和取消；暂停不会强杀正在执行的模型调用，恢复会重新入队尚未执行的任务，取消会保留已完成 Artifact 并阻止排队任务继续执行。
 
 ## 流水线
 
@@ -190,13 +191,25 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-提交前后端全量回归为 `380 passed、7 skipped、1 warning`；前端隔离组件测试为 `16 passed`，Vite 生产构建为 `62 modules transformed`。主目录前端命令在 iCloud 文件读取阶段无输出停滞，因此前端结果来自只复制当前源码、清单和测试并重新安装锁定依赖的 `/tmp` 隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet` 和 `git diff --check` 通过。本轮新增创作者首页真实数据、创建表单、45 秒样片选择、8 秒状态刷新和旧响应保护回归；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+提交前后端全量回归为 `395 passed、7 skipped、1 warning`；前端隔离组件测试为 `17 passed`，Vite 生产构建为 `62 modules transformed`。主目录前端命令在 iCloud 文件读取阶段无输出停滞，因此前端结果来自只复制当前源码、清单和测试并重新安装锁定依赖的 `/tmp` 隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet` 和 `git diff --check` 通过。本轮补充 Production Run 暂停/恢复/取消接口、队列竞态保护和前台控制回归；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建、Docker Compose 配置校验和 Windows PowerShell 脚本语法解析。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
 `POST /api/v1/novel-projects/{project_id}/production-runs` 是完整小说到成片的专用入口，默认且强制开启 `production_mode`；如果旧客户端显式传入 `false`，接口会拒绝请求，避免误创建只生成剧本/分镜的内容层计划。需要保持内容层兼容行为时，请使用 `POST /api/v1/novel-projects/{project_id}/episode-task-plans`，该接口仍默认 `production_mode=false`。
+
+### 自动 Run 控制
+
+已创建的 Run 可以通过以下接口或两个前台页面控制：
+
+```text
+POST /api/v1/novel-projects/{project_id}/production-runs/{run_id}/pause
+POST /api/v1/novel-projects/{project_id}/production-runs/{run_id}/resume
+POST /api/v1/novel-projects/{project_id}/production-runs/{run_id}/cancel
+```
+
+三个接口都需要 `project:manage_tasks` 权限并返回 `202 Accepted`。暂停只停止 DAG 推进和排队任务执行，正在运行的 Provider 调用自然结束；恢复会重新入队 `created/queued` 任务和到期的自动重试；取消会把尚未开始的任务标记为 `canceled`，已完成任务与 Artifact 保留。取消是终态，不能恢复；完成或失败的 Run 也不能暂停/取消。任务仓储保存控制版本号，避免旧 Worker 快照在控制操作之后把 Run 错误恢复为 active。
 
 ### 命令行一键启动与恢复
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -20,21 +22,40 @@ from app.domain.models import (
     GenerationTaskRecord,
     ProductionRunCreateRequest,
     ProductionRunResponse,
+    StageRun,
+    TaskError,
     TaskStatus,
+    utc_now,
 )
+from app.domain.production_run import (
+    AUTO_RUN_CONTROL_REVISION,
+    AUTO_RUN_ENABLED,
+    AUTO_RUN_ID,
+    AUTO_RUN_PLAN,
+    AUTO_RUN_STATUS,
+    control_revision,
+    run_status_from_tasks,
+)
+from app.queue import TaskQueue
 from app.repositories.protocol import ProjectTaskStore
 from app.services.episode_task_plan_service import EpisodeTaskPlanService
 from app.services.novel_service import NovelProjectNotFoundError, NovelSourceNotFoundError
 
 
-AUTO_RUN_ID = "auto_run_id"
-AUTO_RUN_PLAN = "auto_run_plan"
-AUTO_RUN_ENABLED = "auto_advance"
-AUTO_RUN_STATUS = "auto_run_status"
+_RUN_STOPPED_STATUSES = {"paused", "canceled"}
 
 
 class ProductionRunNotFoundError(Exception):
     """Raised when a requested auto-production Run has no task marker."""
+
+
+class ProductionRunControlError(Exception):
+    """Raised when a Run cannot perform the requested lifecycle transition."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
 
 
 class ProductionOrchestrator:
@@ -42,9 +63,13 @@ class ProductionOrchestrator:
         self,
         store: ProjectTaskStore,
         planner: EpisodeTaskPlanService,
+        task_queue: TaskQueue | None = None,
+        retry_task: Callable[[UUID], Awaitable[GenerationTaskRecord]] | None = None,
     ) -> None:
         self._store = store
         self._planner = planner
+        self._task_queue = task_queue
+        self._retry_task = retry_task
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def start(
@@ -178,6 +203,62 @@ class ProductionOrchestrator:
             return None
         return await self._tick_run(str(run_id), task)
 
+    async def pause_run(self, project_id: UUID, run_id: UUID) -> ProductionRunResponse:
+        """Pause DAG advancement without interrupting a running Provider call."""
+
+        return await self._control_run(project_id, run_id, "paused")
+
+    async def resume_run(self, project_id: UUID, run_id: UUID) -> ProductionRunResponse:
+        """Resume a paused Run and requeue durable tasks not yet executed."""
+
+        tasks = await self._require_run_tasks(project_id, run_id)
+        current_status = run_status_from_tasks(tasks)
+        if current_status == "canceled":
+            raise ProductionRunControlError(
+                "PRODUCTION_RUN_CANCELED",
+                "已取消的 Run 不能恢复，请使用新的幂等键重新启动。",
+            )
+        if current_status in {"completed", "failed"}:
+            raise ProductionRunControlError(
+                "PRODUCTION_RUN_TERMINAL",
+                "已完成或失败的 Run 不能直接恢复，请先处理失败任务或使用新的幂等键。",
+            )
+
+        async with self._locks[str(run_id)]:
+            tasks = await self._require_run_tasks(project_id, run_id)
+            current_status = run_status_from_tasks(tasks)
+            if current_status == "canceled":
+                raise ProductionRunControlError(
+                    "PRODUCTION_RUN_CANCELED",
+                    "已取消的 Run 不能恢复，请使用新的幂等键重新启动。",
+                )
+            if current_status in {"completed", "failed"}:
+                raise ProductionRunControlError(
+                    "PRODUCTION_RUN_TERMINAL",
+                    "已完成或失败的 Run 不能直接恢复，请先处理失败任务或使用新的幂等键。",
+                )
+            revision = self._next_control_revision(tasks)
+            if current_status == "paused":
+                await self._set_run_status(
+                    tasks,
+                    "active",
+                    control_revision=revision,
+                    force=True,
+                )
+            retried_task_ids = await self._resume_pending_auto_retries(tasks)
+            await self._requeue_runnable_tasks(tasks, skip_task_ids=retried_task_ids)
+        # Re-enter the normal locked tick after the control transition.  This
+        # advances a Run whose next wave was already satisfied while avoiding
+        # a lock re-entry deadlock.
+        if tasks:
+            await self._tick_run(str(run_id), tasks[0])
+        return await self.get_run(project_id, run_id)
+
+    async def cancel_run(self, project_id: UUID, run_id: UUID) -> ProductionRunResponse:
+        """Stop a Run, canceling queued work while preserving existing Artifacts."""
+
+        return await self._control_run(project_id, run_id, "canceled")
+
     async def on_task_failed(self, task_id: UUID) -> None:
         """Reflect a failed automatic task in its durable Run marker.
 
@@ -195,6 +276,8 @@ class ProductionOrchestrator:
         if not run_id or task.input_data.get(AUTO_RUN_ENABLED) is not True:
             return
         run_tasks = await self._run_tasks(task.project_id, str(run_id))
+        if run_status_from_tasks(run_tasks) in _RUN_STOPPED_STATUSES:
+            return
         await self._set_run_status(
             run_tasks,
             "blocked" if task.input_data.get("auto_retry_pending") is True else "failed",
@@ -284,6 +367,8 @@ class ProductionOrchestrator:
 
             run_tasks = await self._run_tasks(task.project_id, run_id)
             if not run_tasks:
+                return None
+            if run_status_from_tasks(run_tasks) in _RUN_STOPPED_STATUSES:
                 return None
             if any(
                 item.status in {TaskStatus.CREATED, TaskStatus.QUEUED, TaskStatus.RUNNING}
@@ -409,20 +494,42 @@ class ProductionOrchestrator:
         run_id: UUID | str,
         plan: dict[str, Any],
     ) -> None:
+        if not task_ids:
+            return
+        first_task = await self._store.get_task(task_ids[0])
+        if first_task is None:
+            return
+        existing = await self._run_tasks(first_task.project_id, str(run_id))
+        current_status = run_status_from_tasks(existing)
+        control_revision = self._current_control_revision(existing)
         for task_id in task_ids:
             task = await self._store.get_task(task_id)
             if task is None:
                 continue
-            task.input_data.update(self._markers(run_id, plan))
+            task.input_data.update(
+                self._markers(
+                    run_id,
+                    plan,
+                    status=current_status,
+                    control_revision=control_revision,
+                )
+            )
             await self._store.update_task(task)
 
     @staticmethod
-    def _markers(run_id: UUID | str, plan: dict[str, Any]) -> dict[str, Any]:
+    def _markers(
+        run_id: UUID | str,
+        plan: dict[str, Any],
+        *,
+        status: str = "active",
+        control_revision: int = 0,
+    ) -> dict[str, Any]:
         markers = {
             AUTO_RUN_ID: str(run_id),
             AUTO_RUN_PLAN: plan,
-            AUTO_RUN_ENABLED: True,
-            AUTO_RUN_STATUS: "active",
+            AUTO_RUN_ENABLED: status not in {"paused", "canceled", "completed", "failed"},
+            AUTO_RUN_STATUS: status,
+            AUTO_RUN_CONTROL_REVISION: control_revision,
         }
         quality_profile_id = plan.get("visual_quality_profile_id")
         if isinstance(quality_profile_id, str) and quality_profile_id:
@@ -433,13 +540,186 @@ class ProductionOrchestrator:
         self,
         tasks: list[GenerationTaskRecord],
         status: str,
+        *,
+        control_revision: int | None = None,
+        force: bool = False,
     ) -> None:
+        if not tasks:
+            return
+        current_status = run_status_from_tasks(tasks)
+        current_revision = self._current_control_revision(tasks)
+        if current_status in _RUN_STOPPED_STATUSES and not force:
+            return
+        revision = current_revision if control_revision is None else control_revision
         for task in tasks:
+            if not force:
+                latest_tasks = await self._run_tasks(task.project_id, str(task.input_data.get(AUTO_RUN_ID)))
+                if self._current_control_revision(latest_tasks) > revision:
+                    return
+                if run_status_from_tasks(latest_tasks) in _RUN_STOPPED_STATUSES:
+                    return
             if task.input_data.get(AUTO_RUN_STATUS) == status:
                 continue
             task.input_data[AUTO_RUN_STATUS] = status
-            task.input_data[AUTO_RUN_ENABLED] = status not in {"completed", "failed"}
+            task.input_data[AUTO_RUN_ENABLED] = status not in {
+                "completed",
+                "failed",
+                "paused",
+                "canceled",
+            }
+            task.input_data[AUTO_RUN_CONTROL_REVISION] = revision
             await self._store.update_task(task)
+
+    async def _control_run(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+        desired_status: str,
+    ) -> ProductionRunResponse:
+        tasks = await self._require_run_tasks(project_id, run_id)
+        async with self._locks[str(run_id)]:
+            tasks = await self._require_run_tasks(project_id, run_id)
+            current_status = run_status_from_tasks(tasks)
+            if desired_status == "paused" and current_status in {"completed", "failed", "canceled"}:
+                raise ProductionRunControlError(
+                    "PRODUCTION_RUN_TERMINAL",
+                    "已完成、失败或取消的 Run 不能暂停。",
+                )
+            if desired_status == "canceled" and current_status in {"completed", "failed"}:
+                raise ProductionRunControlError(
+                    "PRODUCTION_RUN_TERMINAL",
+                    "已完成或失败的 Run 不能取消。",
+                )
+            revision = self._next_control_revision(tasks)
+            if current_status != desired_status:
+                await self._set_run_status(
+                    tasks,
+                    desired_status,
+                    control_revision=revision,
+                    force=True,
+                )
+            else:
+                # An in-flight Worker can create a task between two control
+                # writes. Normalize all currently visible tasks even for an
+                # idempotent repeated pause/cancel request.
+                await self._set_run_status(
+                    tasks,
+                    desired_status,
+                    control_revision=self._current_control_revision(tasks),
+                    force=True,
+                )
+            if desired_status == "canceled":
+                tasks = await self._require_run_tasks(project_id, run_id)
+                for task in tasks:
+                    task.input_data["auto_retry_pending"] = False
+                    task.input_data.pop("next_retry_at", None)
+                    if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+                        self._mark_task_canceled(task)
+                    await self._store.update_task(task)
+            return await self.get_run(project_id, run_id)
+
+    async def _require_run_tasks(
+        self,
+        project_id: UUID,
+        run_id: UUID,
+    ) -> list[GenerationTaskRecord]:
+        tasks = await self._run_tasks(project_id, str(run_id))
+        if not tasks:
+            raise ProductionRunNotFoundError
+        return tasks
+
+    async def _requeue_runnable_tasks(
+        self,
+        tasks: list[GenerationTaskRecord],
+        *,
+        skip_task_ids: set[UUID] | None = None,
+    ) -> None:
+        if self._task_queue is None:
+            return
+        skipped = skip_task_ids or set()
+        for task in tasks:
+            if task.id in skipped:
+                continue
+            if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+                await self._task_queue.enqueue(task.id)
+
+    async def _resume_pending_auto_retries(
+        self,
+        tasks: list[GenerationTaskRecord],
+    ) -> set[UUID]:
+        """Requeue due automatic retries when a paused Run is resumed.
+
+        Redis Workers also have a periodic retry scheduler.  The callback is
+        optional so the orchestrator remains usable with a minimal queue in
+        tests; when present it closes the gap for the in-process queue, which
+        has no independent scheduler loop.
+        """
+
+        if self._retry_task is None:
+            return set()
+        now = utc_now()
+        retried: set[UUID] = set()
+        for task in tasks:
+            if task.status != TaskStatus.FAILED:
+                continue
+            if task.input_data.get("auto_retry_pending") is not True:
+                continue
+            if not self._retry_is_due(task.input_data.get("next_retry_at"), now):
+                continue
+            try:
+                await self._retry_task(task.id)
+            except Exception:
+                # Keep the failed task and its retry marker durable.  The
+                # Worker scheduler or a later resume can try the enqueue again.
+                continue
+            retried.add(task.id)
+        return retried
+
+    @staticmethod
+    def _retry_is_due(value: object, now: datetime) -> bool:
+        if not isinstance(value, str) or not value.strip():
+            return True
+        try:
+            retry_at = datetime.fromisoformat(value)
+        except ValueError:
+            return True
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return retry_at.astimezone(timezone.utc) <= now
+
+    @staticmethod
+    def _mark_task_canceled(task: GenerationTaskRecord) -> None:
+        now = utc_now()
+        task.status = TaskStatus.CANCELED
+        task.current_stage = task.current_stage or (
+            task.stages[-1].stage if task.stages else None
+        )
+        task.updated_at = now
+        task.error = TaskError(
+            code="PRODUCTION_RUN_CANCELED",
+            message="The production Run was canceled before this task started.",
+        )
+        if task.current_stage is None:
+            return
+        stage_run = next(
+            (item for item in task.stages if item.stage == task.current_stage),
+            None,
+        )
+        if stage_run is None:
+            stage_run = StageRun(stage=task.current_stage, status=TaskStatus.CANCELED)
+            task.stages.append(stage_run)
+        else:
+            stage_run.status = TaskStatus.CANCELED
+            stage_run.error_code = "PRODUCTION_RUN_CANCELED"
+            stage_run.finished_at = now
+
+    @staticmethod
+    def _current_control_revision(tasks: list[GenerationTaskRecord]) -> int:
+        return max((control_revision(task.input_data) for task in tasks), default=0)
+
+    @classmethod
+    def _next_control_revision(cls, tasks: list[GenerationTaskRecord]) -> int:
+        return cls._current_control_revision(tasks) + 1
 
     async def _run_response(
         self,
@@ -447,21 +727,15 @@ class ProductionOrchestrator:
         run_id: UUID,
         tasks: list[GenerationTaskRecord],
     ) -> ProductionRunResponse:
-        statuses = {
-            str(task.input_data.get(AUTO_RUN_STATUS))
-            for task in tasks
-            if task.input_data.get(AUTO_RUN_STATUS)
-        }
-        status = next(
-            (candidate for candidate in ("failed", "blocked", "completed", "active") if candidate in statuses),
-            "active",
-        )
+        status = run_status_from_tasks(tasks)
         latest = max(tasks, key=lambda item: item.updated_at)
         message = {
             "active": "Run 正在由 Worker 按依赖推进。",
             "blocked": "Run 等待资产审核、配置修复或失败任务恢复；条件满足后会继续推进。",
+            "paused": "Run 已暂停；正在运行的任务会自然结束，恢复后继续处理未执行任务。",
             "completed": "Run 已完成当前配置启用的全部阶段。",
             "failed": "Run 存在不可自动恢复的失败任务，请在任务中心处理后重新启动。",
+            "canceled": "Run 已取消；已生成的 Artifact 保留，未开始的任务不会再执行。",
         }[status]
         return ProductionRunResponse(
             project_id=project_id,
@@ -477,7 +751,7 @@ class ProductionOrchestrator:
             status=self._public_status(status),
             stage=latest.kind.value,
             task_ids=[task.id for task in tasks],
-            auto_advance=status not in {"completed", "failed"},
+            auto_advance=status not in {"paused", "completed", "failed", "canceled"},
             message=message,
         )
 
@@ -503,7 +777,7 @@ class ProductionOrchestrator:
 
     @staticmethod
     def _public_status(status: str) -> str:
-        return status if status in {"active", "blocked", "completed", "failed"} else "active"
+        return status if status in {"active", "blocked", "paused", "completed", "failed", "canceled"} else "active"
 
     @staticmethod
     def _stable_wave_key(run_id: str, tasks: list[GenerationTaskRecord]) -> str:

@@ -1792,7 +1792,7 @@ class ProductionRunResponse(BaseModel):
     project_id: UUID
     run_id: UUID
     visual_quality_profile_id: str | None = None
-    status: Literal["active", "blocked", "completed", "failed"]
+    status: Literal["active", "blocked", "paused", "completed", "failed", "canceled"]
     stage: str = Field(min_length=1, max_length=80)
     task_ids: list[UUID] = Field(default_factory=list, max_length=100)
     auto_advance: bool = True

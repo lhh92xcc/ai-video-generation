@@ -260,7 +260,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store,
         visual_profile_registry=visual_profile_registry,
     )
-    production_orchestrator = ProductionOrchestrator(store, episode_task_plan_service)
+    production_orchestrator = ProductionOrchestrator(
+        store,
+        episode_task_plan_service,
+        task_queue=task_queue,
+        retry_task=task_service.retry_task,
+    )
 
     if isinstance(task_queue, InProcessTaskQueue):
         async def run_in_process_task(task_id: UUID) -> None:

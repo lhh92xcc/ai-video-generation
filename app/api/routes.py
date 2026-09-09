@@ -172,6 +172,7 @@ from app.services.episode_task_plan_service import (
 )
 from app.services.production_orchestrator import (
     ProductionOrchestrator,
+    ProductionRunControlError,
     ProductionRunNotFoundError,
 )
 from app.storage.protocol import StorageError
@@ -1713,6 +1714,72 @@ async def get_production_run(
         return await _production_orchestrator(request).get_run(project_id, run_id)
     except ProductionRunNotFoundError as exc:
         raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "Production Run was not found") from exc
+
+
+@router.post(
+    "/api/v1/novel-projects/{project_id}/production-runs/{run_id}/pause",
+    response_model=ProductionRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["novel-tasks"],
+)
+async def pause_production_run(
+    request: Request,
+    project_id: UUID,
+    run_id: UUID,
+) -> ProductionRunResponse:
+    """Pause DAG advancement while allowing a running model call to finish."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _production_orchestrator(request).pause_run(project_id, run_id)
+    except ProductionRunNotFoundError as exc:
+        raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "Production Run was not found") from exc
+    except ProductionRunControlError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
+
+
+@router.post(
+    "/api/v1/novel-projects/{project_id}/production-runs/{run_id}/resume",
+    response_model=ProductionRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["novel-tasks"],
+)
+async def resume_production_run(
+    request: Request,
+    project_id: UUID,
+    run_id: UUID,
+) -> ProductionRunResponse:
+    """Resume a paused Run and re-enqueue work that has not started."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _production_orchestrator(request).resume_run(project_id, run_id)
+    except ProductionRunNotFoundError as exc:
+        raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "Production Run was not found") from exc
+    except ProductionRunControlError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
+
+
+@router.post(
+    "/api/v1/novel-projects/{project_id}/production-runs/{run_id}/cancel",
+    response_model=ProductionRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["novel-tasks"],
+)
+async def cancel_production_run(
+    request: Request,
+    project_id: UUID,
+    run_id: UUID,
+) -> ProductionRunResponse:
+    """Cancel queued work in a Run while retaining completed Artifacts."""
+
+    try:
+        await _require_project_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _production_orchestrator(request).cancel_run(project_id, run_id)
+    except ProductionRunNotFoundError as exc:
+        raise ApiError(404, "PRODUCTION_RUN_NOT_FOUND", "Production Run was not found") from exc
+    except ProductionRunControlError as exc:
+        raise ApiError(409, exc.code, exc.message) from exc
 
 
 @router.get(

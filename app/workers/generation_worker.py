@@ -16,6 +16,7 @@ from uuid import UUID
 
 from app.config import load_settings
 from app.db import create_engine, create_session_factory, init_db
+from app.domain.production_run import AUTO_RUN_ID, AUTO_RUN_STATUS, run_status_from_tasks
 from app.domain.models import GenerationTaskKind, TaskStatus
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.audio_normalization import FFmpegAudioNormalizer
@@ -231,7 +232,12 @@ async def run_worker() -> None:
         video_clip_task_service,
         video_assembly_task_service,
     )
-    production_orchestrator = ProductionOrchestrator(store, episode_task_plan_service)
+    production_orchestrator = ProductionOrchestrator(
+        store,
+        episode_task_plan_service,
+        task_queue=queue,
+        retry_task=service.retry_task,
+    )
     cleanup_service = TemporaryDirectoryCleanupService(
         settings.worker_cleanup_roots,
         storage_base_path=settings.storage_base_path,
@@ -289,6 +295,13 @@ async def run_worker() -> None:
                 continue
             task = await store.get_task(task_id)
             if task is None or task.status not in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+                await queue.ack(task_id)
+                continue
+            if await _task_run_status(store, task) in {"paused", "canceled"}:
+                # TaskService performs the durable canceled transition for a
+                # race where cancellation landed after dequeue.  Paused work
+                # remains queued in the database and is re-enqueued on resume.
+                await service.run_task(task_id)
                 await queue.ack(task_id)
                 continue
             logger.info("processing generation task task_id=%s", task_id)
@@ -418,6 +431,7 @@ async def _requeue_queued_tasks(store, queue: RedisTaskQueue) -> int:
         task
         for task in tasks
         if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}
+        and task.input_data.get(AUTO_RUN_STATUS) not in {"paused", "canceled"}
     ]
     reconciliation = await queue.reconcile_enqueued_markers(
         task.id for task in queued
@@ -426,6 +440,8 @@ async def _requeue_queued_tasks(store, queue: RedisTaskQueue) -> int:
 
 
 async def _maybe_auto_retry(task, service, settings) -> bool:
+    if await _task_run_status(service._store, task) in {"paused", "canceled"}:
+        return False
     if not settings.worker_auto_retry_enabled:
         return False
     if not _retryable_error(task.error.code if task.error else ""):
@@ -475,6 +491,23 @@ async def _maybe_auto_retry(task, service, settings) -> bool:
     return True
 
 
+async def _task_run_status(store, task) -> str | None:
+    """Read the aggregate Run marker so mixed stale snapshots fail closed."""
+
+    raw_run_id = task.input_data.get(AUTO_RUN_ID)
+    if not raw_run_id:
+        return None
+    tasks = await store.list_tasks(project_id=task.project_id, limit=5000)
+    run_tasks = [
+        item
+        for item in tasks
+        if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
+    ]
+    return run_status_from_tasks(run_tasks) if run_tasks else str(
+        task.input_data.get(AUTO_RUN_STATUS, "active")
+    )
+
+
 async def _resume_pending_auto_retries(store, service, settings) -> int:
     """Resume due retries persisted before a Worker restart.
 
@@ -488,6 +521,8 @@ async def _resume_pending_auto_retries(store, service, settings) -> int:
     resumed = 0
     for task in tasks:
         if task.input_data.get("auto_retry_pending") is not True:
+            continue
+        if await _task_run_status(store, task) in {"paused", "canceled"}:
             continue
         if await _maybe_auto_retry(task, service, settings):
             resumed += 1
