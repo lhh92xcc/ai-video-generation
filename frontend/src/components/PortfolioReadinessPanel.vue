@@ -802,6 +802,17 @@ function locate(gate: ReadinessGate) {
 .portfolio-gate > b { font-size: 10px; }
 .portfolio-readiness-blockers, .portfolio-readiness-success { font-size: 11px; }
 @media (max-width: 860px) { .portfolio-readiness-card { padding: 18px; } }
+@media (max-width: 620px) {
+  .portfolio-readiness-card { padding: 14px; }
+  .portfolio-readiness-section { padding: 12px; }
+  .portfolio-readiness-section-heading strong, .portfolio-gate-copy strong, .portfolio-review-item strong { font-size: 14px; }
+  .portfolio-readiness-section-heading small, .portfolio-gate-copy small, .portfolio-review-item small { font-size: 13px; line-height: 1.65; color: #59677d; }
+  .portfolio-gate-copy small, .portfolio-gate-copy em { white-space: normal; overflow-wrap: anywhere; }
+  .portfolio-gate-copy em { font-size: 12px; line-height: 1.6; color: #68758a; }
+  .portfolio-reset-button { flex-shrink: 0; min-width: 44px; min-height: 44px; font-size: 13px; }
+  .portfolio-export-button { min-height: 44px; font-size: 13px; }
+  .portfolio-readiness-blockers, .portfolio-readiness-success { flex-direction: column; font-size: 13px; line-height: 1.7; }
+}
 .portfolio-review-copy { min-width: 0; flex: 1; }
 .portfolio-review-controls { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; margin-top: 8px; }
 .portfolio-review-controls select, .portfolio-review-controls input { min-width: 0; height: 28px; border: 1px solid #e0e3ec; border-radius: 6px; padding: 0 7px; color: #5b657a; background: #fff; font-size: 9px; }

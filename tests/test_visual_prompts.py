@@ -5,6 +5,7 @@ from app.media.visual_prompts import (
     DEFAULT_VIDEO_PROMPT_SUFFIX,
     build_approved_asset_facts,
     build_video_motion_prompt,
+    build_shot_keyframe_prompt,
     strengthen_reference_prompt,
 )
 from app.domain.models import (
@@ -15,6 +16,39 @@ from app.domain.models import (
     LocationAssetContent,
 )
 from uuid import uuid4
+
+
+def test_long_video_description_does_not_erase_identity_or_continuity() -> None:
+    for suffix in [DEFAULT_VIDEO_PROMPT_SUFFIX, "稳定运动 " * 1000]:
+        prompt = build_video_motion_prompt(
+            source_prompt="抬头看旧信。" * 300,
+            shot_size="close_up", camera_movement="fixed",
+            location="旧城区", characters=["林默"],
+            approved_asset_facts=["黑发、深色外套"],
+            continuity_notes="保持侧光方向", prompt_suffix=suffix,
+        )
+        for fact in ["黑发、深色外套", "林默", "旧城区", "保持侧光方向",
+                     "close-up", "locked-off", "抬头看旧信"]:
+            assert fact in prompt
+        assert len(prompt) <= 2000
+
+
+def test_long_keyframe_prompt_preserves_identity_and_shot_context() -> None:
+    prompt = build_shot_keyframe_prompt(
+        source_prompt="抬头看旧信。" * 200,
+        style=DEFAULT_REFERENCE_STYLE * 4,
+        shot_size="close_up",
+        camera_movement="fixed",
+        location="旧城区街道",
+        characters=["林默"],
+        primary_character_facts="黑发、深色外套、左手旧表",
+        continuity_notes="保持侧光方向",
+    )
+    for fact in ["黑发、深色外套、左手旧表", "林默", "旧城区街道",
+                 "保持侧光方向", "close-up portrait", "抬头看旧信",
+                 "2D manhwa", "Reference quality guardrails:"]:
+        assert fact in prompt
+    assert len(prompt) <= 1500
 
 
 def test_reference_baseline_contains_single_subject_and_clean_composition_guards() -> None:

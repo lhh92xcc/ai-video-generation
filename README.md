@@ -30,7 +30,7 @@
 - 作品集真实运动门禁：当前分集按镜头只读取最新的成功视频任务和对应 Artifact，拒绝 `mock`、`local_fixture`、`ffmpeg_motion`、未知 Provider 及静态/Fixture 元数据，避免历史重试产物污染正式样片判断。
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
 - 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
-- 统一视觉 Bible：参考图和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2` 与 `video-motion-generation-v3`。
+- 统一视觉 Bible：参考图、逐镜头关键帧和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2`、`shot-keyframe-generation-v3` 和 `video-motion-generation-v3`。
 - 参考图绑定防串图：作品集 runner 会写出 `reference-manifest.json`，按资产名称、`asset_key`、版本和 `storage_key` 精确复用参考图；不再按目录 mtime 猜测“最近四张图片”，避免角色、场景和道具首帧错配。
 - 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
@@ -119,6 +119,14 @@ CHECK_LOCAL_MAC_VALIDATE_MODELS=0 ./scripts/check-local-mac.sh
 
 如果检查只剩 `ComfyUI /system_stats` 失败，说明代码和 Docker 运行时已就绪，但宿主机 ComfyUI 尚未启动；先启动 ComfyUI，再重新检查。只有检查通过后才进入单张参考图和单个视频镜头 smoke。
 
+Apple Silicon 启动 ComfyUI 时推荐使用仓库脚本：
+
+```bash
+./scripts/start-comfyui-mac.sh
+```
+
+脚本默认保留 MPS 和 ComfyUI smart memory，只把 VAE 放到 CPU，并预留 1 GiB 共享显存。不要把 `--disable-smart-memory` 作为默认参数；它会强制激进 CPU offload，可能让 Flux 退化成非常慢的 CPU 推理。只有遇到明确的内存回收问题时，才临时设置 `COMFYUI_DISABLE_SMART_MEMORY=1 COMFYUI_RESERVE_VRAM_GB=4`。
+
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
 
 ## 配置与安全
@@ -182,7 +190,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-本次提交前全量回归为 `370 passed、7 skipped、1 warning`；前端生产构建最近一次成功为 `61 modules transformed`，本轮通过 Python compileall、`docker compose config --quiet` 和 `git diff --check`。本轮新增 Mac 前置检查、Prompt 长度、参考图 manifest、关键帧模式和硬件无关质量档案建议回归，代码级验证覆盖自动 Run、参考图、视频片段和最终 Assembly；这些回归使用可播放 Fixture/Assembly 测试替身，不把 Fixture 当作作品集画面。运行日志页面使用现有任务查询接口，不新增测试数据；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
+提交前后端全量回归为 `380 passed、7 skipped、1 warning`；前端隔离组件测试为 `16 passed`，Vite 生产构建为 `62 modules transformed`。主目录前端命令在 iCloud 文件读取阶段无输出停滞，因此前端结果来自只复制当前源码、清单和测试并重新安装锁定依赖的 `/tmp` 隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet` 和 `git diff --check` 通过。本轮新增创作者首页真实数据、创建表单、45 秒样片选择、8 秒状态刷新和旧响应保护回归；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -192,7 +200,17 @@ docker compose config --quiet
 
 ## 当前边界
 
-这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
+手机后台提供页面切换下拉框和返回创作者入口，避免侧栏隐藏后无法导航。运行日志已验证按任务编号筛选并展开阶段失败详情。
+
+手机审核面板已针对 390px 宽度调整字号、嵌套留白、门禁说明换行及清空/导出触控区域；当前验收覆盖该区域，其他页面仍需逐页检查。
+
+视觉质量选择区提供逐档试跑建议、参数含义和键盘方向键切换；身份权重表示参考图影响强度，并非一致性成功率。建议先固定人物比较两个景别，再批量生成。
+
+视频 Prompt 同样对资产事实、人物、连续性、地点、景别、运镜和画面描述分别分配长度，限制自定义后缀，保持总长不超过 2000 字符。重要设定应放在字段开头，生成前仍需检查截短后的实际输入。
+
+关键帧 Prompt 使用分字段长度预算（`shot-keyframe-generation-v3`），为角色外貌、可见人物、连续性、地点和构图保留空间，避免长画风说明挤掉角色设定。该修复需在后续真实镜头中检验效果。
+
+这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。Mac 前置检查已能通过，MPS-first 模式下单个 Flux 4-step Prompt 实测约 534 秒，因此 Mac 适合作为流程/单张图验证机，不作为批量吞吐基线。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
 ## 作品集 Demo 验收清单
 

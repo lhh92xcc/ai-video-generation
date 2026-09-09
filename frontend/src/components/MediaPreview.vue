@@ -175,7 +175,9 @@ watch(() => props.artifact.id, () => {
   observePreview()
 })
 watch(() => [props.lazy, props.variant], observePreview)
-watch([canPreview, previewUrl], armLoadTimer)
+// Images do not emit media loadstart. Arm on initial URL and cache-busted
+// retries as well, including a retry where canPreview never changed.
+watch([canPreview, previewRequestUrl], armLoadTimer, { immediate: true })
 onMounted(observePreview)
 onUnmounted(() => {
   intersectionObserver?.disconnect()
@@ -185,7 +187,7 @@ onUnmounted(() => {
 
 <template>
   <div ref="previewRoot" class="media-preview" :class="[`media-preview-${variant}`, `media-preview-${mediaKind}`, { 'is-loading': isMediaLoading || loadingTimedOut, 'is-failed': loadFailed, 'is-deferred': deferred }]" :aria-busy="isMediaLoading || loadingTimedOut ? 'true' : 'false'">
-    <template v-if="canPreview && !loadFailed && !loadingTimedOut">
+    <template v-if="canPreview && !loadFailed">
       <video
         v-if="mediaKind === 'video'"
         :key="`${props.artifact.id}-${reloadKey}`"
@@ -244,13 +246,6 @@ onUnmounted(() => {
       <button v-if="!isCompact" type="button" @click="resetPreview">重新加载</button>
     </div>
 
-    <div v-else-if="loadingTimedOut" class="media-preview-message media-preview-slow-message" role="status" aria-live="polite">
-      <span class="media-preview-message-icon">↻</span>
-      <strong>文件读取较慢</strong>
-      <small>媒体仍在从服务端读取，可以继续等待或重新加载。</small>
-      <button v-if="!isCompact" type="button" @click="resetPreview">重新加载</button>
-    </div>
-
     <div v-else-if="mediaKind === 'document'" class="media-preview-message">
       <span class="media-preview-message-icon">文</span>
       <strong>结构化文件</strong>
@@ -261,6 +256,14 @@ onUnmounted(() => {
       <span class="media-preview-message-icon">i</span>
       <strong>未找到媒体文件</strong>
       <small>Artifact 记录存在，但服务端没有登记可读取的文件地址；这不是浏览器预览故障。</small>
+    </div>
+
+    <!-- Keep the media mounted so a slow request can still complete. -->
+    <div v-if="canPreview && loadingTimedOut && !loadFailed" class="media-preview-message media-preview-slow-message" role="status" aria-live="polite">
+      <span class="media-preview-message-icon">↻</span>
+      <strong>文件读取较慢</strong>
+      <small>媒体仍在从服务端读取，可以继续等待或重新加载。</small>
+      <button v-if="!isCompact" type="button" @click="resetPreview">重新加载</button>
     </div>
 
     <a v-if="showDownload && downloadUrl" class="media-preview-download" :href="downloadUrl" target="_blank" rel="noopener" download>

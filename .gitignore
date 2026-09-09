@@ -25,6 +25,7 @@ AGENTS.md
 
 frontend/node_modules/
 frontend/dist/
+.vite/
 *.mp4
 *.mp3
 *.wav

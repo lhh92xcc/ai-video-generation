@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ApiClientError } from '../api/client'
 import { createNovelProject, getNovelProjects } from '../api/novels'
 import { getArtifacts, getTasks } from '../api/tasks'
@@ -30,9 +30,10 @@ const episodeCount = ref(3)
 // remains available from the same selector.
 const episodeDuration = ref(60)
 const rightsConfirmed = ref(false)
+let dashboardRequestId = 0
+let dashboardRefreshTimer: ReturnType<typeof window.setInterval> | null = null
 
 const activeTasks = computed(() => tasks.value.filter((task) => ['created', 'queued', 'running'].includes(task.status)).length)
-const previewableVideoCount = computed(() => videos.value.length)
 const currentProject = computed(() => projects.value[0] ?? null)
 const activeProject = computed(() => projects.value.find((project) => project.id === activeProjectId.value) ?? null)
 const latestActiveTask = computed(() => [...tasks.value]
@@ -118,6 +119,7 @@ function displayError(error: unknown) {
 }
 
 async function refreshDashboard() {
+  const requestId = ++dashboardRequestId
   loading.value = true
   errorMessage.value = null
   try {
@@ -126,19 +128,22 @@ async function refreshDashboard() {
       getTasks({ limit: 8 }),
       getArtifacts({ type: 'rendered_video', limit: 6, expiresInSeconds: 3600 }),
     ])
+    if (requestId !== dashboardRequestId) return
     projects.value = projectItems
     tasks.value = taskResponse.items
     videos.value = videoResponse.items
   } catch (error) {
+    if (requestId !== dashboardRequestId) return
     errorMessage.value = displayError(error)
   } finally {
-    loading.value = false
+    if (requestId === dashboardRequestId) loading.value = false
   }
 }
 
 function openCreatePanel() {
   createMessage.value = null
   createError.value = null
+  sourceMode.value = 'novel'
   showCreatePanel.value = true
 }
 
@@ -193,7 +198,18 @@ async function createWorkspace() {
   }
 }
 
-onMounted(refreshDashboard)
+onMounted(() => {
+  void refreshDashboard()
+  // The landing page shows a live summary. Refresh it while no project detail
+  // workspace is open, but never let a slow old response overwrite newer data.
+  dashboardRefreshTimer = window.setInterval(() => {
+    if (!activeProjectId.value && !creating.value) void refreshDashboard()
+  }, 8000)
+})
+
+onUnmounted(() => {
+  if (dashboardRefreshTimer !== null) window.clearInterval(dashboardRefreshTimer)
+})
 </script>
 
 <template>

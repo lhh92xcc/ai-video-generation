@@ -403,6 +403,18 @@ class SubtitleTaskService:
                 "SUBTITLE_ASR_AUDIO_ARTIFACT_INVALID",
                 "ASR currently accepts only audio_narration Artifacts",
             )
+        # Legacy artifacts may omit metadata. Recover provenance only from the
+        # registered source task, never from names or storage path conventions.
+        source_task = await self._store.get_task(artifact.task_id)
+        episode_bindings = [artifact.metadata.get("episode_id")]
+        if source_task is not None:
+            episode_bindings.append(source_task.input_data.get("episode_id"))
+        known_bindings = [str(value) for value in episode_bindings if value is not None]
+        if not known_bindings or any(value != str(input_data["episode_id"]) for value in known_bindings):
+            raise SubtitleASRInputError(
+                "SUBTITLE_ASR_AUDIO_EPISODE_MISMATCH",
+                "Audio Artifact must be verifiably bound to the target episode",
+            )
         content_type = artifact.metadata.get("content_type")
         storage_key = artifact.metadata.get("storage_key")
         duration_seconds = artifact.metadata.get("duration_seconds")

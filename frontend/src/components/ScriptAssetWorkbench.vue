@@ -1014,6 +1014,9 @@ onMounted(loadProjects)
 <style scoped>
 .success-card { border-color: #bde8d6; background: var(--green-soft); }
 .card-header-actions, .asset-heading-actions { display: flex; align-items: center; gap: 8px; }
+.asset-detail-heading { min-width: 0; flex-wrap: wrap; }
+.asset-detail-heading > div:first-child { min-width: 0; flex: 1 1 120px; }
+.asset-heading-actions { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 .compact-button { padding: 6px 9px; font-size: 10px; }
 .draft-status { border-radius: 999px; padding: 4px 8px; color: #8a5a0a; background: var(--amber-soft); font-size: 9px; font-weight: 700; }
 .stale-warning { display: flex; gap: 8px; margin-bottom: 15px; border: 1px solid #f1dcae; border-radius: 8px; padding: 10px 11px; color: var(--amber); background: var(--amber-soft); font-size: 10px; line-height: 1.5; }

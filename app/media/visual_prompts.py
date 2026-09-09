@@ -269,15 +269,24 @@ def build_video_motion_prompt(
         shot_size,
         "general motion plan: use only one restrained readable movement and keep the subject geometry stable",
     )
-    dynamic_context = (
-        f"{source_prompt.strip()[:900]}. {framing}. Location: {location.strip()[:120]}. "
-        f"Camera direction: {movement}. {character_clause}{asset_facts_clause}{continuity_clause}"
-    )
-    fixed_constraints = f"{motion_safety}. {prompt_suffix.strip()}"
-    available_context = 2000 - len(fixed_constraints) - 1
-    if available_context <= 0:
-        return fixed_constraints[:2000]
-    return f"{dynamic_context[:available_context].rstrip(' .')}. {fixed_constraints}"
+    sections = [
+        asset_facts_clause, character_clause, continuity_clause,
+        f"Location: {location.strip()}", framing,
+        f"Camera direction: {movement}", source_prompt.strip(),
+    ]
+    fixed_constraints = f"{motion_safety}. {_compact(prompt_suffix, 1100)}"
+    # Share the remaining budget among fields; short fields return their
+    # unused space to longer fields. No long description can erase another.
+    budget = 2000 - len(fixed_constraints) - 2 * len(sections)
+    lengths = [len(section) for section in sections]
+    low, high = 0, max(lengths)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if sum(min(length, middle) for length in lengths) <= budget:
+            low = middle
+        else:
+            high = middle - 1
+    return ". ".join([_compact(section, low) for section in sections] + [fixed_constraints])
 
 
 def build_shot_keyframe_prompt(
@@ -342,12 +351,18 @@ def build_shot_keyframe_prompt(
     continuity_clause = (
         f"Continuity note: {continuity_notes[:300]}. " if continuity_notes.strip() else ""
     )
-    prompt = (
-        f"{style.strip()}. 9:16 vertical storyboard keyframe for one later 3 to 5 second video shot. "
-        f"{source_prompt.strip()[:700]}. Location: {location.strip()}. {framing}; {movement}. "
-        f"{character_clause}{facts_clause}{continuity_clause}"
-        "Create one coherent full-frame image, not a character sheet, not a collage, not multiple views. "
-        "Use a stable readable pose that can transition into subtle motion; preserve exact identity, "
-        "silhouette, costume colors, lighting direction and important prop placement."
-    )
+    # Reserve space per semantic field before adding the shared guardrail.
+    # Truncating a style-first concatenation dropped identity and continuity
+    # entirely when the source description was long.
+    sections = [
+        _compact(facts_clause, 240),
+        _compact(character_clause, 230),
+        _compact(continuity_clause, 100),
+        f"Location: {_compact(location, 60)}",
+        _compact(framing, 100),
+        _compact(movement, 55),
+        f"Shot: {_compact(source_prompt, 180)}",
+        f"Style: {_compact(style, 100)}",
+    ]
+    prompt = ". ".join(section for section in sections if section)
     return strengthen_reference_prompt(prompt, max_chars=1500)

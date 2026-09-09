@@ -68,6 +68,11 @@ function openOperator(view: AppView = 'overview') {
   setOperatorView(view)
 }
 
+function selectMobileView(event: Event) {
+  const view = (event.target as HTMLSelectElement).value as AppView
+  if (supportedViews.includes(view)) setOperatorView(view)
+}
+
 const {
   profiles,
   availableProfiles,
@@ -294,6 +299,20 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
         </div>
       </header>
 
+      <nav class="mobile-operator-navigation" aria-label="手机后台导航">
+        <label for="mobile-operator-view">工作台</label>
+        <select id="mobile-operator-view" :value="activeView" @change="selectMobileView">
+          <option value="overview">运行概览</option>
+          <option value="tasks">生产任务</option>
+          <option value="queue">远程队列</option>
+          <option value="subtitle">字幕任务</option>
+          <option value="artifacts">媒体资产</option>
+          <option value="workbench">脚本与资产</option>
+          <option value="provider">Provider 配置</option>
+          <option value="logs">运行日志</option>
+        </select>
+        <button type="button" @click="openCreatorSurface">创作者前台 ↗</button>
+      </nav>
       <main class="main-content">
         <RuntimeOverview v-if="activeView === 'overview'" @open-view="setOperatorView" @open-creator="openCreatorSurface" />
 

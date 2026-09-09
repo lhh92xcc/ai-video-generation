@@ -52,6 +52,8 @@ function formatComponent(component: OperationalComponentHealth) { return compone
 function formatComponentStatus(status: OperationalComponentStatus) { return componentStatusLabels[status] ?? status }
 function formatRunStatus(run: ProductionQueueRun) {
   if (run.status === 'completed') return '已完成'
+  if (run.status === 'failed') return '失败 · 需处理'
+  if (run.status === 'canceled') return '已取消'
   if (run.status === 'blocked') return '需处理'
   return run.active_count ? '自动运行中' : '等待推进'
 }
@@ -159,8 +161,8 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
 
       <article class="card queue-worker-card">
         <div class="card-header"><div><h2>Worker 与 GPU 锁</h2><p>单 GPU 任务串行执行，避免多个模型同时占用显存。</p></div><span class="status-pill" :class="{ neutral: health?.worker?.status !== 'online' }">{{ health?.worker?.status === 'online' ? 'Worker 在线' : (health?.worker?.status === 'in_process' ? '进程内' : '待检查') }}</span></div>
-        <div class="worker-lock-panel"><div class="worker-lock-icon" :class="{ busy: snapshot?.gpu_lock_busy }">{{ snapshot?.gpu_lock_busy ? '锁' : '闲' }}</div><div><strong>{{ snapshot?.gpu_lock_busy ? 'GPU 正在执行任务' : 'GPU 当前空闲' }}</strong><small>{{ snapshot?.gpu_lock_enabled ? 'Redis Lease Lock 已启用' : '当前未启用 GPU 锁' }}</small></div></div>
-        <dl class="queue-meta-grid"><div><dt>当前任务</dt><dd>{{ String(health?.worker?.current_task_id || '—') }}</dd></div><div><dt>队列长度</dt><dd>{{ String(health?.worker?.pending_count ?? counts.queued ?? 0) }}</dd></div><div><dt>处理中</dt><dd>{{ String(health?.worker?.processing_count ?? counts.running ?? 0) }}</dd></div><div><dt>自动重试</dt><dd>最多 2 次</dd></div></dl>
+        <div class="worker-lock-panel"><div class="worker-lock-icon" :class="{ busy: snapshot?.gpu_lock_busy }">{{ !snapshot?.gpu_lock_enabled ? '—' : snapshot?.gpu_lock_busy ? '锁' : '闲' }}</div><div><strong>{{ !snapshot?.gpu_lock_enabled ? 'GPU 占用状态未监测' : snapshot?.gpu_lock_busy ? 'GPU 任务锁已占用' : 'GPU 任务锁空闲' }}</strong><small>{{ snapshot?.gpu_lock_enabled ? '仅反映本系统 Redis Lease，不代表整机 GPU 利用率' : '当前未启用 GPU 锁' }}</small></div></div>
+        <dl class="queue-meta-grid"><div><dt>当前任务</dt><dd>{{ String(health?.worker?.current_task_id || '—') }}</dd></div><div><dt>队列长度</dt><dd>{{ String(health?.worker?.pending_count ?? counts.queued ?? 0) }}</dd></div><div><dt>处理中</dt><dd>{{ String(health?.worker?.processing_count ?? counts.running ?? 0) }}</dd></div><div><dt>自动重试</dt><dd>按服务端策略执行</dd></div></dl>
       </article>
     </section>
 

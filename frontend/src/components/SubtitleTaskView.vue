@@ -11,7 +11,7 @@ type SubtitleMode = 'asr' | 'align'
 
 const emit = defineEmits<{ submitted: [task: GenerationTaskRecord] }>()
 
-const { profiles, availableProfiles, selectedProfileId, isLoading: profilesLoading } = useProviderProfiles()
+const { availableProfiles, selectedProfile, selectedProfileId, errorMessage: profileError, isLoading: profilesLoading } = useProviderProfiles()
 const projects = ref<NovelProjectRecord[]>([])
 const episodes = ref<EpisodeRecord[]>([])
 const audioArtifacts = ref<ArtifactRecord[]>([])
@@ -28,16 +28,19 @@ const loadingResources = ref(false)
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 const submittedTask = ref<GenerationTaskRecord | null>(null)
+let resourceRequest = 0
 
-const selectedArtifact = computed(() => audioArtifacts.value.find((item) => item.id === audioArtifactId.value) ?? null)
+const episodeAudioArtifacts = computed(() => audioArtifacts.value.filter(item => item.metadata.episode_id === episodeId.value))
+const selectedArtifact = computed(() => episodeAudioArtifacts.value.find((item) => item.id === audioArtifactId.value) ?? null)
 const effectiveDuration = computed(() => {
+  if (alignmentDuration.value.trim()) return Number(alignmentDuration.value)
   const metadataDuration = selectedArtifact.value?.metadata.duration_seconds
-  return typeof metadataDuration === 'number' ? metadataDuration : Number(alignmentDuration.value)
+  return typeof metadataDuration === 'number' ? metadataDuration : 0
 })
 const canSubmit = computed(() => {
-  if (!episodeId.value || submitting.value) return false
-  if (mode.value === 'asr') return Boolean(audioArtifactId.value && selectedProfileId.value)
-  return Boolean(alignmentText.value.trim() && effectiveDuration.value > 0)
+  if (!episodeId.value || submitting.value || loadingResources.value || loadingProjects.value) return false
+  if (mode.value === 'asr') return Boolean(selectedArtifact.value && selectedProfile.value?.configured && !profilesLoading.value && !profileError.value)
+  return Boolean(alignmentText.value.trim() && Number.isFinite(effectiveDuration.value) && effectiveDuration.value > 0)
 })
 
 function displayError(error: unknown): string {
@@ -58,25 +61,29 @@ async function loadProjects() {
 }
 
 async function loadProjectResources() {
+  const request = ++resourceRequest
+  const requestedProject = projectId.value
+  submitError.value = null
+  submittedTask.value = null
   episodes.value = []
   audioArtifacts.value = []
   episodeId.value = ''
   audioArtifactId.value = ''
-  if (!projectId.value) return
+  if (!requestedProject) { loadingResources.value = false; return }
   loadingResources.value = true
   try {
     const [episodeItems, artifactResponse] = await Promise.all([
-      getEpisodes(projectId.value),
-      getArtifacts({ projectId: projectId.value, type: 'audio_narration' }),
+      getEpisodes(requestedProject),
+      getArtifacts({ projectId: requestedProject, type: 'audio_narration' }),
     ])
+    if (request !== resourceRequest) return
     episodes.value = episodeItems
     audioArtifacts.value = artifactResponse.items
     episodeId.value = episodeItems[0]?.id ?? ''
-    audioArtifactId.value = artifactResponse.items[0]?.id ?? ''
   } catch (error) {
-    submitError.value = displayError(error)
+    if (request === resourceRequest) submitError.value = displayError(error)
   } finally {
-    loadingResources.value = false
+    if (request === resourceRequest) loadingResources.value = false
   }
 }
 
@@ -108,6 +115,10 @@ async function submit() {
 }
 
 watch(projectId, loadProjectResources)
+watch(episodeAudioArtifacts, items => {
+  if (!items.some(item => item.id === audioArtifactId.value)) audioArtifactId.value = items[0]?.id ?? ''
+})
+watch(audioArtifactId, () => { alignmentDuration.value = '' })
 watch(mode, () => {
   submitError.value = null
   submittedTask.value = null
@@ -142,24 +153,27 @@ onMounted(loadProjects)
       </div>
 
       <div class="mode-switch" role="tablist" aria-label="字幕生成方式">
-        <button type="button" :class="{ active: mode === 'asr' }" @click="mode = 'asr'">真实 ASR 转写</button>
+        <button type="button" :class="{ active: mode === 'asr' }" @click="mode = 'asr'">ASR 转写</button>
         <button type="button" :class="{ active: mode === 'align' }" @click="mode = 'align'">句子级对齐</button>
       </div>
 
       <div class="form-grid">
-        <label class="form-field form-field-wide"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects || loadingResources"><option value="">请选择项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
+        <label class="form-field form-field-wide"><span>小说项目</span><select v-model="projectId" :disabled="loadingProjects || submitting"><option value="">请选择项目</option><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.title }}</option></select></label>
         <label class="form-field"><span>目标分集</span><select v-model="episodeId" :disabled="loadingResources || episodes.length === 0"><option value="">请选择分集</option><option v-for="episode in episodes" :key="episode.id" :value="episode.id">第 {{ episode.episode_number }} 集 · {{ episode.outline.title }}</option></select></label>
         <label class="form-field"><span>语言</span><input v-model="language" maxlength="20" placeholder="zh-CN" /></label>
-        <label class="form-field form-field-wide"><span>旁白 Artifact</span><select v-model="audioArtifactId" :disabled="loadingResources || audioArtifacts.length === 0"><option value="">请选择 audio_narration</option><option v-for="artifact in audioArtifacts" :key="artifact.id" :value="artifact.id">{{ artifact.metadata.label || artifact.provider }} · {{ artifact.metadata.duration_seconds ? `${Number(artifact.metadata.duration_seconds).toFixed(1)} 秒` : '已校验音频' }}</option></select><small v-if="loadingResources" class="field-hint">正在读取项目资源…</small><small v-else-if="audioArtifacts.length === 0" class="field-hint">该项目暂无可用旁白 Artifact，请先完成音频任务。</small></label>
+        <label class="form-field form-field-wide"><span>旁白 Artifact</span><select v-model="audioArtifactId" :disabled="loadingResources || episodeAudioArtifacts.length === 0"><option value="">请选择 audio_narration</option><option v-for="artifact in episodeAudioArtifacts" :key="artifact.id" :value="artifact.id">{{ artifact.metadata.label || artifact.provider }} · {{ artifact.metadata.duration_seconds ? `${Number(artifact.metadata.duration_seconds).toFixed(1)} 秒` : '已校验音频' }}</option></select><small v-if="loadingResources" class="field-hint">正在读取项目资源…</small><small v-else-if="episodeAudioArtifacts.length === 0" class="field-hint">该分集暂无已绑定的旁白，请先完成该集音频任务；未标明分集的历史音频不会自动使用。</small></label>
       </div>
 
       <div v-if="mode === 'asr'" class="mode-panel">
+        <p v-if="profileError" class="inline-error" role="alert">Provider 配置读取失败：{{ profileError }}</p>
+        <p v-if="selectedProfile?.provider === 'mock'" class="field-hint" role="status">当前为 Mock：仅演示任务流程，不识别真实音频，不能作为字幕质量证据。</p>
         <label class="form-field"><span>ASR Provider</span><select v-model="selectedProfileId" :disabled="profilesLoading"><option v-for="profile in availableProfiles" :key="profile.profile_id" :value="profile.profile_id">{{ profile.label }} · {{ profile.model }}{{ profile.default ? ' · 默认' : '' }}</option></select><small class="field-hint">当前可用：{{ availableProfiles.length }} 个；未配置档案不会出现在提交选项中。</small></label>
         <label class="form-field"><span>参考文本（可选）</span><textarea v-model="referenceText" rows="4" maxlength="5000" placeholder="如果有已审核的旁白文本，可填入用于 CER 和质量复核。" /></label>
       </div>
       <div v-else class="mode-panel">
         <label class="form-field"><span>字幕文本</span><textarea v-model="alignmentText" rows="5" maxlength="5000" placeholder="输入与旁白对应的句子或段落文本，系统按音频时长生成句子级时间轴。" /></label>
         <label class="form-field"><span>音频时长（秒）</span><input v-model="alignmentDuration" :placeholder="selectedArtifact ? '已从 Artifact 读取，可覆盖' : '例如 45.9'" inputmode="decimal" /></label>
+        <p class="field-hint">留空使用所选音频时长；填写时以手动值为准，必须为有限正数。切换音频后清空手动值。此模式只估算时间轴，不读取语音来校准。</p>
       </div>
 
       <div v-if="submitError" class="inline-error"><strong>提交失败</strong><span>{{ submitError }}</span></div>
