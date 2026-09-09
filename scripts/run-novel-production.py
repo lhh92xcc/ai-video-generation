@@ -210,6 +210,10 @@ def run(args: argparse.Namespace, *, client: httpx.Client | None = None) -> int:
         raise ProductionCliError("--poll-interval 必须大于 0")
     if args.timeout_seconds < 0:
         raise ProductionCliError("--timeout-seconds 不能小于 0")
+    if args.project_id is not None and args.novel is not None:
+        raise ProductionCliError("恢复已有项目时不要同时提供 --novel")
+    if args.project_id is None and args.novel is None:
+        raise ProductionCliError("新建项目时必须提供 --novel")
 
     owns_client = client is None
     http_client = client or httpx.Client(timeout=30.0)
@@ -218,8 +222,7 @@ def run(args: argparse.Namespace, *, client: httpx.Client | None = None) -> int:
         project_id = args.project_id
         episodes = args.episodes
         if project_id is None:
-            if args.novel is None:
-                raise ProductionCliError("新建项目时必须提供 --novel")
+            assert args.novel is not None
             source_path, content_type = _validate_source(args.novel)
             title = (args.title or source_path.stem).strip()
             if not title:

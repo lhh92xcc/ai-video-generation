@@ -192,7 +192,7 @@ docker compose config --quiet
 
 提交前后端全量回归为 `380 passed、7 skipped、1 warning`；前端隔离组件测试为 `16 passed`，Vite 生产构建为 `62 modules transformed`。主目录前端命令在 iCloud 文件读取阶段无输出停滞，因此前端结果来自只复制当前源码、清单和测试并重新安装锁定依赖的 `/tmp` 隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet` 和 `git diff --check` 通过。本轮新增创作者首页真实数据、创建表单、45 秒样片选择、8 秒状态刷新和旧响应保护回归；真实 Wan、InsightFace、MuseTalk 和外部 API 不在普通测试中自动调用。
 
-公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建和 Docker Compose 配置校验。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
+公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建、Docker Compose 配置校验和 Windows PowerShell 脚本语法解析。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
 创作者前台将流程分为五个业务阶段、十个核心门槛和十一个详细执行步骤：内容理解、剧本与分镜、资产审核、媒体生成、审核与成片；“一键启动完整生产”用于自动 Run，“推进分集生产计划”用于手动选择分集和断点调试。两者都保留剧本、资产和人工审核门禁，BGM 作为可选步骤不阻塞主流程。
 
@@ -290,6 +290,13 @@ $env:COMFYUI_ROOT = "D:\AI\ComfyUI"
 ```
 
 启动器会检查 Docker Desktop、Ollama、ComfyUI 和 MuseTalk bridge，启动 Compose 的 API、Worker、前端和基础设施，并执行一次媒体前置检查。前置检查除了端口，还会读取仓库中的三个 workflow JSON，核对必需节点/占位符，并在设置 `COMFYUI_ROOT` 后检查 Flux、Wan、PuLID、Wan 文本编码器、VAE、InsightFace 和 ComfyUI custom nodes 是否实际存在；检查过程只读，不会下载或覆盖模型。
+
+Windows 也可以使用 PowerShell 包装器启动小说完整生产。新建项目使用 `-Novel`，恢复已有 Run 使用 `-ProjectId`；包装器会自动调用仓库的 Python CLI，并把 `windows_gpu` profile 传给子进程：
+
+```powershell
+.\scripts\run-novel-production.ps1 -ProjectRoot (Get-Location).Path -Novel .\novel.txt -Episodes 1 -EpisodeDuration 60 -QualityProfile local_balanced
+.\scripts\run-novel-production.ps1 -ProjectRoot (Get-Location).Path -ProjectId <project-id> -IdempotencyKey <same-key>
+```
 
 前置检查通过后，可以让启动器执行一镜头真实媒体 Smoke，先确认目标主机确实能够调用参考图和 Wan I2V 模型：
 

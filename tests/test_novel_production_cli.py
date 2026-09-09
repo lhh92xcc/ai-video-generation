@@ -148,3 +148,19 @@ def test_cli_stops_at_human_review_gate_and_prints_resume_context(capsys) -> Non
     ]
     assert "--project-id project-123" in output.err
     assert "--idempotency-key resume-key" in output.err
+
+
+def test_cli_rejects_novel_and_project_id_together(tmp_path: Path) -> None:
+    module = _load_cli_module()
+    novel_path = tmp_path / "demo.txt"
+    novel_path.write_text("内容", encoding="utf-8")
+    args = module._parser().parse_args(
+        ["--novel", str(novel_path), "--project-id", "project-123"]
+    )
+
+    try:
+        module.run(args)
+    except module.ProductionCliError as exc:
+        assert "不要同时提供" in str(exc)
+    else:
+        raise AssertionError("expected conflicting CLI arguments to fail")
