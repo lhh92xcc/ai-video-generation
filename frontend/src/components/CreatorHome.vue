@@ -2,13 +2,23 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ApiClientError } from '../api/client'
 import { createNovelProject, getNovelProjects } from '../api/novels'
-import { createTopicGeneration, createTopicProject, getTopicProjects } from '../api/projects'
-import { getArtifacts, getTask, getTasks } from '../api/tasks'
+import {
+  createTopicProject,
+  getLatestTopicProductionRun,
+  getTopicProductionRun,
+  getTopicProjects,
+  startTopicProduction,
+} from '../api/projects'
+import { getArtifacts, getTasks } from '../api/tasks'
 import CreatorProjectWorkspace from './CreatorProjectWorkspace.vue'
 import MediaPreview from './MediaPreview.vue'
 import { friendlyErrorMessage, formatStatus as formatTaskStatus, formatTaskKind as formatTaskKindLabel, taskErrorDetail } from '../utils/taskStatus'
 import type { ArtifactRecord, GenerationTaskRecord, NovelProjectRecord, TaskStatus } from '../types/task'
-import type { TopicProjectAspectRatio, TopicProjectRecord } from '../types/project'
+import type {
+  TopicProjectAspectRatio,
+  TopicProjectRecord,
+  TopicProductionResponse,
+} from '../types/project'
 
 type OperatorView = 'overview' | 'subtitle' | 'tasks' | 'queue' | 'artifacts' | 'workbench'
 
@@ -20,7 +30,8 @@ type CreatorProjectCard = {
 
 type TopicLaunchState = {
   project: TopicProjectRecord
-  task: GenerationTaskRecord
+  run: TopicProductionResponse
+  task: GenerationTaskRecord | null
 }
 
 const emit = defineEmits<{ openOperator: [view?: OperatorView] }>()
@@ -123,26 +134,47 @@ const recentTaskGroups = computed(() => {
 const canCreate = computed(() => Boolean(title.value.trim()) && rightsConfirmed.value && !creating.value && sourceMode.value === 'novel')
 const canCreateTopic = computed(() => Boolean(topicTitle.value.trim() && topicText.value.trim()) && !creating.value && sourceMode.value === 'topic')
 const topicTaskProgress = computed(() => {
-  const progress = Number(topicLaunch.value?.task.progress)
+  const launch = topicLaunch.value
+  if (!launch) return 0
+  if (launch.run.status === 'completed') return 100
+  const progress = Number(launch.task?.progress)
   return Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0
 })
-const topicTaskStatusLabel = computed(() => topicLaunch.value ? formatStatus(topicLaunch.value.task.status) : '未提交')
+const topicTaskStatusLabel = computed(() => {
+  const status = topicLaunch.value?.run.status
+  if (!status) return '未提交'
+  return {
+    active: '进行中',
+    blocked: '等待处理',
+    paused: '已暂停',
+    completed: '已完成',
+    failed: '失败',
+    canceled: '已取消',
+  }[status]
+})
 const topicTaskTitle = computed(() => {
-  const task = topicLaunch.value?.task
-  if (!task) return '等待提交主题脚本'
-  if (task.status === 'succeeded') return '主题脚本已生成'
-  if (task.status === 'failed') return '主题脚本生成失败'
-  if (task.status === 'canceled') return '主题脚本已取消'
-  return '主题脚本正在后台生成'
+  const status = topicLaunch.value?.run.status
+  if (!status) return '等待提交主题生产'
+  if (status === 'completed') return '主题短视频已完成'
+  if (status === 'failed') return '主题短视频需要处理'
+  if (status === 'blocked') return '主题短视频等待依赖'
+  if (status === 'paused') return '主题短视频已暂停'
+  if (status === 'canceled') return '主题短视频已取消'
+  return '主题短视频正在后台生成'
 })
 const topicTaskDetail = computed(() => {
   const launch = topicLaunch.value
   if (!launch) return ''
-  if (launch.task.error) return taskErrorDetail(launch.task.error)
+  if (launch.task?.error) return taskErrorDetail(launch.task.error)
   if (topicTaskError.value) return topicTaskError.value
-  if (launch.task.status === 'succeeded') return '脚本 JSON 已进入任务中心；素材、配音、字幕和成片仍需在后续流水线中继续接入。'
-  if (launch.task.current_stage) return `当前阶段：${launch.task.current_stage}，页面会自动刷新任务状态。`
-  return '任务已提交到异步队列，页面会自动刷新任务状态。'
+  if (launch.run.error_message) {
+    return launch.run.error_code
+      ? `${launch.run.error_code}：${launch.run.error_message}`
+      : launch.run.error_message
+  }
+  if (launch.run.status === 'completed') return launch.run.message
+  if (launch.task?.current_stage) return `${launch.run.message} 当前阶段：${launch.task.current_stage}。`
+  return `${launch.run.message} 页面会自动刷新生产状态。`
 })
 const recentProjects = computed<CreatorProjectCard[]>(() => {
   const cards: CreatorProjectCard[] = [
@@ -231,18 +263,27 @@ function openProject(projectId: string) {
   window.setTimeout(() => document.getElementById('creator-project-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
 }
 
-function openProjectCard(card: CreatorProjectCard) {
+async function openProjectCard(card: CreatorProjectCard) {
   if (card.kind === 'novel') {
     openProject(card.project.id)
     return
   }
-  const task = [...tasks.value]
-    .filter((item) => item.project_id === card.project.id && item.kind === 'info_script')
-    .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0]
-  if (task) {
-    topicLaunch.value = { project: card.project, task }
+  try {
+    const [run, taskResponse] = await Promise.all([
+      getLatestTopicProductionRun(card.project.id),
+      getTasks({ projectId: card.project.id, limit: 200 }),
+    ])
+    const taskIds = new Set(run.task_ids)
+    const topicTasks = taskResponse.items.filter((task) => taskIds.has(task.id))
+    topicLaunch.value = {
+      project: card.project,
+      run,
+      task: [...topicTasks].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null,
+    }
     topicTaskError.value = null
-    startTopicTaskPolling()
+    startTopicRunPolling()
+  } catch (error) {
+    topicTaskError.value = displayError(error)
   }
   openOperator('tasks')
 }
@@ -271,21 +312,30 @@ function stopTopicTaskPolling() {
   }
 }
 
-async function refreshTopicTask() {
+async function refreshTopicRun() {
   const launch = topicLaunch.value
   if (!launch || topicTaskRequestInFlight) return
   const requestSequence = ++topicTaskRequestSequence
   topicTaskRequestInFlight = true
   topicTaskLoading.value = true
   try {
-    const task = await getTask(launch.task.id)
+    const [run, taskResponse] = await Promise.all([
+      getTopicProductionRun(launch.project.id, launch.run.run_id),
+      getTasks({ projectId: launch.project.id, limit: 200 }),
+    ])
+    const taskIds = new Set(run.task_ids)
+    const topicTasks = taskResponse.items.filter((task) => taskIds.has(task.id))
     if (
       requestSequence !== topicTaskRequestSequence
       || !topicLaunch.value
-      || topicLaunch.value.task.id !== task.id
+      || topicLaunch.value.run.run_id !== run.run_id
     ) return
-    topicLaunch.value = { ...topicLaunch.value, task }
-    if (!['created', 'queued', 'running'].includes(task.status)) {
+    topicLaunch.value = {
+      ...topicLaunch.value,
+      run,
+      task: [...topicTasks].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null,
+    }
+    if (!['active'].includes(run.status)) {
       stopTopicTaskPolling()
       void refreshDashboard()
     }
@@ -297,10 +347,10 @@ async function refreshTopicTask() {
   }
 }
 
-function startTopicTaskPolling() {
+function startTopicRunPolling() {
   stopTopicTaskPolling()
-  void refreshTopicTask()
-  topicTaskPollTimer = window.setInterval(() => void refreshTopicTask(), 2000)
+  void refreshTopicRun()
+  topicTaskPollTimer = window.setInterval(() => void refreshTopicRun(), 2000)
 }
 
 function dismissTopicLaunch() {
@@ -355,12 +405,16 @@ async function createTopicWorkspace() {
       tone: topicTone.value,
     })
     topicProjects.value = [project, ...topicProjects.value.filter((item) => item.id !== project.id)]
-    const task = await createTopicGeneration(project.id, `creator-topic-generation-${project.id}`)
-    topicLaunch.value = { project, task }
+    const run = await startTopicProduction(
+      project.id,
+      {},
+      `creator-topic-production-${project.id}`,
+    )
+    topicLaunch.value = { project, run, task: null }
     showCreatePanel.value = false
     topicTitle.value = ''
     topicText.value = ''
-    startTopicTaskPolling()
+    startTopicRunPolling()
     void refreshDashboard()
   } catch (error) {
     createError.value = displayError(error)
@@ -455,14 +509,14 @@ onUnmounted(() => {
         <div class="creator-section-heading"><div><p class="creator-eyebrow">START WITH A BRIEF</p><h2>从内容开始创建</h2><p>选择一种内容入口，剩下的工作交给可观察的生产流水线。</p></div><button class="creator-link-button" type="button" @click="openCreatePanel()">创建一个项目 <span>→</span></button></div>
         <div class="creator-workflow-cards">
           <button class="creator-workflow-card selected" type="button" @click="openCreatePanel()"><span class="creator-card-number">01</span><span class="creator-workflow-icon novel">▤</span><strong>小说短剧</strong><p>导入小说，生成 StoryBible、分集剧本、分镜和视频片段。</p><span class="creator-card-link">立即开始 <b>→</b></span></button>
-          <button class="creator-workflow-card" type="button" @click="openCreatePanel('topic')"><span class="creator-card-number">02</span><span class="creator-workflow-icon topic">✦</span><strong>主题短视频</strong><p>输入主题、时长和风格，异步生成结构化信息短视频脚本。</p><span class="creator-card-link">开始生成 <b>→</b></span></button>
+          <button class="creator-workflow-card" type="button" @click="openCreatePanel('topic')"><span class="creator-card-number">02</span><span class="creator-workflow-icon topic">✦</span><strong>主题短视频</strong><p>输入主题、时长和风格，自动推进脚本、配音、字幕、视频片段和成片。</p><span class="creator-card-link">开始生成 <b>→</b></span></button>
           <button class="creator-workflow-card" type="button" @click="openBatchProduction"><span class="creator-card-number">03</span><span class="creator-workflow-icon series">▦</span><strong>分集批量生产</strong><p>在项目内选择多集，按依赖自动排队生成，并支持失败任务恢复。</p><span class="creator-card-link">{{ currentProject ? '打开项目计划' : '先创建项目' }} <b>→</b></span></button>
         </div>
       </section>
 
       <section v-if="topicLaunch && !activeProject" class="creator-section creator-topic-launch" data-test="topic-launch-card" aria-live="polite">
-        <div class="creator-topic-launch-icon" :class="topicLaunch.task.status"><span>{{ topicLaunch.task.status === 'succeeded' ? '✓' : topicLaunch.task.status === 'failed' ? '!' : '✦' }}</span></div>
-        <div class="creator-topic-launch-copy"><p class="creator-eyebrow">TOPIC SCRIPT JOB</p><h2>{{ topicTaskTitle }}</h2><strong>{{ topicLaunch.project.title }}</strong><small>{{ topicLaunch.project.topic }}</small><p>{{ topicTaskDetail }}</p></div>
+        <div class="creator-topic-launch-icon" :class="topicLaunch.run.status"><span>{{ topicLaunch.run.status === 'completed' ? '✓' : topicLaunch.run.status === 'failed' ? '!' : '✦' }}</span></div>
+        <div class="creator-topic-launch-copy"><p class="creator-eyebrow">TOPIC PRODUCTION RUN</p><h2>{{ topicTaskTitle }}</h2><strong>{{ topicLaunch.project.title }}</strong><small>{{ topicLaunch.project.topic }}</small><p>{{ topicTaskDetail }}</p></div>
         <div class="creator-topic-launch-progress"><div class="creator-topic-launch-status"><span>{{ topicTaskStatusLabel }}</span><small v-if="topicTaskLoading">刷新中…</small></div><div class="creator-topic-progress-track"><i :style="{ width: `${topicTaskProgress}%` }" /></div><small>{{ topicTaskProgress }}%</small></div>
         <div class="creator-topic-launch-actions"><button class="creator-small-button" type="button" @click="openTopicTaskCenter">查看生产任务 <span>↗</span></button><button class="creator-topic-dismiss" type="button" aria-label="关闭主题任务提示" @click="dismissTopicLaunch">×</button></div>
       </section>
@@ -496,9 +550,9 @@ onUnmounted(() => {
     <div v-if="showCreatePanel" class="creator-modal-backdrop" @click.self="closeCreatePanel">
       <section class="creator-create-modal" role="dialog" aria-modal="true" aria-labelledby="creator-create-title">
         <div class="creator-modal-heading"><div><p class="creator-eyebrow">NEW WORKSPACE</p><h2 id="creator-create-title">创建一个内容项目</h2><p>选择内容入口，提交后任务会在后台异步执行。</p></div><button class="creator-modal-close" type="button" aria-label="关闭" @click="closeCreatePanel">×</button></div>
-        <div class="creator-mode-picker"><button type="button" :class="{ active: sourceMode === 'novel' }" @click="sourceMode = 'novel'"><strong>小说短剧</strong><small>多阶段生产</small></button><button type="button" :class="{ active: sourceMode === 'topic' }" @click="sourceMode = 'topic'"><strong>主题短视频</strong><small>脚本任务已可用</small></button></div>
+        <div class="creator-mode-picker"><button type="button" :class="{ active: sourceMode === 'novel' }" @click="sourceMode = 'novel'"><strong>小说短剧</strong><small>多阶段生产</small></button><button type="button" :class="{ active: sourceMode === 'topic' }" @click="sourceMode = 'topic'"><strong>主题短视频</strong><small>完整媒体 Run</small></button></div>
         <div v-if="sourceMode === 'novel'" class="creator-create-form"><label><span>项目名称</span><input v-model="title" maxlength="120" placeholder="例如：雨夜来信" /></label><div class="creator-form-row"><label><span>预计集数</span><select v-model="episodeCount"><option :value="1">1 集</option><option :value="3">3 集</option><option :value="6">6 集</option><option :value="12">12 集</option></select></label><label><span>目标单集时长</span><select v-model="episodeDuration"><option :value="45">约 45 秒 · 作品集</option><option :value="60">约 60 秒 · 推荐</option><option :value="90">约 90 秒</option><option :value="180">约 3 分钟</option><option :value="300">约 5 分钟</option></select><small class="creator-field-hint">作品集 Demo 建议先选 45–60 秒；长内容可在这里继续创建。</small></label></div><div class="creator-create-note"><span>✦</span><div><strong>推荐先做一集短样片</strong><small>先验证剧本、身份一致性、声音和字幕，再扩展到批量生产。</small></div></div><label class="creator-checkbox"><input v-model="rightsConfirmed" type="checkbox" /><span>我确认已获得该内容的创作或改编授权</span></label><div v-if="createError" class="creator-form-error">{{ createError }}</div><div v-if="createMessage" class="creator-form-success">{{ createMessage }}</div><div class="creator-modal-actions"><button class="creator-ghost-button" type="button" @click="closeCreatePanel">稍后再做</button><button class="creator-primary-button" type="button" :disabled="!canCreate" @click="createWorkspace">{{ creating ? '创建中…' : '创建项目并继续' }} <span>→</span></button></div></div>
-        <div v-else class="creator-create-form"><label><span>视频标题</span><input v-model="topicTitle" maxlength="120" placeholder="例如：新手露营装备怎么选" /></label><label><span>主题 / 关键词</span><textarea v-model="topicText" maxlength="500" rows="3" placeholder="例如：面向第一次周末露营的人，讲清帐篷、睡袋和照明的选择顺序。" /></label><div class="creator-form-row"><label><span>目标时长</span><select v-model="topicDuration"><option :value="15">约 15 秒 · 快速测试</option><option :value="30">约 30 秒</option><option :value="45">约 45 秒 · 作品集</option><option :value="60">约 60 秒 · 推荐</option><option :value="90">约 90 秒</option><option :value="120">约 2 分钟</option><option :value="180">约 3 分钟</option></select></label><label><span>画面比例</span><select v-model="topicAspectRatio"><option value="9:16">9:16 · 竖屏</option><option value="16:9">16:9 · 横屏</option><option value="1:1">1:1 · 方形</option></select></label></div><label><span>表达风格</span><select v-model="topicTone"><option value="清晰、实用">清晰、实用</option><option value="轻松口语">轻松口语</option><option value="专业可信">专业可信</option><option value="悬念盘点">悬念盘点</option><option value="故事化表达">故事化表达</option></select></label><div class="creator-create-note"><span>✦</span><div><strong>当前先生成结构化脚本</strong><small>任务会输出可审核的 script JSON；素材搜索、配音、字幕和成片合成会沿用同一队列继续扩展。</small></div></div><div v-if="createError" class="creator-form-error">{{ createError }}</div><div class="creator-modal-actions"><button class="creator-ghost-button" type="button" @click="closeCreatePanel">稍后再做</button><button class="creator-primary-button" type="button" :disabled="!canCreateTopic" @click="createTopicWorkspace">{{ creating ? '提交中…' : '创建并生成脚本' }} <span>→</span></button></div></div>
+        <div v-else class="creator-create-form"><label><span>视频标题</span><input v-model="topicTitle" maxlength="120" placeholder="例如：新手露营装备怎么选" /></label><label><span>主题 / 关键词</span><textarea v-model="topicText" maxlength="500" rows="3" placeholder="例如：面向第一次周末露营的人，讲清帐篷、睡袋和照明的选择顺序。" /></label><div class="creator-form-row"><label><span>目标时长</span><select v-model="topicDuration"><option :value="15">约 15 秒 · 快速测试</option><option :value="30">约 30 秒</option><option :value="45">约 45 秒 · 作品集</option><option :value="60">约 60 秒 · 推荐</option><option :value="90">约 90 秒</option><option :value="120">约 2 分钟</option><option :value="180">约 3 分钟</option></select></label><label><span>画面比例</span><select v-model="topicAspectRatio"><option value="9:16">9:16 · 竖屏</option><option value="16:9">16:9 · 横屏</option><option value="1:1">1:1 · 方形</option></select></label></div><label><span>表达风格</span><select v-model="topicTone"><option value="清晰、实用">清晰、实用</option><option value="轻松口语">轻松口语</option><option value="专业可信">专业可信</option><option value="悬念盘点">悬念盘点</option><option value="故事化表达">故事化表达</option></select></label><div class="creator-create-note"><span>✦</span><div><strong>提交后自动推进完整媒体流水线</strong><small>系统会依次生成结构化脚本、旁白、字幕、逐场视频片段并用 FFmpeg 合成；每一阶段都可在任务中心复核，未配置 Provider 会明确显示为待处理。</small></div></div><div v-if="createError" class="creator-form-error">{{ createError }}</div><div class="creator-modal-actions"><button class="creator-ghost-button" type="button" @click="closeCreatePanel">稍后再做</button><button class="creator-primary-button" type="button" :disabled="!canCreateTopic" @click="createTopicWorkspace">{{ creating ? '提交中…' : '创建并开始生产' }} <span>→</span></button></div></div>
       </section>
     </div>
   </div>

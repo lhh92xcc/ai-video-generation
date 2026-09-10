@@ -26,3 +26,28 @@ export interface TopicProjectListResponse {
   items: TopicProjectRecord[]
   total: number
 }
+
+export type TopicProductionStatus = 'active' | 'blocked' | 'paused' | 'completed' | 'failed' | 'canceled'
+
+export interface TopicProductionCreatePayload {
+  production_mode?: true
+  include_narration?: boolean
+  include_subtitles?: boolean
+  include_video?: boolean
+  include_assembly?: boolean
+  subtitle_mode?: 'align'
+  video_provider_profile_id?: string
+  visual_quality_profile_id?: string
+}
+
+export interface TopicProductionResponse {
+  project_id: string
+  run_id: string
+  status: TopicProductionStatus
+  stage: string
+  task_ids: string[]
+  auto_advance: boolean
+  message: string
+  error_code?: string | null
+  error_message?: string | null
+}

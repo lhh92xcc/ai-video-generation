@@ -5,6 +5,15 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.domain.topic_run import (
+    TOPIC_RUN_CONTROL_REVISION,
+    TOPIC_RUN_ERROR_CODE,
+    TOPIC_RUN_ERROR_MESSAGE,
+    TOPIC_RUN_ID,
+    TOPIC_RUN_STATUS,
+    topic_control_revision,
+)
+
 
 AUTO_RUN_ID = "auto_run_id"
 AUTO_RUN_PLAN = "auto_run_plan"
@@ -18,6 +27,14 @@ CONTROL_MARKER_KEYS = (
     AUTO_RUN_ENABLED,
     AUTO_RUN_STATUS,
     AUTO_RUN_CONTROL_REVISION,
+)
+
+TOPIC_CONTROL_MARKER_KEYS = (
+    TOPIC_RUN_ID,
+    TOPIC_RUN_STATUS,
+    TOPIC_RUN_CONTROL_REVISION,
+    TOPIC_RUN_ERROR_CODE,
+    TOPIC_RUN_ERROR_MESSAGE,
 )
 
 RUN_STATUS_ORDER = ("canceled", "paused", "failed", "blocked", "completed", "active")
@@ -66,23 +83,44 @@ def merge_run_control_markers(
         return incoming_input
     existing_run_id = existing_input.get(AUTO_RUN_ID)
     incoming_run_id = incoming_input.get(AUTO_RUN_ID)
+    if existing_run_id and existing_run_id == incoming_run_id:
+        existing_revision = control_revision(existing_input)
+        incoming_revision = control_revision(incoming_input)
+        newer = existing_revision > incoming_revision
+        if not newer:
+            return _merge_topic_run_markers(existing_input, incoming_input)
+
+        merged = dict(incoming_input)
+        for key in CONTROL_MARKER_KEYS:
+            if key in existing_input:
+                merged[key] = deepcopy(existing_input[key])
+        if existing_input.get(AUTO_RUN_STATUS) == "canceled":
+            # Cancellation also clears a pending automatic retry.  A stale
+            # Worker snapshot must not resurrect that retry after the control
+            # revision has already moved forward.
+            merged["auto_retry_pending"] = False
+            merged.pop("next_retry_at", None)
+        return _merge_topic_run_markers(existing_input, merged)
+
+    return _merge_topic_run_markers(existing_input, incoming_input)
+
+
+def _merge_topic_run_markers(
+    existing_input: dict[str, Any],
+    incoming_input: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve a newer topic Run status during a stale Worker update."""
+
+    existing_run_id = existing_input.get(TOPIC_RUN_ID)
+    incoming_run_id = incoming_input.get(TOPIC_RUN_ID)
     if not existing_run_id or existing_run_id != incoming_run_id:
         return incoming_input
-
-    existing_revision = control_revision(existing_input)
-    incoming_revision = control_revision(incoming_input)
-    newer = existing_revision > incoming_revision
-    if not newer:
+    existing_revision = topic_control_revision(existing_input)
+    incoming_revision = topic_control_revision(incoming_input)
+    if existing_revision <= incoming_revision:
         return incoming_input
-
     merged = dict(incoming_input)
-    for key in CONTROL_MARKER_KEYS:
+    for key in TOPIC_CONTROL_MARKER_KEYS:
         if key in existing_input:
             merged[key] = deepcopy(existing_input[key])
-    if existing_input.get(AUTO_RUN_STATUS) == "canceled":
-        # Cancellation also clears a pending automatic retry.  A stale Worker
-        # snapshot must not resurrect that retry after the control revision
-        # has already moved forward.
-        merged["auto_retry_pending"] = False
-        merged.pop("next_retry_at", None)
     return merged

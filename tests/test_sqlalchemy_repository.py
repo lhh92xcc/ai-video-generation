@@ -48,6 +48,13 @@ from app.domain.models import (
     TaskStatus,
     utc_now,
 )
+from app.domain.topic_run import (
+    TOPIC_RUN_CONTROL_REVISION,
+    TOPIC_RUN_ERROR_CODE,
+    TOPIC_RUN_ERROR_MESSAGE,
+    TOPIC_RUN_ID,
+    TOPIC_RUN_STATUS,
+)
 from app.repositories.sqlalchemy import SqlAlchemyStore
 
 
@@ -143,6 +150,69 @@ def test_sqlalchemy_store_round_trip_and_idempotency() -> None:
         assert loaded_novel_task.kind == GenerationTaskKind.NOVEL_EPISODE_PLAN
         assert loaded_novel_task.input_data["target_episode_count"] == 3
 
+        await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_sqlalchemy_store_preserves_newer_topic_run_marker() -> None:
+    async def exercise() -> None:
+        engine = create_engine("sqlite+aiosqlite:///:memory:")
+        await init_db(engine)
+        store = SqlAlchemyStore(create_session_factory(engine))
+        project = await store.create_project(
+            ProjectRecord(
+                title="主题状态持久化",
+                topic="topic marker merge",
+                language="zh-CN",
+                target_duration_seconds=15,
+                aspect_ratio="9:16",
+                tone="清晰",
+            )
+        )
+        run_id = uuid4()
+        task = GenerationTaskRecord(
+            project_id=project.id,
+            kind=GenerationTaskKind.VIDEO_CLIP,
+            input_data={
+                TOPIC_RUN_ID: str(run_id),
+                TOPIC_RUN_STATUS: "active",
+                TOPIC_RUN_CONTROL_REVISION: 0,
+            },
+            status=TaskStatus.RUNNING,
+            current_stage=StageName.VIDEO_CLIP,
+            stages=[StageRun(stage=StageName.VIDEO_CLIP, status=TaskStatus.RUNNING)],
+        )
+        await store.create_task(task)
+
+        controlled = await store.get_task(task.id)
+        assert controlled is not None
+        controlled.input_data.update(
+            {
+                TOPIC_RUN_STATUS: "blocked",
+                TOPIC_RUN_CONTROL_REVISION: 1,
+                TOPIC_RUN_ERROR_CODE: "PROVIDER_PROFILE_NOT_CONFIGURED",
+                TOPIC_RUN_ERROR_MESSAGE: "video profile is not configured",
+            }
+        )
+        await store.update_task(controlled)
+
+        stale = await store.get_task(task.id)
+        assert stale is not None
+        stale.input_data.update(
+            {
+                TOPIC_RUN_STATUS: "active",
+                TOPIC_RUN_CONTROL_REVISION: 0,
+            }
+        )
+        await store.update_task(stale)
+
+        loaded = await store.get_task(task.id)
+        assert loaded is not None
+        assert loaded.input_data[TOPIC_RUN_STATUS] == "blocked"
+        assert loaded.input_data[TOPIC_RUN_CONTROL_REVISION] == 1
+        assert loaded.input_data[TOPIC_RUN_ERROR_CODE] == "PROVIDER_PROFILE_NOT_CONFIGURED"
+        assert loaded.input_data[TOPIC_RUN_ERROR_MESSAGE] == "video profile is not configured"
         await engine.dispose()
 
     asyncio.run(exercise())

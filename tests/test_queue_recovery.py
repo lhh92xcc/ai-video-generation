@@ -4,7 +4,16 @@ import asyncio
 from collections import defaultdict
 from uuid import UUID, uuid4
 
+from app.domain.models import (
+    GenerationTaskKind,
+    GenerationTaskRecord,
+    StageName,
+    StageRun,
+    TaskStatus,
+)
 from app.queue import RedisTaskQueue
+from app.repositories.in_memory import InMemoryStore
+from app.workers.generation_worker import _requeue_queued_tasks
 
 
 class FakeRedis:
@@ -153,5 +162,36 @@ def test_reconcile_removes_orphan_marker_before_requeueing_database_task() -> No
         assert result["enqueued"] == 1
         assert redis.lists[queue.queue_name] == [str(runnable_id)]
         assert redis.sets[queue.enqueued_name] == {str(runnable_id)}
+
+    asyncio.run(exercise())
+
+
+def test_worker_restart_requeues_topic_run_task_from_durable_marker() -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        redis = FakeRedis()
+        queue = make_queue(redis)
+        project_id = uuid4()
+        active_task = GenerationTaskRecord(
+            project_id=project_id,
+            kind=GenerationTaskKind.VIDEO_CLIP,
+            input_data={
+                "topic_pipeline": True,
+                "topic_run_id": str(uuid4()),
+                "topic_run_status": "active",
+                "topic_run_control_revision": 0,
+            },
+            status=TaskStatus.QUEUED,
+            current_stage=StageName.VIDEO_CLIP,
+            stages=[StageRun(stage=StageName.VIDEO_CLIP, status=TaskStatus.QUEUED)],
+        )
+        await store.create_task(active_task)
+
+        # Topic tasks use their own marker namespace; startup recovery should
+        # still recognize them as runnable durable work.
+        requeued = await _requeue_queued_tasks(store, queue)
+
+        assert requeued == 1
+        assert redis.lists[queue.queue_name] == [str(active_task.id)]
 
     asyncio.run(exercise())

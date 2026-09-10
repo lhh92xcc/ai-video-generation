@@ -62,6 +62,7 @@ from app.services.access_service import ProjectAccessService
 from app.services.runtime_health_service import RuntimeHealthService
 from app.services.temp_cleanup_service import TemporaryDirectoryCleanupService
 from app.services.production_orchestrator import ProductionOrchestrator
+from app.services.topic_pipeline_service import TopicMediaTaskService, TopicProductionOrchestrator
 from app.rendering.ffmpeg_renderer import FFmpegVideoRenderer
 from app.providers.profiles import ASRProviderProfileRegistry, VisualProviderProfileRegistry
 
@@ -212,6 +213,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         alignment_provider=subtitle_alignment_provider,
         asr_profile_registry=asr_profile_registry,
     )
+    topic_media_task_service = TopicMediaTaskService(
+        store,
+        task_queue,
+        tts_provider,
+        subtitle_alignment_provider,
+        video_provider,
+        artifact_storage,
+        audio_validator=FFprobeAudioValidator(
+            timeout_seconds=app_settings.tts_probe_timeout_seconds
+        ),
+        video_validator=FFprobeVideoValidator(
+            timeout_seconds=app_settings.video_probe_timeout_seconds
+        ),
+        motion_validator=FFmpegMotionEvidenceValidator(
+            binary=app_settings.video_binary,
+            timeout_seconds=app_settings.video_probe_timeout_seconds,
+        ),
+        renderer=FFmpegVideoRenderer(
+            binary=app_settings.video_binary,
+            timeout_seconds=app_settings.task_timeout_seconds,
+            render_preset=app_settings.video_render_preset,
+            render_crf=app_settings.video_render_crf,
+            render_tune=app_settings.video_render_tune,
+        ),
+        default_voice=app_settings.tts_voice,
+        default_rate=app_settings.tts_rate,
+        default_volume=app_settings.tts_volume,
+        pronunciation_dictionary=load_pronunciation_dictionary(
+            app_settings.tts_pronunciation_dictionary_path
+        ),
+        default_negative_prompt=app_settings.video_default_negative_prompt,
+        provider_registry=visual_profile_registry,
+    )
     artifact_service = ArtifactService(store, artifact_storage)
     audit_service = AuditService(store)
     access_service = ProjectAccessService(
@@ -231,6 +265,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         bgm_task_runner=bgm_task_service.run_task,
         subtitle_task_runner=subtitle_task_service.run_task,
         lip_sync_task_runner=lip_sync_task_service.run_task,
+        topic_task_runner=topic_media_task_service.run_task,
     )
     task_batch_service = TaskBatchService(store, task_service.retry_task)
     identity_calibration_service = IdentityCalibrationService(store)
@@ -266,6 +301,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task_queue=task_queue,
         retry_task=task_service.retry_task,
     )
+    topic_production_orchestrator = TopicProductionOrchestrator(
+        store,
+        topic_media_task_service,
+        script_task_creator=task_service.create_generation,
+    )
 
     if isinstance(task_queue, InProcessTaskQueue):
         async def run_in_process_task(task_id: UUID) -> None:
@@ -273,8 +313,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             finished = await store.get_task(task_id)
             if finished is not None and finished.status == TaskStatus.SUCCEEDED:
                 await production_orchestrator.on_task_finished(task_id)
+                await topic_production_orchestrator.on_task_finished(task_id)
             elif finished is not None and finished.status == TaskStatus.FAILED:
                 await production_orchestrator.on_task_failed(task_id)
+                await topic_production_orchestrator.on_task_failed(task_id)
 
         task_queue.set_handler(run_in_process_task)
 
@@ -344,6 +386,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.cleanup_service = cleanup_service
     app.state.runtime_health_service = runtime_health_service
     app.state.production_orchestrator = production_orchestrator
+    app.state.topic_production_orchestrator = topic_production_orchestrator
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):

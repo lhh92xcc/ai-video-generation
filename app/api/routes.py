@@ -78,6 +78,8 @@ from app.domain.models import (
     TaskBatchRecord,
     TaskBatchResumeResponse,
     TaskStatus,
+    TopicProductionCreateRequest,
+    TopicProductionResponse,
     VideoClipCreateRequest,
     VideoAssemblyCreateRequest,
     VoiceAssetCreateRequest,
@@ -175,6 +177,10 @@ from app.services.production_orchestrator import (
     ProductionRunControlError,
     ProductionRunNotFoundError,
 )
+from app.services.topic_pipeline_service import (
+    TopicPipelineError,
+    TopicProductionOrchestrator,
+)
 from app.storage.protocol import StorageError
 
 router = APIRouter()
@@ -267,6 +273,10 @@ def _episode_task_plan_service(request: Request) -> EpisodeTaskPlanService:
 
 def _production_orchestrator(request: Request) -> ProductionOrchestrator:
     return request.app.state.production_orchestrator
+
+
+def _topic_production_orchestrator(request: Request) -> TopicProductionOrchestrator:
+    return request.app.state.topic_production_orchestrator
 
 
 def _novel_service(request: Request) -> NovelService:
@@ -600,6 +610,78 @@ async def create_generation(
         return task
     except ProjectNotFoundError as exc:
         raise ApiError(404, "PROJECT_NOT_FOUND", "Project was not found") from exc
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/production-runs",
+    response_model=TopicProductionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["topic-production"],
+)
+async def start_topic_production_run(
+    request: Request,
+    project_id: UUID,
+    payload: TopicProductionCreateRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> TopicProductionResponse:
+    """Start the complete topic-to-video media DAG.
+
+    The legacy ``/generations`` endpoint remains script-only. This explicit
+    command opts a topic project into narration, subtitles, video clips and
+    FFmpeg assembly as configured by the request.
+    """
+
+    try:
+        await _require_task_batch_permission(request, project_id, ProjectPermission.MANAGE_TASKS)
+        return await _topic_production_orchestrator(request).start(
+            project_id,
+            payload,
+            idempotency_key=idempotency_key,
+        )
+    except TopicPipelineError as exc:
+        code_status = 404 if exc.code == "PROJECT_NOT_FOUND" else 409
+        raise ApiError(code_status, exc.code, exc.message) from exc
+    except ProviderProfileError as exc:
+        raise ApiError(exc.status_code, exc.code, exc.message) from exc
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/production-runs/latest",
+    response_model=TopicProductionResponse,
+    tags=["topic-production"],
+)
+async def get_latest_topic_production_run(
+    request: Request,
+    project_id: UUID,
+) -> TopicProductionResponse:
+    """Restore the latest topic media Run for the creator workspace."""
+
+    try:
+        await _require_artifact_read_permission(request, project_id)
+        return await _topic_production_orchestrator(request).get_latest_run(project_id)
+    except TopicPipelineError as exc:
+        code_status = 404 if exc.code in {"PROJECT_NOT_FOUND", "TOPIC_RUN_NOT_FOUND"} else 409
+        raise ApiError(code_status, exc.code, exc.message) from exc
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/production-runs/{run_id}",
+    response_model=TopicProductionResponse,
+    tags=["topic-production"],
+)
+async def get_topic_production_run(
+    request: Request,
+    project_id: UUID,
+    run_id: UUID,
+) -> TopicProductionResponse:
+    """Return the durable status of one topic media Run."""
+
+    try:
+        await _require_artifact_read_permission(request, project_id)
+        return await _topic_production_orchestrator(request).get_run(project_id, run_id)
+    except TopicPipelineError as exc:
+        code_status = 404 if exc.code in {"PROJECT_NOT_FOUND", "TOPIC_RUN_NOT_FOUND"} else 409
+        raise ApiError(code_status, exc.code, exc.message) from exc
 
 
 @router.get("/api/v1/tasks/{task_id}", response_model=GenerationTaskRecord, tags=["tasks"])

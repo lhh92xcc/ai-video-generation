@@ -17,7 +17,8 @@ from uuid import UUID
 from app.config import load_settings
 from app.db import create_engine, create_session_factory, init_db
 from app.domain.production_run import AUTO_RUN_ID, AUTO_RUN_STATUS, run_status_from_tasks
-from app.domain.models import GenerationTaskKind, TaskStatus
+from app.domain.topic_run import TOPIC_RUN_ID, TOPIC_RUN_STATUS, topic_run_status_from_tasks
+from app.domain.models import GenerationTaskKind, GenerationTaskRecord, TaskStatus
 from app.media.audio_validation import FFprobeAudioValidator
 from app.media.audio_normalization import FFmpegAudioNormalizer
 from app.media.video_validation import FFprobeVideoValidator
@@ -52,6 +53,7 @@ from app.services.lip_sync_service import LipSyncTaskService
 from app.services.voice_asset_service import VoiceAssetService
 from app.services.episode_task_plan_service import EpisodeTaskPlanService
 from app.services.production_orchestrator import ProductionOrchestrator
+from app.services.topic_pipeline_service import TopicMediaTaskService, TopicProductionOrchestrator
 from app.services.temp_cleanup_service import TemporaryDirectoryCleanupService
 from app.providers.profiles import ASRProviderProfileRegistry, VisualProviderProfileRegistry
 from app.storage.factory import create_artifact_storage
@@ -202,6 +204,39 @@ async def run_worker() -> None:
         alignment_provider=subtitle_alignment_provider,
         asr_profile_registry=asr_profile_registry,
     )
+    topic_media_task_service = TopicMediaTaskService(
+        store,
+        queue,
+        tts_provider,
+        subtitle_alignment_provider,
+        video_provider,
+        artifact_storage,
+        audio_validator=FFprobeAudioValidator(
+            timeout_seconds=settings.tts_probe_timeout_seconds
+        ),
+        video_validator=FFprobeVideoValidator(
+            timeout_seconds=settings.video_probe_timeout_seconds
+        ),
+        motion_validator=FFmpegMotionEvidenceValidator(
+            binary=settings.video_binary,
+            timeout_seconds=settings.video_probe_timeout_seconds,
+        ),
+        renderer=FFmpegVideoRenderer(
+            binary=settings.video_binary,
+            timeout_seconds=settings.task_timeout_seconds,
+            render_preset=settings.video_render_preset,
+            render_crf=settings.video_render_crf,
+            render_tune=settings.video_render_tune,
+        ),
+        default_voice=settings.tts_voice,
+        default_rate=settings.tts_rate,
+        default_volume=settings.tts_volume,
+        pronunciation_dictionary=load_pronunciation_dictionary(
+            settings.tts_pronunciation_dictionary_path
+        ),
+        default_negative_prompt=settings.video_default_negative_prompt,
+        provider_registry=visual_profile_registry,
+    )
     service = TaskService(
         store,
         text_provider,
@@ -214,6 +249,7 @@ async def run_worker() -> None:
         bgm_task_runner=bgm_task_service.run_task,
         subtitle_task_runner=subtitle_task_service.run_task,
         lip_sync_task_runner=lip_sync_task_service.run_task,
+        topic_task_runner=topic_media_task_service.run_task,
     )
 
     task_batch_service = __import__(
@@ -237,6 +273,11 @@ async def run_worker() -> None:
         episode_task_plan_service,
         task_queue=queue,
         retry_task=service.retry_task,
+    )
+    topic_production_orchestrator = TopicProductionOrchestrator(
+        store,
+        topic_media_task_service,
+        script_task_creator=service.create_generation,
     )
     cleanup_service = TemporaryDirectoryCleanupService(
         settings.worker_cleanup_roots,
@@ -268,13 +309,20 @@ async def run_worker() -> None:
         await _resume_pending_auto_retries(store, service, settings)
         recovered_requeued = await _requeue_recovered_claims(store, queue, recovered)
         requeued = await _requeue_queued_tasks(store, queue)
+        reconciled_production, reconciled_topic = await _reconcile_runs_after_restart(
+            production_orchestrator,
+            topic_production_orchestrator,
+            settings.worker_scheduler_enabled,
+        )
         logger.info(
-            "generation worker started queue=%s recovered_claims=%d recovered_tasks=%d recovered_requeued=%d requeued=%d",
+            "generation worker started queue=%s recovered_claims=%d recovered_tasks=%d recovered_requeued=%d requeued=%d reconciled_production=%d reconciled_topic=%d",
             settings.queue_name,
             len(recovered),
             len(recovered_stale),
             recovered_requeued,
             requeued,
+            reconciled_production,
+            reconciled_topic,
         )
         heartbeat_task = asyncio.create_task(_heartbeat_loop(queue, settings))
         cleanup_task = asyncio.create_task(
@@ -283,6 +331,7 @@ async def run_worker() -> None:
         scheduler_task = asyncio.create_task(
             _scheduler_loop(
                 production_orchestrator,
+                topic_production_orchestrator,
                 store,
                 service,
                 queue,
@@ -338,11 +387,19 @@ async def run_worker() -> None:
                         await production_orchestrator.on_task_failed(task_id)
                     except Exception:
                         logger.exception("automatic DAG failure state update failed task_id=%s", task_id)
+                    try:
+                        await topic_production_orchestrator.on_task_failed(task_id)
+                    except Exception:
+                        logger.exception("topic DAG failure state update failed task_id=%s", task_id)
             elif finished.status == TaskStatus.SUCCEEDED and settings.worker_scheduler_enabled:
                 try:
                     await production_orchestrator.on_task_finished(task_id)
                 except Exception:
-                    logger.exception("automatic DAG advancement failed task_id=%s", task_id)
+                    logger.exception("novel DAG advancement failed task_id=%s", task_id)
+                try:
+                    await topic_production_orchestrator.on_task_finished(task_id)
+                except Exception:
+                    logger.exception("topic DAG advancement failed task_id=%s", task_id)
     finally:
         for background_task in (heartbeat_task, cleanup_task, scheduler_task):
             if background_task is not None:
@@ -427,16 +484,46 @@ async def _requeue_recovered_claims(
 
 async def _requeue_queued_tasks(store, queue: RedisTaskQueue) -> int:
     tasks = await store.list_tasks(limit=5000)
-    queued = [
-        task
-        for task in tasks
-        if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}
-        and task.input_data.get(AUTO_RUN_STATUS) not in {"paused", "canceled"}
-    ]
+    queued: list[GenerationTaskRecord] = []
+    for task in tasks:
+        if task.status not in {TaskStatus.CREATED, TaskStatus.QUEUED}:
+            continue
+        if await _task_run_status(store, task) in {"paused", "canceled"}:
+            continue
+        queued.append(task)
     reconciliation = await queue.reconcile_enqueued_markers(
         task.id for task in queued
     )
     return reconciliation["enqueued"]
+
+
+async def _reconcile_runs_after_restart(
+    production_orchestrator,
+    topic_production_orchestrator,
+    scheduler_enabled: bool,
+) -> tuple[int, int]:
+    """Advance durable Runs once before the Worker starts consuming messages.
+
+    A process can stop after a task is persisted as ``succeeded`` but before
+    its completion callback creates the next DAG wave.  The periodic
+    scheduler would eventually repair that gap, but startup reconciliation
+    makes recovery immediate and also covers a queue that has no pending
+    message for the missing downstream task.
+    """
+
+    if not scheduler_enabled:
+        return 0, 0
+    production_count = 0
+    topic_count = 0
+    try:
+        production_count = len(await production_orchestrator.tick_all())
+    except Exception:
+        logger.exception("automatic DAG startup reconciliation failed")
+    try:
+        topic_count = len(await topic_production_orchestrator.tick_all())
+    except Exception:
+        logger.exception("topic DAG startup reconciliation failed")
+    return production_count, topic_count
 
 
 async def _maybe_auto_retry(task, service, settings) -> bool:
@@ -495,17 +582,28 @@ async def _task_run_status(store, task) -> str | None:
     """Read the aggregate Run marker so mixed stale snapshots fail closed."""
 
     raw_run_id = task.input_data.get(AUTO_RUN_ID)
-    if not raw_run_id:
-        return None
     tasks = await store.list_tasks(project_id=task.project_id, limit=5000)
-    run_tasks = [
-        item
-        for item in tasks
-        if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
-    ]
-    return run_status_from_tasks(run_tasks) if run_tasks else str(
-        task.input_data.get(AUTO_RUN_STATUS, "active")
-    )
+    if raw_run_id:
+        run_tasks = [
+            item
+            for item in tasks
+            if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
+        ]
+        return run_status_from_tasks(run_tasks) if run_tasks else str(
+            task.input_data.get(AUTO_RUN_STATUS, "active")
+        )
+
+    raw_topic_run_id = task.input_data.get(TOPIC_RUN_ID)
+    if raw_topic_run_id:
+        topic_tasks = [
+            item
+            for item in tasks
+            if str(item.input_data.get(TOPIC_RUN_ID)) == str(raw_topic_run_id)
+        ]
+        return topic_run_status_from_tasks(topic_tasks) if topic_tasks else str(
+            task.input_data.get(TOPIC_RUN_STATUS, "active")
+        )
+    return None
 
 
 async def _resume_pending_auto_retries(store, service, settings) -> int:
@@ -591,7 +689,14 @@ async def _cleanup_loop(cleanup_service, queue, settings) -> None:
         raise
 
 
-async def _scheduler_loop(orchestrator, store, service, queue, settings) -> None:
+async def _scheduler_loop(
+    orchestrator,
+    topic_orchestrator,
+    store,
+    service,
+    queue,
+    settings,
+) -> None:
     try:
         while True:
             await asyncio.sleep(max(5, settings.worker_scheduler_interval_seconds))
@@ -602,10 +707,17 @@ async def _scheduler_loop(orchestrator, store, service, queue, settings) -> None
                     if settings.worker_scheduler_enabled
                     else []
                 )
+                topic_results = (
+                    await topic_orchestrator.tick_all()
+                    if settings.worker_scheduler_enabled
+                    else []
+                )
                 if retried:
                     logger.info("automatic retry scheduler requeued %d task(s)", retried)
                 if results:
                     logger.info("automatic DAG scheduler advanced %d run(s)", len(results))
+                if topic_results:
+                    logger.info("topic DAG scheduler advanced %d run(s)", len(topic_results))
             except Exception:
                 logger.exception("automatic DAG scheduler tick failed")
     except asyncio.CancelledError:

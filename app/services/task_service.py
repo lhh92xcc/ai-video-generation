@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any
 from uuid import UUID
 
 from app.domain.models import (
@@ -20,6 +21,14 @@ from app.domain.models import (
     utc_now,
 )
 from app.domain.production_run import AUTO_RUN_ID, AUTO_RUN_STATUS, run_status_from_tasks
+from app.domain.topic_run import (
+    TOPIC_PIPELINE,
+    TOPIC_RUN_ID,
+    TOPIC_RUN_ERROR_CODE,
+    TOPIC_RUN_ERROR_MESSAGE,
+    TOPIC_RUN_STATUS,
+    topic_run_status_from_tasks,
+)
 from app.providers.errors import TextProviderError
 from app.providers.protocol import TextProvider
 from app.queue import TaskQueue
@@ -52,6 +61,7 @@ class TaskService:
         bgm_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
         subtitle_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
         lip_sync_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
+        topic_task_runner: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> None:
         self._store = store
         self._text_provider = text_provider
@@ -64,6 +74,7 @@ class TaskService:
         self._bgm_task_runner = bgm_task_runner
         self._subtitle_task_runner = subtitle_task_runner
         self._lip_sync_task_runner = lip_sync_task_runner
+        self._topic_task_runner = topic_task_runner
 
     async def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
         project = ProjectRecord(
@@ -89,12 +100,13 @@ class TaskService:
         self,
         project_id: UUID,
         idempotency_key: str | None = None,
+        task_input_data: dict[str, Any] | None = None,
     ) -> tuple[GenerationTaskRecord, bool]:
         project = await self.get_project(project_id)
         task = GenerationTaskRecord(
             project_id=project.id,
             kind=GenerationTaskKind.INFO_SCRIPT,
-            input_data={},
+            input_data=dict(task_input_data or {}),
         )
         task.stages = [
             StageRun(
@@ -146,6 +158,14 @@ class TaskService:
             if task.status in {TaskStatus.CREATED, TaskStatus.QUEUED}:
                 self._mark_canceled_task(task)
                 await self._store.update_task(task)
+            return
+        if (
+            task.kind != GenerationTaskKind.INFO_SCRIPT
+            and task.input_data.get(TOPIC_PIPELINE) is True
+        ):
+            if self._topic_task_runner is None:
+                raise RuntimeError("Topic media task runner has not been configured")
+            await self._topic_task_runner(task_id)
             return
         if task.kind == GenerationTaskKind.ASSET_REFERENCE_IMAGE:
             if self._reference_image_task_runner is None:
@@ -299,6 +319,13 @@ class TaskService:
         if task.input_data.get("auto_run_id") and run_status != "paused":
             task.input_data["auto_advance"] = True
             task.input_data["auto_run_status"] = "active"
+        if task.input_data.get(TOPIC_PIPELINE) is True:
+            # A manual retry or a Worker retry re-opens a previously blocked
+            # topic Run.  The orchestrator will set the marker on every task
+            # again when the next dependency wave is reconciled.
+            task.input_data[TOPIC_RUN_STATUS] = "active"
+            task.input_data.pop(TOPIC_RUN_ERROR_CODE, None)
+            task.input_data.pop(TOPIC_RUN_ERROR_MESSAGE, None)
         stage_run = next((item for item in task.stages if item.stage == stage), None)
         if stage_run is None:
             stage_run = StageRun(stage=stage, status=TaskStatus.QUEUED)
@@ -355,16 +382,27 @@ class TaskService:
         """Read the aggregate marker to close the pause/cancel dequeue race."""
 
         raw_run_id = task.input_data.get(AUTO_RUN_ID)
-        if not raw_run_id:
+        if raw_run_id:
+            run_tasks = [
+                item
+                for item in await self._store.list_tasks(project_id=task.project_id, limit=5000)
+                if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
+            ]
+            if not run_tasks:
+                return str(task.input_data.get(AUTO_RUN_STATUS, "active"))
+            return run_status_from_tasks(run_tasks)
+
+        raw_topic_run_id = task.input_data.get(TOPIC_RUN_ID)
+        if not raw_topic_run_id:
             return None
-        run_tasks = [
+        topic_tasks = [
             item
             for item in await self._store.list_tasks(project_id=task.project_id, limit=5000)
-            if str(item.input_data.get(AUTO_RUN_ID)) == str(raw_run_id)
+            if str(item.input_data.get(TOPIC_RUN_ID)) == str(raw_topic_run_id)
         ]
-        if not run_tasks:
-            return str(task.input_data.get(AUTO_RUN_STATUS, "active"))
-        return run_status_from_tasks(run_tasks)
+        if not topic_tasks:
+            return str(task.input_data.get(TOPIC_RUN_STATUS, "active"))
+        return topic_run_status_from_tasks(topic_tasks)
 
     async def mark_failed(
         self,

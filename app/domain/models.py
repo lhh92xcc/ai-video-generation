@@ -103,6 +103,63 @@ class ProjectRecord(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class TopicProductionCreateRequest(BaseModel):
+    """Start the media DAG for a structured topic short-video script.
+
+    The existing ``/generations`` endpoint remains a script-only, backwards-
+    compatible command.  This request explicitly opts into the downstream
+    media stages so clients cannot accidentally turn a content smoke test into
+    a long-running video job.
+    """
+
+    production_mode: Literal[True] = True
+    include_narration: bool = True
+    include_subtitles: bool = True
+    include_video: bool = True
+    include_assembly: bool = True
+    subtitle_mode: Literal["align"] = "align"
+    video_provider_profile_id: str | None = Field(default=None, min_length=1, max_length=120)
+    visual_quality_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+
+    @field_validator("video_provider_profile_id", "visual_quality_profile_id")
+    @classmethod
+    def strip_topic_production_profile(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @model_validator(mode="after")
+    def validate_topic_production_options(self) -> "TopicProductionCreateRequest":
+        if self.include_subtitles and not self.include_narration:
+            raise ValueError("topic subtitles require narration")
+        if self.include_assembly and not self.include_video:
+            raise ValueError("topic assembly requires video clips")
+        if self.video_provider_profile_id is not None and not self.include_video:
+            raise ValueError(
+                "video_provider_profile_id is only valid when topic video is enabled"
+            )
+        if self.visual_quality_profile_id is not None and not self.include_video:
+            raise ValueError(
+                "visual_quality_profile_id is only valid when topic video is enabled"
+            )
+        return self
+
+
+class TopicProductionResponse(BaseModel):
+    """Durable status returned by the topic short-video Production Run."""
+
+    project_id: UUID
+    run_id: UUID
+    status: Literal["active", "blocked", "paused", "completed", "failed", "canceled"]
+    stage: str = Field(min_length=1, max_length=80)
+    task_ids: list[UUID] = Field(default_factory=list, max_length=500)
+    auto_advance: bool = True
+    message: str = Field(min_length=1, max_length=300)
+    error_code: str | None = Field(default=None, min_length=1, max_length=120)
+    error_message: str | None = Field(default=None, min_length=1, max_length=300)
+
+
 class NovelProjectCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     language: str = Field(default="zh-CN", min_length=2, max_length=20)

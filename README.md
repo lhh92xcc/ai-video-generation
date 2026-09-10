@@ -7,7 +7,7 @@
 ## 核心能力
 
 - 小说 `.txt/.md` 导入、章节切分和 StoryBible。
-- 主题短视频前台入口：填写主题、时长、比例和表达风格后创建项目，并异步生成可审核的结构化脚本 JSON；素材、配音、字幕和成片仍按后续阶段接入。
+- 主题短视频完整 Production Run：填写主题、时长、比例和表达风格后，异步推进结构化脚本、旁白、字幕、逐场视频片段和 FFmpeg 成片；每个阶段都可查询、失败可重试，未配置 Provider 会持久化为 `blocked`。
 - 分集大纲、分场剧本、结构化 JSON 分镜和受控 Schema 修复。
 - 角色、场景、道具资产库，版本、别名、审核和分镜绑定门禁。
 - 可插拔 LLM、图片、视频、TTS、ASR、BGM 和对象存储 Provider。
@@ -38,6 +38,7 @@
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
 - 自动生产 Run 完成态已闭环：Worker/scheduler 在推进 DAG 时只把 `created`/`reused` 任务视为下一波工作，不会把用于界面追踪的已完成任务 ID误判为新任务；最终 Assembly 成功后 Run 会稳定进入 `completed`。
 - 自动生产 Run 生命周期控制已闭环：创作者前台和远程生产队列支持暂停、恢复和取消；暂停不会强杀正在执行的模型调用，恢复会重新入队尚未执行的任务，取消会保留已完成 Artifact 并阻止排队任务继续执行。
+- 主题 Run 参数与重启恢复门禁已补齐：`include_assembly=true` 必须同时启用 `include_video=true`，否则返回 `422 INVALID_REQUEST`；Worker 启动时会先恢复可运行队列，再对小说和主题 Run 各做一次持久化 DAG 补偿扫描，避免任务成功后进程恰好在回调前重启而卡住。
 
 ## 流水线
 
@@ -56,17 +57,22 @@
 
 ### 主题短视频当前范围
 
-创作者前台的“主题短视频”入口已经接入真实项目和异步脚本任务：
+创作者前台的“主题短视频”入口已经接入完整的主题媒体 Production Run：
 
 ```text
 主题 + 标题 + 时长 + 画面比例 + 表达风格
   → POST /api/v1/projects
-  → POST /api/v1/projects/{project_id}/generations
-  → info_script Task
-  → script_json Artifact
+  → POST /api/v1/projects/{project_id}/production-runs
+  → info_script Task → script_json Artifact
+  → audio_narration Task → audio_narration Artifact
+  → subtitle_align Task → subtitle_srt Artifact
+  → 每个场景一个 video_clip Task → video_clip Artifact
+  → video_assembly Task → rendered_video Artifact
 ```
 
-当前交付边界是“主题输入 → 结构化脚本 JSON → 任务中心可追踪”。任务仍遵守统一的幂等、队列、错误和 Artifact 契约；首页会轮询任务状态并明确显示成功或失败。Pexels/Pixabay 素材搜索、主题模式的 TTS、字幕、BGM、视频片段和自动成片尚未接入，因此不能把这个入口描述成主题短视频全链路已经完成。小说短剧的完整自动 Run 不受本次主题入口影响。
+Production Run 默认开启旁白、字幕、视频片段和 Assembly，也可以在请求中关闭可选阶段；但 Assembly 本身必须有视频片段，不能配置成“只合成音频”。任务仍遵守统一的幂等、队列、错误和 Artifact 契约；首页会轮询 Run 与任务状态并明确显示成功、失败或 blocked。Worker 启动时会识别主题 Run 的 marker，并在队列恢复后执行一次补偿扫描。当前主题路径直接使用视频 Provider 生成场景片段，尚未接入 Pexels/Pixabay 素材检索、主题 BGM、跨项目批量和自动发布；这些不属于本轮已实现范围。小说短剧的完整自动 Run 与主题 Run 使用不同资源模型，但共用 Worker、Artifact 和恢复机制。
+
+如果视频 Profile 未配置，脚本任务仍可以先完成，后续 Run 会返回 `blocked`，并在 `error_code` / `error_message` 中指出缺少的环境变量。修复配置并重启使用该 Profile 的 Worker 后，使用相同的 `Idempotency-Key` 再次提交即可继续，不会重复创建脚本任务。Mock 视频 Profile 会明确失败为 `VIDEO_PROVIDER_OUTPUT_NOT_STORABLE`，不会生成伪造的可播放 Artifact。
 
 ## 技术栈
 
