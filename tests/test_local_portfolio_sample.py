@@ -75,6 +75,8 @@ def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target()
     # Keep the free, natural-rate Edge TTS demo within the 45–60 second target;
     # do not compensate for an overlong script by speeding up the waveform.
     assert len("".join(scene[1] for scene in scenes)) < 300
+    assert all(_MODULE.PORTFOLIO_STYLE_LOCK in scene[2] for scene in scenes)
+    assert all("photorealistic" in scene[2] for scene in scenes)
 
 
 def test_sample_config_follows_environment_instead_of_assuming_mac_private_file(
@@ -456,6 +458,11 @@ def test_reference_prompts_are_single_subject_or_scene() -> None:
     assert "exactly one" in _reference_prompt("黑伞女孩")
     assert "no people" in _reference_prompt("旧城区钟表店")
     assert "one antique bronze mechanical pocket watch" in _reference_prompt("铜色怀表")
+    assert all(
+        _MODULE.PORTFOLIO_STYLE_LOCK in _reference_prompt(name)
+        for name in ("林默", "黑伞女孩", "旧城区钟表店", "铜色怀表")
+    )
+    assert "Avoid:" in _reference_prompt("铜色怀表")
 
 
 def test_recent_reference_files_are_sorted_newest_first(tmp_path: Path) -> None:

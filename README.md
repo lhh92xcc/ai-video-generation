@@ -32,6 +32,7 @@
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
 - 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
 - 统一视觉 Bible：参考图、逐镜头关键帧和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2`、`shot-keyframe-generation-v3` 和 `video-motion-generation-v3`。
+- 本地作品集 runner 还会对四类参考图和 12 个预置镜头应用固定的 `PORTFOLIO_STYLE_LOCK`，把视觉 Bible、单一焦点和 style negative lock 写入下一次生成输入；这只是画风一致性护栏，真实样片仍需目标 GPU 主机抽帧和人工验收。
 - 参考图绑定防串图：作品集 runner 会写出 `reference-manifest.json`，按资产名称、`asset_key`、版本和 `storage_key` 精确复用参考图；不再按目录 mtime 猜测“最近四张图片”，避免角色、场景和道具首帧错配。
 - 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。

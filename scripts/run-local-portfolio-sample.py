@@ -126,9 +126,24 @@ PORTFOLIO_TARGET = {
     "aspect_ratio": "9:16",
     "shot_count": {"min": 8, "max": 12},
     "orientation": "vertical",
-    "style": "2D manhwa / dynamic comic",
+    "style": "flat 2D manhwa / dynamic comic with one shared visual bible",
 }
 PORTFOLIO_MAX_SHOTS = int(PORTFOLIO_TARGET["shot_count"]["max"])
+
+# Keep every locally generated reference and I2V prompt inside one visual
+# language. Some Flux/Wan graphs do not expose an effective negative prompt,
+# so the positive style lock is intentionally repeated in the prompt itself.
+PORTFOLIO_STYLE_LOCK = (
+    "flat 2D manhwa/webtoon animation keyframe, shared visual bible across the entire sample, "
+    "bold clean ink outlines with stable line weight, matte cel-shaded color blocks, "
+    "simplified illustrated shapes, controlled illustrated lighting, one clear visual focal point, "
+    "never photographic, never semi-realistic, never a 3D render"
+)
+PORTFOLIO_STYLE_NEGATIVE_LOCK = (
+    "photorealistic, photographic lens, realistic skin or material texture, semi-realistic, "
+    "oil painting, painterly brushwork, glossy 3D render, commercial product shot, "
+    "style mixing, visual-bible drift, duplicate subject, split frame, collage, text, watermark"
+)
 PORTFOLIO_HUMAN_REVIEW_ITEMS = (
     {
         "id": "story_fidelity",
@@ -1127,7 +1142,7 @@ async def _register_checkpointed_clip_task(
 
 
 def _narration_scenes() -> list[NarrationScene]:
-    return [
+    scenes = [
         (
             "旧城区的钟表店",
             "旧城区的钟表店里，林默每晚都能听见墙后传来三下钟声，",
@@ -1188,6 +1203,14 @@ def _narration_scenes() -> list[NarrationScene]:
             "林默握紧怀表，终于明白，明天正在等他作出选择。",
             "cinematic vertical closing shot of a young Chinese clockmaker standing before a hidden clock-room doorway, bronze pocket watch stopped at twelve, warm light returning through rainy blue darkness, quiet hopeful suspense",
         ),
+    ]
+    return [
+        (
+            title,
+            voiceover,
+            f"{PORTFOLIO_STYLE_LOCK}. {visual_prompt}. {PORTFOLIO_STYLE_NEGATIVE_LOCK}",
+        )
+        for title, voiceover, visual_prompt in scenes
     ]
 
 
@@ -2600,30 +2623,36 @@ def _reference_prompt(asset_name: str) -> str:
     )
     prompts = {
         "林默": (
-            "single subject front-facing head-and-shoulders 2D manhwa portrait, exactly one young Chinese male clockmaker, late 20s, "
+            f"{PORTFOLIO_STYLE_LOCK}, single subject front-facing head-and-shoulders portrait, "
+            "exactly one young Chinese male clockmaker, late 20s, "
             "short black hair, slim face, dark long coat and old leather gloves, "
-            "quiet serious neutral expression, soft even studio lighting, plain cool-gray background, "
+            "quiet serious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
             "centered face, clean portrait crop, vertical 9:16 composition, no props, " + single_frame
         ),
         "黑伞女孩": (
-            "single subject front-facing head-and-shoulders 2D manhwa portrait, exactly one young Chinese woman with long black hair, "
-            "black long coat, calm mysterious neutral expression, soft even studio lighting, plain cool-gray background, "
+            f"{PORTFOLIO_STYLE_LOCK}, single subject front-facing head-and-shoulders portrait, "
+            "exactly one young Chinese woman with long black hair, "
+            "black long coat, calm mysterious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
             "centered face, clean portrait crop, vertical 9:16 composition, no umbrella and no props, " + single_frame
         ),
         "旧城区钟表店": (
-            "single empty continuous 2D manhwa background plate, one coherent old Chinese urban clock shop at night, "
+            f"{PORTFOLIO_STYLE_LOCK}, single empty continuous background plate, "
+            "one coherent old Chinese urban clock shop at night, "
             "wooden counter, many mechanical clocks on the wall, warm amber lamps, "
             "rainy street visible through one window, cinematic vertical composition, "
             "no people, no duplicate windows, no duplicate room, " + single_frame
         ),
         "铜色怀表": (
-            "single 2D manhwa prop design plate, exactly one antique bronze mechanical pocket watch, "
+            f"{PORTFOLIO_STYLE_LOCK}, single illustrated prop design plate, exactly one antique bronze mechanical pocket watch, "
             "front-facing circular watch, hands stopped at twelve o'clock, "
             "on a dark wooden clockmaker counter with a black seamless background, "
-            "dramatic controlled light, centered object, clean 2D illustration plate, " + single_frame
+            "matte illustrated surfaces, restrained warm light, centered object, clean 2D illustration plate, " + single_frame
         ),
     }
-    return f"{DEFAULT_REFERENCE_STYLE}. {prompts[asset_name]}"
+    return (
+        f"{DEFAULT_REFERENCE_STYLE}. {prompts[asset_name]}. "
+        f"Avoid: {PORTFOLIO_STYLE_NEGATIVE_LOCK}."
+    )
 
 
 async def _wait_for_task(
