@@ -254,6 +254,11 @@ function openCreatePanel(mode: 'novel' | 'topic' = 'novel') {
   showCreatePanel.value = true
 }
 
+function openPortfolioPanel() {
+  episodeDuration.value = 45
+  openCreatePanel('novel')
+}
+
 function closeCreatePanel() {
   if (!creating.value) showCreatePanel.value = false
 }
@@ -503,6 +508,20 @@ onUnmounted(() => {
         <article><span class="creator-metric-icon purple">✦</span><div><small>我的项目</small><strong>{{ loading ? '—' : totalProjects }}</strong></div><span class="creator-metric-note">小说 + 主题</span></article>
         <article><span class="creator-metric-icon blue">↻</span><div><small>进行中的任务</small><strong>{{ loading ? '—' : activeTasks }}</strong></div><span class="creator-metric-note" :class="{ good: activeTasks === 0 }">{{ activeTasks ? '实时处理中' : '当前空闲' }}</span></article>
         <article><span class="creator-metric-icon purple">◇</span><div><small>生产流程</small><strong>5</strong></div><span class="creator-metric-note good">可观察</span></article>
+      </section>
+
+      <section v-if="!activeProject" class="creator-section creator-portfolio-guide" data-test="portfolio-guide">
+        <div class="creator-portfolio-guide-main">
+          <p class="creator-eyebrow">PORTFOLIO PATH · LOCAL FIRST</p>
+          <h2>先做一条可验证的本地样片</h2>
+          <p>用 45 秒、8～12 个镜头验证剧本、统一人设、真实运动、声音和字幕，再决定是否扩展到长内容或云端高质量样片。</p>
+          <button class="creator-primary-button" type="button" @click="openPortfolioPanel">创建 45 秒作品集项目 <span>→</span></button>
+        </div>
+        <div class="creator-portfolio-checklist" aria-label="作品集路径">
+          <div><span>01</span><strong>内容</strong><small>上传 .txt / .md</small></div>
+          <div><span>02</span><strong>视觉</strong><small>参考图 → I2V</small></div>
+          <div><span>03</span><strong>验收</strong><small>报告 + 人工审核</small></div>
+        </div>
       </section>
 
       <section v-if="!activeProject" id="create" class="creator-section creator-workflow-section">

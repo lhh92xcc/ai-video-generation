@@ -10,18 +10,24 @@ vi.mock('../src/api/novels', () => ({
 vi.mock('../src/api/projects', () => ({
   getTopicProjects: vi.fn(),
   createTopicProject: vi.fn(),
-  createTopicGeneration: vi.fn(),
+  startTopicProduction: vi.fn(),
+  getLatestTopicProductionRun: vi.fn(),
+  getTopicProductionRun: vi.fn(),
 }))
 vi.mock('../src/api/tasks', () => ({
   getTasks: vi.fn(),
   getArtifacts: vi.fn(),
-  getTask: vi.fn(),
 }))
 
 import { createNovelProject, getNovelProjects } from '../src/api/novels'
-import { createTopicGeneration, createTopicProject, getTopicProjects } from '../src/api/projects'
+import {
+  getLatestTopicProductionRun,
+  getTopicProductionRun,
+  createTopicProject,
+  getTopicProjects,
+  startTopicProduction,
+} from '../src/api/projects'
 import { getArtifacts, getTasks } from '../src/api/tasks'
-import { getTask } from '../src/api/tasks'
 
 const project = (id: string, title: string) => ({
   id,
@@ -59,6 +65,16 @@ const infoTask = (id: string, projectId: string, status: 'queued' | 'running' | 
   updated_at: '2026-09-09T00:00:00.000Z',
 })
 
+const topicRun = (runId = 'topic-run-1', status: 'active' | 'completed' = 'active') => ({
+  project_id: 'topic-project-1',
+  run_id: runId,
+  status,
+  stage: status === 'completed' ? 'video_assembly' : 'info_script',
+  task_ids: ['topic-task-1'],
+  auto_advance: status === 'active',
+  message: status === 'completed' ? '主题短视频已完成当前配置启用的全部媒体阶段。' : '主题短视频 Run 正在由 Worker 按依赖推进。',
+})
+
 describe('creator home', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -68,8 +84,10 @@ describe('creator home', () => {
     vi.mocked(getArtifacts).mockResolvedValue({ items: [] })
     vi.mocked(createNovelProject).mockResolvedValue(project('project-new', '新项目'))
     vi.mocked(createTopicProject).mockResolvedValue(topicProject('topic-project-1', '露营装备清单'))
-    vi.mocked(createTopicGeneration).mockResolvedValue(infoTask('topic-task-1', 'topic-project-1'))
-    vi.mocked(getTask).mockResolvedValue(infoTask('topic-task-1', 'topic-project-1'))
+    vi.mocked(startTopicProduction).mockResolvedValue(topicRun())
+    vi.mocked(getTopicProductionRun).mockResolvedValue(topicRun())
+    vi.mocked(getLatestTopicProductionRun).mockResolvedValue(topicRun())
+    vi.mocked(getTasks).mockResolvedValue({ items: [] })
   })
 
   afterEach(() => {
@@ -84,6 +102,7 @@ describe('creator home', () => {
       expect(wrapper.text()).toContain('雨夜来信')
       expect(wrapper.text()).toContain('我的项目')
       expect(wrapper.text()).toContain('当前空闲')
+      expect(wrapper.get('[data-test="portfolio-guide"]').text()).toContain('先做一条可验证的本地样片')
 
       const createButton = wrapper.findAll('button').find((button) => button.text().includes('开始创建'))
       expect(createButton).toBeDefined()
@@ -121,6 +140,19 @@ describe('creator home', () => {
     }
   })
 
+  it('opens the portfolio shortcut with the 45-second target selected', async () => {
+    const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
+    try {
+      await flushPromises()
+      await wrapper.get('[data-test="portfolio-guide"] button').trigger('click')
+      const formRowSelects = wrapper.findAll('[role="dialog"] .creator-form-row select')
+      expect((formRowSelects[1]!.element as HTMLSelectElement).value).toBe('45')
+      expect(wrapper.get('[role="dialog"]').text()).toContain('45 秒 · 作品集')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('ignores an older dashboard response after the next refresh wins', async () => {
     let resolveOld!: (value: ReturnType<typeof project>[]) => void
     const oldResponse = new Promise<ReturnType<typeof project>[]>((resolve) => { resolveOld = resolve })
@@ -139,7 +171,7 @@ describe('creator home', () => {
     }
   })
 
-  it('creates a topic project, enqueues an info script, and exposes the task center action', async () => {
+  it('creates a topic project, starts the full production Run, and exposes the task center action', async () => {
     const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
     try {
       await flushPromises()
@@ -149,7 +181,7 @@ describe('creator home', () => {
       await wrapper.findAll('select')[0]!.setValue('45')
       await wrapper.findAll('select')[1]!.setValue('9:16')
       await wrapper.findAll('select')[2]!.setValue('轻松口语')
-      await wrapper.findAll('button').find((button) => button.text().includes('创建并生成脚本'))!.trigger('click')
+      await wrapper.findAll('button').find((button) => button.text().includes('创建并开始生产'))!.trigger('click')
       await flushPromises()
 
       expect(createTopicProject).toHaveBeenCalledWith({
@@ -160,8 +192,12 @@ describe('creator home', () => {
         aspect_ratio: '9:16',
         tone: '轻松口语',
       })
-      expect(createTopicGeneration).toHaveBeenCalledWith('topic-project-1', 'creator-topic-generation-topic-project-1')
-      expect(wrapper.get('[data-test="topic-launch-card"]').text()).toContain('主题脚本正在后台生成')
+      expect(startTopicProduction).toHaveBeenCalledWith(
+        'topic-project-1',
+        {},
+        'creator-topic-production-topic-project-1',
+      )
+      expect(wrapper.get('[data-test="topic-launch-card"]').text()).toContain('主题短视频正在后台生成')
       expect(wrapper.get('[data-test="topic-launch-card"]').text()).toContain('查看生产任务')
     } finally {
       wrapper.unmount()
@@ -169,9 +205,9 @@ describe('creator home', () => {
   })
 
   it('does not overlap topic task polls and ignores a response after dismissal', async () => {
-    let resolveSlowPoll!: (task: ReturnType<typeof infoTask>) => void
-    vi.mocked(getTask)
-      .mockResolvedValueOnce(infoTask('topic-task-1', 'topic-project-1', 'queued'))
+    let resolveSlowPoll!: (run: ReturnType<typeof topicRun>) => void
+    vi.mocked(getTopicProductionRun)
+      .mockResolvedValueOnce(topicRun())
       .mockReturnValueOnce(new Promise((resolve) => { resolveSlowPoll = resolve }))
 
     const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
@@ -180,14 +216,14 @@ describe('creator home', () => {
       await wrapper.findAll('button').find((button) => button.text().includes('主题短视频'))!.trigger('click')
       await wrapper.get('input[placeholder="例如：新手露营装备怎么选"]').setValue('露营装备清单')
       await wrapper.get('textarea[placeholder*="第一次周末露营"]').setValue('面向第一次周末露营的人，讲清帐篷、睡袋和照明的选择顺序。')
-      await wrapper.findAll('button').find((button) => button.text().includes('创建并生成脚本'))!.trigger('click')
+      await wrapper.findAll('button').find((button) => button.text().includes('创建并开始生产'))!.trigger('click')
       await flushPromises()
 
       await vi.advanceTimersByTimeAsync(4000)
-      expect(getTask).toHaveBeenCalledTimes(2)
+      expect(getTopicProductionRun).toHaveBeenCalledTimes(2)
 
       await wrapper.get('button[aria-label="关闭主题任务提示"]').trigger('click')
-      resolveSlowPoll(infoTask('topic-task-1', 'topic-project-1', 'succeeded'))
+      resolveSlowPoll(topicRun('topic-run-1', 'completed'))
       await flushPromises()
       expect(wrapper.find('[data-test="topic-launch-card"]').exists()).toBe(false)
     } finally {

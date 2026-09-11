@@ -33,6 +33,7 @@
 - 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
 - 统一视觉 Bible：参考图、逐镜头关键帧和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2`、`shot-keyframe-generation-v3` 和 `video-motion-generation-v3`。
 - 本地作品集 runner 还会对四类参考图和 12 个预置镜头应用固定的 `PORTFOLIO_STYLE_LOCK`，把视觉 Bible、单一焦点和 style negative lock 写入下一次生成输入；这只是画风一致性护栏，真实样片仍需目标 GPU 主机抽帧和人工验收。
+- Windows 目标主机提供 `scripts/run-portfolio-demo.ps1` 一键入口：按实际运行环境选择质量档案，先做 1 个 3 秒 smoke，再做 8～12 个镜头候选样片，支持 manifest 复用、断点恢复和本地验收报告；不绑定具体显卡型号。
 - 参考图绑定防串图：作品集 runner 会写出 `reference-manifest.json`，按资产名称、`asset_key`、版本和 `storage_key` 精确复用参考图；不再按目录 mtime 猜测“最近四张图片”，避免角色、场景和道具首帧错配。
 - 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
 - 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
@@ -151,6 +152,42 @@ Apple Silicon 启动 ComfyUI 时推荐使用仓库脚本：
 脚本默认保留 MPS 和 ComfyUI smart memory，只把 VAE 放到 CPU，并预留 1 GiB 共享显存。不要把 `--disable-smart-memory` 作为默认参数；它会强制激进 CPU offload，可能让 Flux 退化成非常慢的 CPU 推理。只有遇到明确的内存回收问题时，才临时设置 `COMFYUI_DISABLE_SMART_MEMORY=1 COMFYUI_RESERVE_VRAM_GB=4`。
 
 Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`flux1-schnell-Q4_K_S.gguf` 和 `wan2.1-i2v-14b-480p-Q4_K_S.gguf`。如果目标主机安装的是同系列其他量化文件，只需通过环境变量覆盖模型名，不要修改业务代码。
+
+### Windows 目标主机：一键运行作品集 Demo
+
+作品集 runner 不绑定某个显卡型号，而是通过 `local_safe`、`local_balanced` 和
+`high_quality` 质量档案按目标主机的实际显存与稳定性选择起点。先在目标主机准备
+Ollama、ComfyUI 和本仓库，再执行一个 3 秒单镜头 smoke：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
+  -Shots 1 -ShotDuration 3 -QualityProfile local_safe `
+  -OutputDir .tmp\portfolio-smoke
+```
+
+Smoke 通过后，再运行 8～12 个镜头的正式候选样片（默认 10 个、每镜头 5 秒）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
+  -Shots 10 -ShotDuration 5 -QualityProfile local_balanced `
+  -OutputDir .tmp\portfolio-demo
+```
+
+脚本会先检查宿主机 ComfyUI/Ollama，再把宿主机 endpoint、独立 Artifact 目录和质量档案
+传给 `run-local-portfolio-sample.py`；不会继承 Docker 容器内部地址，也不会打印或写入
+密钥。长时间运行中断后，使用相同参数加 `-Resume` 继续：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
+  -Shots 10 -ShotDuration 5 -QualityProfile local_balanced `
+  -OutputDir .tmp\portfolio-demo -Resume
+```
+
+`report.json` 和 `run-checkpoint.json` 是本地验收证据。报告中的 `portfolio_readiness`
+只说明工程门禁、Provider 来源和媒体规格；角色一致性、动作连续性、声音自然度、字幕
+同步和完整观看感受仍必须人工审核，不能仅凭脚本退出码宣称作品集质量通过。真实 MuseTalk
+不是首个视觉 smoke 的前置条件；需要唇形同步时，再按 [即梦/外部 Provider 接入准备单](docs/10-jimeng-integration-brief.md)
+和 MuseTalk 运行说明单独验收。
 
 ## 配置与安全
 
