@@ -16,6 +16,8 @@ def test_portfolio_launcher_is_hardware_agnostic_and_uses_quality_snapshot() -> 
     assert '"--output-dir", $OutputDir' in source
     assert "--resume" in source
     assert "--stop-after-shot" in source
+    assert "PreflightReportPath" in source
+    assert "--report-path" in source
 
 
 def test_portfolio_launcher_keeps_host_runner_separate_from_docker_paths() -> None:
@@ -28,3 +30,13 @@ def test_portfolio_launcher_keeps_host_runner_separate_from_docker_paths() -> No
     assert '$env:AI_VIDEO_LLM_BASE_URL = "$OllamaUrl/v1"' in source
     assert "API_KEY" not in source
     assert "SECRET_KEY" not in source
+
+
+def test_portfolio_launcher_runs_strict_host_preflight_before_media() -> None:
+    source = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "windows_runtime_preflight.py" in source
+    assert "--require-comfyui" in source
+    assert "--require-ollama-model" in source
+    assert "--validate-comfyui-assets" in source
+    assert "COMFYUI_ROOT" in source

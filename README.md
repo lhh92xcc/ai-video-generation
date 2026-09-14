@@ -189,6 +189,33 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
 不是首个视觉 smoke 的前置条件；需要唇形同步时，再按 [即梦/外部 Provider 接入准备单](docs/10-jimeng-integration-brief.md)
 和 MuseTalk 运行说明单独验收。
 
+正式运行前，入口还会调用只读的 `scripts/windows_runtime_preflight.py`，检查仓库
+workflow、ComfyUI 节点、Ollama 模型以及（设置 `COMFYUI_ROOT` 后）宿主机模型和
+custom node。检查结果默认写入 `.tmp/windows-portfolio-preflight.json`，也可以通过
+`-PreflightReportPath` 指定路径；该 JSON 只包含检查状态、脱敏 endpoint、Provider/模型
+名称和失败提示，不读取或写入 API Key：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
+  -Shots 1 -ShotDuration 3 -QualityProfile local_safe `
+  -PreflightReportPath .tmp\windows-preflight.json `
+  -OutputDir .tmp\portfolio-smoke
+```
+
+也可以单独执行完整的 Docker/宿主机检查，并用 `-ReportPath` 保存媒体前置报告：
+
+```powershell
+.\scripts\check-windows-gpu.ps1 `
+  -ProjectRoot (Get-Location).Path `
+  -ComfyUIRoot $env:COMFYUI_ROOT `
+  -RequireComfyUI -ValidateComfyUIAssets -RequireOllamaModel `
+  -RequireComposeMedia `
+  -ReportPath .tmp\windows-preflight.json
+```
+
+`status=passed` 仅表示机器和输入契约满足生成前置条件，不表示画面、动作、配音、字幕或
+唇形同步已经通过人工验收；失败报告应随本次 smoke 保留，便于排障复盘。
+
 ## 配置与安全
 
 - `config/config.example.toml`：不含密钥的配置示例。

@@ -15,9 +15,11 @@ import os
 import sys
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -33,6 +35,15 @@ class CheckResult:
         if self.ok:
             return "PASS"
         return "FAIL" if self.required else "WARN"
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "status": self.status,
+            "ok": self.ok,
+            "required": self.required,
+            "message": self.message,
+        }
 
 
 IMAGE_NODES = (
@@ -54,6 +65,30 @@ VIDEO_NODES = (
     "WanVideoSampler",
     "VHS_VideoCombine",
 )
+
+PREFLIGHT_REPORT_SCHEMA_VERSION = 1
+
+
+def _safe_url(value: str) -> str:
+    """Keep endpoint diagnostics while removing credentials and query tokens."""
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return "<invalid-url>"
+    if not parsed.scheme or not parsed.netloc:
+        return "<invalid-url>"
+    try:
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return "<invalid-url>"
+    if not host:
+        return "<invalid-url>"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host if port is None else f"{host}:{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
 def _env_or(config: dict[str, Any], section: str, key: str, env_name: str, default: str) -> str:
@@ -114,6 +149,7 @@ class WindowsRuntimePreflight:
         *,
         project_root: Path,
         comfyui_root: Path | None,
+        config_path: Path | None = None,
         require_comfyui: bool,
         validate_comfyui_assets: bool,
         require_ollama_model: bool,
@@ -121,9 +157,13 @@ class WindowsRuntimePreflight:
         comfyui_url: str = "http://127.0.0.1:8188",
         ollama_url: str = "http://127.0.0.1:11434",
         musetalk_url: str = "http://127.0.0.1:8090",
+        report_path: Path | None = None,
     ) -> None:
         self.project_root = project_root
         self.comfyui_root = comfyui_root
+        self.config_path = config_path or (
+            project_root / "config" / "config.windows_gpu.toml"
+        )
         self.require_comfyui = require_comfyui
         self.validate_comfyui_assets = validate_comfyui_assets
         self.require_ollama_model = require_ollama_model
@@ -131,6 +171,7 @@ class WindowsRuntimePreflight:
         self.comfyui_url = comfyui_url.rstrip("/")
         self.ollama_url = ollama_url.rstrip("/")
         self.musetalk_url = musetalk_url.rstrip("/")
+        self.report_path = report_path
         self.results: list[CheckResult] = []
         self.config: dict[str, Any] = {}
 
@@ -155,15 +196,101 @@ class WindowsRuntimePreflight:
             self._check_comfyui_assets()
 
         failures = [result.name for result in self.results if not result.ok and result.required]
+        exit_code = 1 if failures else 0
         print("")
         if failures:
             print("媒体前置检查失败：" + ", ".join(failures))
-            return 1
-        print("媒体前置检查通过。")
-        return 0
+        else:
+            print("媒体前置检查通过。")
+        self._write_report(exit_code)
+        return exit_code
+
+    def _write_report(self, exit_code: int) -> None:
+        if self.report_path is None:
+            return
+
+        passed = sum(result.ok for result in self.results)
+        failed = sum(not result.ok and result.required for result in self.results)
+        warnings = sum(not result.ok and not result.required for result in self.results)
+        app_config = self.config.get("app", {})
+        payload = {
+            "schema_version": PREFLIGHT_REPORT_SCHEMA_VERSION,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "status": "passed" if exit_code == 0 else "failed",
+            "project_root": str(self.project_root),
+            "comfyui_root": str(self.comfyui_root) if self.comfyui_root else None,
+            "profile": app_config.get("profile"),
+            "requirements": {
+                "comfyui": self.require_comfyui,
+                "comfyui_assets": self.validate_comfyui_assets,
+                "ollama_model": self.require_ollama_model,
+                "musetalk": self.require_musetalk,
+            },
+            "endpoints": {
+                "comfyui": _safe_url(self.comfyui_url),
+                "ollama": _safe_url(self.ollama_url),
+                "musetalk": _safe_url(self.musetalk_url),
+            },
+            "models": {
+                "llm": _env_or(self.config, "llm", "model", "AI_VIDEO_LLM_MODEL", "qwen2.5:7b"),
+                "image": _env_or(
+                    self.config,
+                    "image_generation",
+                    "model",
+                    "AI_VIDEO_IMAGE_MODEL",
+                    "flux1-schnell-Q4_K_S.gguf",
+                ),
+                "video": _env_or(
+                    self.config,
+                    "video_generation",
+                    "model",
+                    "AI_VIDEO_VIDEO_MODEL",
+                    "wan2.1-i2v-14b-480p-Q4_K_S.gguf",
+                ),
+            },
+            "providers": {
+                "llm": _env_or(
+                    self.config, "llm", "provider", "AI_VIDEO_LLM_PROVIDER", "ollama"
+                ),
+                "image": _env_or(
+                    self.config,
+                    "image_generation",
+                    "provider",
+                    "AI_VIDEO_IMAGE_PROVIDER",
+                    "comfyui",
+                ),
+                "video": _env_or(
+                    self.config,
+                    "video_generation",
+                    "provider",
+                    "AI_VIDEO_VIDEO_PROVIDER",
+                    "comfyui_wan_i2v",
+                ),
+            },
+            "summary": {
+                "passed": passed,
+                "failed": failed,
+                "warnings": warnings,
+                "total": len(self.results),
+            },
+            "checks": [result.as_dict() for result in self.results],
+        }
+        target = self.report_path
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(target.name + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(target)
+            print(f"检查报告已写入：{target}")
+        except OSError as exc:
+            # A report is useful but must not mask the actual preflight result.
+            print(f"[WARN] 无法写入检查报告 {target}：{exc}")
 
     def _load_config(self) -> None:
-        path = self.project_root / "config" / "config.windows_gpu.toml"
+        path = self.config_path
         if not path.is_file():
             self.add("Windows 配置", False, f"配置不存在：{path}")
             return
@@ -176,13 +303,25 @@ class WindowsRuntimePreflight:
 
     def _check_project_workflows(self) -> None:
         image_path = self.project_root / _env_or(
-            self.config, "image_generation", "workflow_path", "AI_VIDEO_IMAGE_WORKFLOW_PATH", "config/comfyui/flux-schnell-t2i-api.json"
+            self.config,
+            "image_generation",
+            "workflow_path",
+            "AI_VIDEO_IMAGE_WORKFLOW_PATH",
+            "config/comfyui/flux-schnell-t2i-api.json",
         )
         identity_path = self.project_root / _env_or(
-            self.config, "image_generation", "identity_workflow_path", "AI_VIDEO_IMAGE_IDENTITY_WORKFLOW_PATH", "config/comfyui/flux-schnell-faceid-reference-api.json"
+            self.config,
+            "image_generation",
+            "identity_workflow_path",
+            "AI_VIDEO_IMAGE_IDENTITY_WORKFLOW_PATH",
+            "config/comfyui/flux-schnell-faceid-reference-api.json",
         )
         video_path = self.project_root / _env_or(
-            self.config, "video_generation", "workflow_path", "AI_VIDEO_VIDEO_WORKFLOW_PATH", "config/comfyui/wan2.1-i2v-api.json"
+            self.config,
+            "video_generation",
+            "workflow_path",
+            "AI_VIDEO_VIDEO_WORKFLOW_PATH",
+            "config/comfyui/wan2.1-i2v-api.json",
         )
 
         self._check_workflow(
@@ -223,7 +362,9 @@ class WindowsRuntimePreflight:
         serialized = json.dumps(workflow, ensure_ascii=False)
         classes = _workflow_classes(workflow)
         missing_nodes = [node for node in required_nodes if node not in classes]
-        missing_placeholders = [marker for marker in required_placeholders if marker not in serialized]
+        missing_placeholders = [
+            marker for marker in required_placeholders if marker not in serialized
+        ]
         if missing_nodes or missing_placeholders:
             details: list[str] = []
             if missing_nodes:
@@ -244,7 +385,12 @@ class WindowsRuntimePreflight:
 
         node_info, error = _request_json(_join_url(self.comfyui_url, "/object_info"), timeout=10.0)
         if node_info is None:
-            self.add("ComfyUI 节点清单", False, error or "无法读取 /object_info", required=required)
+            self.add(
+                "ComfyUI 节点清单",
+                False,
+                error or "无法读取 /object_info",
+                required=required,
+            )
             return
         available = set(node_info)
         expected = set(IMAGE_NODES + IDENTITY_NODES + VIDEO_NODES)
@@ -276,7 +422,10 @@ class WindowsRuntimePreflight:
             self.add(
                 "Ollama 模型",
                 False,
-                f"未找到 {model}，当前模型：{', '.join(sorted(name for name in names if name != 'None')) or '无'}",
+                (
+                    f"未找到 {model}，当前模型："
+                    f"{', '.join(sorted(name for name in names if name != 'None')) or '无'}"
+                ),
                 required=self.require_ollama_model,
             )
 
@@ -299,17 +448,29 @@ class WindowsRuntimePreflight:
 
     def _check_comfyui_assets(self) -> None:
         if self.comfyui_root is None:
-            self.add("ComfyUI 模型目录", False, "需要 -ComfyUIRoot 或 COMFYUI_ROOT 才能检查实际文件")
+            self.add(
+                "ComfyUI 模型目录",
+                False,
+                "需要 -ComfyUIRoot 或 COMFYUI_ROOT 才能检查实际文件",
+            )
             return
         if not self.comfyui_root.is_dir():
             self.add("ComfyUI 模型目录", False, f"目录不存在：{self.comfyui_root}")
             return
 
         image_model = _env_or(
-            self.config, "image_generation", "model", "AI_VIDEO_IMAGE_MODEL", "flux1-schnell-Q4_K_S.gguf"
+            self.config,
+            "image_generation",
+            "model",
+            "AI_VIDEO_IMAGE_MODEL",
+            "flux1-schnell-Q4_K_S.gguf",
         )
         video_model = _env_or(
-            self.config, "video_generation", "model", "AI_VIDEO_VIDEO_MODEL", "wan2.1-i2v-14b-480p-Q4_K_S.gguf"
+            self.config,
+            "video_generation",
+            "model",
+            "AI_VIDEO_VIDEO_MODEL",
+            "wan2.1-i2v-14b-480p-Q4_K_S.gguf",
         )
         required_files = (
             ("Flux 模型", self.comfyui_root / "models" / "unet" / image_model),
@@ -326,7 +487,10 @@ class WindowsRuntimePreflight:
             ),
             (
                 "Wan T5",
-                self.comfyui_root / "models" / "text_encoders" / "umt5-xxl-enc-fp8_e4m3fn.safetensors",
+                self.comfyui_root
+                / "models"
+                / "text_encoders"
+                / "umt5-xxl-enc-fp8_e4m3fn.safetensors",
             ),
             (
                 "Wan VAE",
@@ -362,19 +526,29 @@ class WindowsRuntimePreflight:
         )
 
         eva_candidates = (
-            Path(os.getenv("USERPROFILE", "")) / ".cache" / "clip" / "EVA02_CLIP_L_336_psz14_s6B.pt",
+            Path(os.getenv("USERPROFILE", ""))
+            / ".cache"
+            / "clip"
+            / "EVA02_CLIP_L_336_psz14_s6B.pt",
             self.comfyui_root / "models" / "clip" / "EVA02_CLIP_L_336_psz14_s6B.pt",
         )
         self.add(
             "PuLID EVA-CLIP",
             _check_any_file(eva_candidates),
-            "已找到 EVA-CLIP" if _check_any_file(eva_candidates) else "未找到；按 PuLID 安装方式放入用户缓存或 ComfyUI/models/clip",
+            "已找到 EVA-CLIP"
+            if _check_any_file(eva_candidates)
+            else "未找到；按 PuLID 安装方式放入用户缓存或 ComfyUI/models/clip",
         )
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)
+    parser.add_argument(
+        "--config-path",
+        type=Path,
+        help="可选运行档案 TOML；省略时使用 config/config.windows_gpu.toml。",
+    )
     parser.add_argument("--comfyui-root", type=Path)
     parser.add_argument("--require-comfyui", action="store_true")
     parser.add_argument("--validate-comfyui-assets", action="store_true")
@@ -383,6 +557,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--comfyui-url", default="http://127.0.0.1:8188")
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     parser.add_argument("--musetalk-url", default="http://127.0.0.1:8090")
+    parser.add_argument(
+        "--report-path",
+        type=Path,
+        help=(
+            "可选 JSON 报告路径；只写入检查结果，不会写入 API Key 或请求内容。"
+        ),
+    )
     return parser
 
 
@@ -391,6 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     checker = WindowsRuntimePreflight(
         project_root=args.project_root.resolve(),
         comfyui_root=args.comfyui_root.resolve() if args.comfyui_root else None,
+        config_path=args.config_path.resolve() if args.config_path else None,
         require_comfyui=args.require_comfyui,
         validate_comfyui_assets=args.validate_comfyui_assets,
         require_ollama_model=args.require_ollama_model,
@@ -398,6 +580,7 @@ def main(argv: list[str] | None = None) -> int:
         comfyui_url=args.comfyui_url,
         ollama_url=args.ollama_url,
         musetalk_url=args.musetalk_url,
+        report_path=args.report_path.resolve() if args.report_path else None,
     )
     return checker.run()
 

@@ -16,6 +16,7 @@ param(
     [switch]$Resume,
     [ValidateRange(1, 12)]
     [int]$StopAfterShot = 0,
+    [string]$PreflightReportPath = ".tmp/windows-portfolio-preflight.json",
     [switch]$SkipPreflight
 )
 
@@ -43,12 +44,44 @@ function Test-Endpoint {
     }
 }
 
+function Resolve-ProjectPath {
+    param([string]$PathValue)
+    if ([System.IO.Path]::IsPathRooted($PathValue)) {
+        return $PathValue
+    }
+    return Join-Path $ProjectRoot $PathValue
+}
+
 Push-Location $ProjectRoot
 try {
     if (-not $SkipPreflight) {
         Write-Host "作品集 Demo 运行前检查（按内存档案，不绑定具体 GPU 型号）" -ForegroundColor Cyan
         Test-Endpoint -Name "ComfyUI" -Uri "$ComfyUIUrl/system_stats"
         Test-Endpoint -Name "Ollama" -Uri "$OllamaUrl/api/tags"
+        $preflight = Join-Path $ProjectRoot "scripts\windows_runtime_preflight.py"
+        $preflightArgs = @(
+            $preflight,
+            "--project-root", $ProjectRoot,
+            "--config-path", (Resolve-Path (Resolve-ProjectPath $ConfigPath)).Path,
+            "--comfyui-url", $ComfyUIUrl,
+            "--ollama-url", $OllamaUrl,
+            "--require-comfyui",
+            "--require-ollama-model",
+            "--report-path", (Resolve-ProjectPath $PreflightReportPath)
+        )
+        if (-not [string]::IsNullOrWhiteSpace($env:COMFYUI_ROOT)) {
+            $preflightArgs += @("--comfyui-root", $env:COMFYUI_ROOT, "--validate-comfyui-assets")
+        } else {
+            Write-Warning "未设置 COMFYUI_ROOT，将跳过宿主机模型文件检查；建议配置后再跑正式样片。"
+        }
+        $preflightPython = Get-Command python -ErrorAction SilentlyContinue
+        if ($null -eq $preflightPython) {
+            throw "找不到 Python，无法执行 Windows 媒体前置检查。"
+        }
+        & $preflightPython.Source @preflightArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Windows 媒体前置检查失败。请查看 $PreflightReportPath 后修复，再重新运行。"
+        }
     }
 
     $env:AI_VIDEO_PROFILE = "windows_gpu"

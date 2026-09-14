@@ -4,9 +4,11 @@ param(
     [string]$ComfyUIRoot = $env:COMFYUI_ROOT,
     [string]$ComfyUIPython = $env:COMFYUI_PYTHON,
     [string]$PreflightPython = $env:PYTHON,
+    [string]$ConfigPath = "config/config.windows_gpu.toml",
     [string]$ComfyUIUrl = "http://127.0.0.1:8188",
     [string]$OllamaUrl = "http://127.0.0.1:11434",
     [string]$MuseTalkUrl = "http://127.0.0.1:8090",
+    [string]$ReportPath = "",
     [switch]$RequireComfyUI,
     [switch]$ValidateComfyUIAssets,
     [switch]$RequireOllamaModel,
@@ -93,9 +95,15 @@ function Invoke-MediaPreflight {
         return
     }
 
+    $configTarget = if ([System.IO.Path]::IsPathRooted($ConfigPath)) {
+        $ConfigPath
+    } else {
+        Join-Path $ProjectRoot $ConfigPath
+    }
     $arguments = @(
         $preflightScript,
         "--project-root", $ProjectRoot,
+        "--config-path", $configTarget,
         "--comfyui-url", $ComfyUIUrl,
         "--ollama-url", $OllamaUrl,
         "--musetalk-url", $MuseTalkUrl
@@ -107,6 +115,14 @@ function Invoke-MediaPreflight {
     if ($ValidateComfyUIAssets) { $arguments += "--validate-comfyui-assets" }
     if ($RequireOllamaModel) { $arguments += "--require-ollama-model" }
     if ($RequireMuseTalk) { $arguments += "--require-musetalk" }
+    if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {
+        $reportTarget = if ([System.IO.Path]::IsPathRooted($ReportPath)) {
+            $ReportPath
+        } else {
+            Join-Path $ProjectRoot $ReportPath
+        }
+        $arguments += @("--report-path", $reportTarget)
+    }
 
     & $python @arguments
     $preflightExitCode = $LASTEXITCODE
