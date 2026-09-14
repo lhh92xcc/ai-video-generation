@@ -525,18 +525,23 @@ class WindowsRuntimePreflight:
             "已找到全部模型" if not missing else "缺少：" + ", ".join(missing),
         )
 
-        eva_candidates = (
-            Path(os.getenv("USERPROFILE", ""))
-            / ".cache"
-            / "clip"
-            / "EVA02_CLIP_L_336_psz14_s6B.pt",
-            self.comfyui_root / "models" / "clip" / "EVA02_CLIP_L_336_psz14_s6B.pt",
-        )
+        eva_filename = "EVA02_CLIP_L_336_psz14_s6B.pt"
+        eva_candidates: list[Path] = []
+        user_profile = os.getenv("USERPROFILE", "").strip()
+        if user_profile:
+            eva_candidates.append(Path(user_profile) / ".cache" / "clip" / eva_filename)
+        # The PuLID loader uses expanduser(), and the Mac setup script stores
+        # the weight in the same cache layout.  Path.home() also remains the
+        # reliable fallback on Windows when USERPROFILE is unavailable in a
+        # stripped-down service environment.
+        eva_candidates.append(Path.home() / ".cache" / "clip" / eva_filename)
+        eva_candidates.append(self.comfyui_root / "models" / "clip" / eva_filename)
+        eva_candidates_tuple = tuple(dict.fromkeys(eva_candidates))
         self.add(
             "PuLID EVA-CLIP",
-            _check_any_file(eva_candidates),
+            _check_any_file(eva_candidates_tuple),
             "已找到 EVA-CLIP"
-            if _check_any_file(eva_candidates)
+            if _check_any_file(eva_candidates_tuple)
             else "未找到；按 PuLID 安装方式放入用户缓存或 ComfyUI/models/clip",
         )
 

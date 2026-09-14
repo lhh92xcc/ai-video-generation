@@ -115,6 +115,32 @@ def test_windows_preflight_requires_comfyui_root_for_model_validation() -> None:
     assert result.required is True
 
 
+def test_windows_preflight_accepts_path_home_eva_cache_without_userprofile(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    eva_path = tmp_path / ".cache" / "clip" / "EVA02_CLIP_L_336_psz14_s6B.pt"
+    eva_path.parent.mkdir(parents=True)
+    eva_path.write_bytes(b"eva")
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    checker = WindowsRuntimePreflight(
+        project_root=PROJECT_ROOT,
+        comfyui_root=tmp_path,
+        require_comfyui=False,
+        validate_comfyui_assets=True,
+        require_ollama_model=False,
+        require_musetalk=False,
+    )
+
+    checker._load_config()
+    checker._check_comfyui_assets()
+
+    result = next(item for item in checker.results if item.name == "PuLID EVA-CLIP")
+    assert result.ok is True
+
+
 def test_windows_launcher_forwards_strict_media_checks() -> None:
     launcher = (PROJECT_ROOT / "scripts" / "start-windows-gpu.ps1").read_text(encoding="utf-8")
 

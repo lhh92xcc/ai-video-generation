@@ -191,7 +191,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
 
 正式运行前，入口还会调用只读的 `scripts/windows_runtime_preflight.py`，检查仓库
 workflow、ComfyUI 节点、Ollama 模型以及（设置 `COMFYUI_ROOT` 后）宿主机模型和
-custom node。检查结果默认写入 `.tmp/windows-portfolio-preflight.json`，也可以通过
+custom node。PuLID 的 EVA-CLIP 权重支持用户缓存目录（Windows 的
+`%USERPROFILE%\\.cache\\clip` / 当前用户 home 的 `.cache/clip`）或
+`ComfyUI/models/clip`，避免因为运行方式不同导致“文件已下载但检查不到”。检查结果默认写入 `.tmp/windows-portfolio-preflight.json`，也可以通过
 `-PreflightReportPath` 指定路径；该 JSON 只包含检查状态、脱敏 endpoint、Provider/模型
 名称和失败提示，不读取或写入 API Key：
 
