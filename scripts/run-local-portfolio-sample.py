@@ -354,7 +354,12 @@ def _formal_portfolio_eligible(
     video_provider: str | None,
     shot_keyframe_mode: str,
 ) -> bool:
-    """Return whether the run used the minimum formal portfolio path."""
+    """Return whether the run used the minimum formal portfolio path.
+
+    A one-to-seven-shot run is intentionally a smoke or checkpoint exercise;
+    it must not be labelled as a formal 45--60 second portfolio candidate even
+    when it uses a real video Provider and identity keyframes.
+    """
 
     return (
         8 <= shot_count <= PORTFOLIO_MAX_SHOTS
