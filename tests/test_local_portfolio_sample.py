@@ -80,6 +80,18 @@ def test_portfolio_sample_has_twelve_short_drama_scenes_for_the_8_to_12_target()
     assert all("photorealistic" in scene[2] for scene in scenes)
 
 
+def test_portfolio_scene_prompts_lock_illustrated_style_and_vary_composition() -> None:
+    prompts = [prompt for _title, _voiceover, prompt in _narration_scenes()]
+
+    assert all("single coherent 9:16 illustrated frame" in prompt for prompt in prompts)
+    assert all("flat 2D manhwa" in prompt for prompt in prompts)
+    assert all("cinematic vertical" not in prompt for prompt in prompts)
+    assert len(set(prompts)) == len(prompts)
+    assert any("over-the-shoulder" in prompt for prompt in prompts)
+    assert any("mirror" in prompt for prompt in prompts)
+    assert any("high-angle" in prompt for prompt in prompts)
+
+
 def test_sample_config_follows_environment_instead_of_assuming_mac_private_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

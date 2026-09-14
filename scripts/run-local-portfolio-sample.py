@@ -136,13 +136,19 @@ PORTFOLIO_MAX_SHOTS = int(PORTFOLIO_TARGET["shot_count"]["max"])
 PORTFOLIO_STYLE_LOCK = (
     "flat 2D manhwa/webtoon animation keyframe, shared visual bible across the entire sample, "
     "bold clean ink outlines with stable line weight, matte cel-shaded color blocks, "
-    "simplified illustrated shapes, controlled illustrated lighting, one clear visual focal point, "
+    "simplified graphic shapes, crisp readable silhouettes, controlled illustrated lighting, "
+    "one clear visual focal point, sharp illustration with no depth-of-field blur, "
     "never photographic, never semi-realistic, never a 3D render"
 )
 PORTFOLIO_STYLE_NEGATIVE_LOCK = (
-    "photorealistic, photographic lens, realistic skin or material texture, semi-realistic, "
+    "photorealistic, photographic lens, cinematic bokeh, depth-of-field blur, soft focus, "
+    "realistic skin or material texture, semi-realistic, "
     "oil painting, painterly brushwork, glossy 3D render, commercial product shot, "
     "style mixing, visual-bible drift, duplicate subject, split frame, collage, text, watermark"
+)
+PORTFOLIO_COMPOSITION_LOCK = (
+    "single coherent 9:16 illustrated frame, no repeated background plate, no generic reuse of the "
+    "previous shot's composition, make the stated shot size and focal object unmistakable"
 )
 PORTFOLIO_HUMAN_REVIEW_ITEMS = (
     {
@@ -1172,69 +1178,83 @@ def _narration_scenes() -> list[NarrationScene]:
         (
             "旧城区的钟表店",
             "旧城区的钟表店里，林默每晚都能听见墙后传来三下钟声，",
-            "cinematic vertical establishing shot of an old clock shop in a rainy Chinese city at night, warm window light, mysterious atmosphere",
+            "flat 2D manhwa wide establishing shot, an old clock shop wedged between narrow rainy-city buildings, "
+            "empty street, one warm shop window, red hanging lantern, readable architectural silhouette, "
+            "no close-up and no visible face",
         ),
         (
             "墙后的三下钟声",
             "今晚第三声落下，店里的钟表指针同时停住，",
-            "cinematic vertical interior shot of an old Chinese clock shop at midnight, dozens of mechanical clocks frozen at different times, rain on the window, warm amber light",
+            "flat 2D manhwa insert shot, one large wall clock and a row of smaller clock faces inside the shop, "
+            "all hands stopped together at twelve, graphic clock shapes, a narrow rain-streaked window in the background, "
+            "no people",
         ),
         (
             "停在十二点的怀表",
             "雨夜里，黑伞女孩把十二点的怀表放上柜台，",
-            "cinematic vertical medium shot inside a vintage clock shop, a mysterious young Chinese woman with a black umbrella places an antique bronze pocket watch on the counter",
+            "flat 2D manhwa medium shot, the black-umbrella girl in a black coat places one bronze pocket watch on a wooden counter, "
+            "her face and hands clearly readable, clocks remain secondary background shapes, one continuous action",
         ),
         (
             "来访者的警告",
             "她只说：听见第四声，你就回不到今天；",
-            "cinematic vertical close-up of a mysterious young Chinese woman in a black coat inside a vintage clock shop, holding a bronze pocket watch, tense eye contact, rainy night",
+            "flat 2D manhwa sharp close-up portrait, the black-umbrella girl looks toward camera with a restrained warning, "
+            "clean ink facial planes, black coat collar, one bronze watch held low and partially visible, no blur, no second face",
         ),
         (
             "一分钟的秘密",
             "怀表重新走动，整条街倒退一分钟，",
-            "cinematic vertical close-up of an antique bronze pocket watch at twelve o'clock, clock gears and dust in warm light, suspenseful fantasy drama",
+            "flat 2D manhwa extreme close-up insert, one bronze pocket watch with its second hand moving backward, "
+            "simple graphic gear shapes and a warm highlight, clean contour lines, no photographic macro texture",
         ),
         (
             "少了一格的时间",
             "秒针逆行，灰尘归位，雨声突然消失，",
-            "cinematic vertical close-up of antique wall clocks in a Chinese clock shop, second hands moving backward, dust reversing in the air, supernatural warm and blue lighting",
+            "flat 2D manhwa overhead detail shot, a single clockmaker table with scattered dust grains returning toward the stopped watch, "
+            "blue and amber cel-shaded lighting, visibly reversed motion cue, no people",
         ),
         (
             "凝固的雨声",
             "门外人群凝固，像一张被按下暂停的照片，",
-            "cinematic vertical dramatic shot of a young Chinese clockmaker in a dark coat inside a clock shop, frozen rainy street visible through the window, supernatural stillness",
+            "flat 2D manhwa wide shot from inside the shop,林默 shown as one small dark silhouette behind the window while the street crowd freezes in the rain, "
+            "strong foreground-window frame, clear depth layers, no close face and no extra protagonist",
         ),
         (
             "不该打开的门",
             "女孩指向旧地图：钟声来自一扇禁门；",
-            "cinematic vertical over-the-shoulder shot of a mysterious woman pointing at an old city map behind a clock shop wall, hidden doorway, blue and amber lighting",
+            "flat 2D manhwa over-the-shoulder shot, the black-umbrella girl points at a hand-drawn city map pinned beside a concealed wooden door, "
+            "her shoulder in the foreground, one clear map and door as the focal point,林默 only a secondary back silhouette",
         ),
         (
             "暗缝里的台阶",
             "林默推开木板，沿地下台阶走进黑暗，",
-            "cinematic vertical shot looking down into a hidden basement staircase behind an old map in a clock shop, bronze pocket watch glowing in a young man's hand, blue darkness and amber rim light",
+            "flat 2D manhwa high-angle shot looking down a narrow hidden staircase,林默's back and one raised hand on the wooden hatch, "
+            "the bronze watch gives a small amber glow, blue shadow planes, one readable descending direction",
         ),
         (
             "暗门后的钟室",
             "暗门尽头，是一间没有出口的钟室，第四声正在黑暗里回响，",
-            "cinematic vertical fantasy shot inside a hidden underground clock room, a young Chinese clockmaker holding a bronze pocket watch, concentric mechanical clocks and blue darkness, no extra people",
+            "flat 2D manhwa wide interior shot of a hidden underground clock room,林默 stands alone at the bottom center holding the bronze watch, "
+            "three large concentric clock faces form the background, blue darkness and amber rim light, no extra people",
         ),
         (
             "明天的自己",
             "最后一声钟响，他看见明天的自己在黑暗里摇头，",
-            "cinematic vertical fantasy close-up in a hidden underground clock room, young Chinese clockmaker holding a bronze pocket watch, a restrained future reflection of the same man in darkness, cinematic rim light",
+            "flat 2D manhwa medium shot,林默 stands beside a tall cracked mirror in the underground clock room, "
+            "the reflection is a simplified dark silhouette of the same coat shaking its head, no second detailed face, no duplicate body",
         ),
         (
             "回到十二点",
             "林默握紧怀表，终于明白，明天正在等他作出选择。",
-            "cinematic vertical closing shot of a young Chinese clockmaker standing before a hidden clock-room doorway, bronze pocket watch stopped at twelve, warm light returning through rainy blue darkness, quiet hopeful suspense",
+            "flat 2D manhwa closing medium-wide shot,林默 stands before the hidden doorway and holds the bronze watch at twelve, "
+            "a narrow warm beam returns through the blue underground darkness, one hopeful clear silhouette, restrained ending composition",
         ),
     ]
     return [
         (
             title,
             voiceover,
-            f"{PORTFOLIO_STYLE_LOCK}. {visual_prompt}. {PORTFOLIO_STYLE_NEGATIVE_LOCK}",
+            f"{PORTFOLIO_STYLE_LOCK}. {PORTFOLIO_COMPOSITION_LOCK}. {visual_prompt}. {PORTFOLIO_STYLE_NEGATIVE_LOCK}",
         )
         for title, voiceover, visual_prompt in scenes
     ]
@@ -2665,7 +2685,7 @@ def _reference_prompt(asset_name: str) -> str:
             f"{PORTFOLIO_STYLE_LOCK}, single empty continuous background plate, "
             "one coherent old Chinese urban clock shop at night, "
             "wooden counter, many mechanical clocks on the wall, warm amber lamps, "
-            "rainy street visible through one window, cinematic vertical composition, "
+            "rainy street visible through one window, flat illustrated vertical composition, "
             "no people, no duplicate windows, no duplicate room, " + single_frame
         ),
         "铜色怀表": (
@@ -3168,7 +3188,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             task, _ = await image_service.create_task(
                 by_name[asset_name].id,
                 ReferenceImageCreateRequest(
-                    style="cinematic vertical portfolio keyframe",
+                    style="flat 2D manhwa portfolio keyframe",
                     prompt_override=_reference_prompt(asset_name),
                     width=settings.image_width,
                     height=settings.image_height,
