@@ -280,7 +280,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-截至 2026-09-14，后端全量回归为 `420 passed、7 skipped、1 warning`；前端隔离组件测试为 `20 passed`，Vite 生产构建为 `63 modules transformed`。主目录前端依赖仍受 iCloud 文件状态影响，因此前端结果来自复制当前源码、清单和测试后重新安装锁定依赖的隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 通过。本轮没有启动 Windows/CUDA、真实 Wan、InsightFace、MuseTalk 或外部付费 API；真实媒体质量仍需目标 GPU 主机验收。
+截至 2026-09-14，后端全量回归为 `428 passed、7 skipped、1 warning`；前端隔离组件测试为 `21 passed`，Docker 生产构建中的 TypeScript 检查和 Vite 构建完成 `63 modules transformed`。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 通过。本轮已用最新公开提交重建并重启 Docker Compose 的 `frontend`、`api`、`worker`，`/healthz` 返回 HTTP 200，死信列表接口返回 HTTP 200；主目录前端依赖仍不作为独立测试依据。本轮没有启动 Windows/CUDA、真实 Wan、InsightFace、MuseTalk 或外部付费 API；真实媒体质量仍需目标 GPU 主机验收。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建、Docker Compose 配置校验和 Windows PowerShell 脚本语法解析。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
