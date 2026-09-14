@@ -331,8 +331,24 @@ def _ensure_portfolio_video_provider(
     )
 
 
+def _portfolio_sample_mode(
+    *,
+    shot_count: int,
+    mock_media: bool,
+    preview_only: bool,
+) -> str:
+    """Name the evidence mode without calling a short smoke a formal sample."""
+
+    if mock_media:
+        return "mock"
+    if preview_only:
+        return "preview_only"
+    return "formal" if 8 <= shot_count <= PORTFOLIO_MAX_SHOTS else "smoke"
+
+
 def _formal_portfolio_eligible(
     *,
+    shot_count: int,
     mock_media: bool,
     preview_only: bool,
     video_provider: str | None,
@@ -341,7 +357,8 @@ def _formal_portfolio_eligible(
     """Return whether the run used the minimum formal portfolio path."""
 
     return (
-        not mock_media
+        8 <= shot_count <= PORTFOLIO_MAX_SHOTS
+        and not mock_media
         and not preview_only
         and _portfolio_provider_name(video_provider) in _PORTFOLIO_REAL_MOTION_PROVIDERS
         and shot_keyframe_mode != "off"
@@ -642,7 +659,11 @@ def _portfolio_readiness_report(
         "schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
         "target": PORTFOLIO_TARGET,
         "real_motion_provider": motion_contract,
-        "sample_mode": "mock" if mock_media else "preview_only" if preview_only else "formal",
+        "sample_mode": _portfolio_sample_mode(
+            shot_count=shot_count,
+            mock_media=mock_media,
+            preview_only=preview_only,
+        ),
         "readiness": {
             "status": readiness_status,
             "ready_for_portfolio": False,
@@ -3368,8 +3389,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "status": "paused",
             "quality_profile_id": quality_profile_id,
             "quality_profile": visual_quality_snapshot,
-            "sample_mode": (
-                "mock" if args.mock_media else "preview_only" if preview_only else "formal"
+            "sample_mode": _portfolio_sample_mode(
+                shot_count=len(shots),
+                mock_media=args.mock_media,
+                preview_only=preview_only,
             ),
             "project_id": str(project_id),
             "episode_id": str(episode.id),
@@ -3391,6 +3414,13 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 "subtitles": None,
             },
             "portfolio_readiness": portfolio_readiness,
+            "formal_portfolio_eligible": _formal_portfolio_eligible(
+                shot_count=len(shots),
+                mock_media=args.mock_media,
+                preview_only=preview_only,
+                video_provider=settings.video_provider,
+                shot_keyframe_mode=getattr(args, "shot_keyframe_mode", "auto"),
+            ),
             "next_command": (
                 f"AI_VIDEO_PROFILE={settings.runtime_profile} "
                 f"{config_prefix}"
@@ -3714,10 +3744,13 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         "quality_profile_id": quality_profile_id,
         "quality_profile": visual_quality_snapshot,
         "shot_keyframe_mode": getattr(args, "shot_keyframe_mode", "auto"),
-        "sample_mode": (
-            "mock" if args.mock_media else "preview_only" if preview_only else "formal"
+        "sample_mode": _portfolio_sample_mode(
+            shot_count=len(shots),
+            mock_media=args.mock_media,
+            preview_only=preview_only,
         ),
         "formal_portfolio_eligible": _formal_portfolio_eligible(
+            shot_count=len(shots),
             mock_media=args.mock_media,
             preview_only=preview_only,
             video_provider=settings.video_provider,

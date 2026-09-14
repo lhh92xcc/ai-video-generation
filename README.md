@@ -279,7 +279,7 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-截至 2026-09-14，后端全量回归为 `419 passed、7 skipped、1 warning`；前端隔离组件测试为 `20 passed`，Vite 生产构建为 `63 modules transformed`。主目录前端依赖仍受 iCloud 文件状态影响，因此前端结果来自复制当前源码、清单和测试后重新安装锁定依赖的隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 通过。本轮没有启动 Windows/CUDA、真实 Wan、InsightFace、MuseTalk 或外部付费 API；真实媒体质量仍需目标 GPU 主机验收。
+截至 2026-09-14，后端全量回归为 `420 passed、7 skipped、1 warning`；前端隔离组件测试为 `20 passed`，Vite 生产构建为 `63 modules transformed`。主目录前端依赖仍受 iCloud 文件状态影响，因此前端结果来自复制当前源码、清单和测试后重新安装锁定依赖的隔离目录；这不伪装成主目录直接构建。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 通过。本轮没有启动 Windows/CUDA、真实 Wan、InsightFace、MuseTalk 或外部付费 API；真实媒体质量仍需目标 GPU 主机验收。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建、Docker Compose 配置校验和 Windows PowerShell 脚本语法解析。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -360,7 +360,7 @@ uv run python scripts/run-novel-production.py \
 - 作品集报告版本：本地 runner 的兼容字段 `schema_version` 保持版本 `2`，创作者前台导出的 JSON 报告为 `report_schema_version=3`；正式运行中 `unavailable`、`error`、`no_face`、`reference_no_face` 和未知身份状态都会阻塞机器门禁，只有含角色镜头全部 `passed` 才能通过；纯场景/道具镜头的 `not_applicable` 不计入审核数量，也不会单独阻塞。前台人工审核要求勾选且评分至少 `3/5`，低分项目会进入“需要人工返工”。
 - 作品集运动报告：正式运行还要求所有成功视频片段都有 `motion_evidence.status=motion_detected`；`frozen` 直接阻塞，`indeterminate`/`unavailable` 等状态要求补生成或人工确认。该检测只排除完全冻结/静态回退，不评价动作是否自然、人物是否崩坏。
 - 参考图抽卡策略：首次失败的角色锚点或镜头关键帧可直接重试；不要手动改 Prompt 只为制造随机性，先让任务重试递增 `generation_attempt`，这样失败原因、seed 和 Artifact 历史仍然可追踪。
-- 正式样片门禁：非 Mock 且非预览模式只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。需要在 Mac 上只验证流程时可使用 `--preview-only`，但报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。
+- 正式样片门禁：非 Mock 且非预览模式、8～12 个镜头、启用 `auto`/`always` 逐镜头身份关键帧，并且只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。1～7 个镜头即使使用真实 Provider 也只属于 Smoke/断点演练，报告的 `sample_mode` 为 `smoke` 且 `formal_portfolio_eligible=false`。需要在 Mac 上只验证流程时可使用 `--preview-only`，报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。
 - 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
 
 这条清单把“工程闭环已完成”和“媒体质量尚未验收”分开，避免把通过单测或 FFprobe 误写成成片质量结论。

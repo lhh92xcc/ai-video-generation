@@ -38,6 +38,7 @@ _build_continuous_narration_timeline = _MODULE._build_continuous_narration_timel
 _fit_narration_artifact_to_shot = _MODULE._fit_narration_artifact_to_shot
 _portfolio_readiness_report = _MODULE._portfolio_readiness_report
 _formal_portfolio_eligible = _MODULE._formal_portfolio_eligible
+_portfolio_sample_mode = _MODULE._portfolio_sample_mode
 _ensure_portfolio_video_provider = _MODULE._ensure_portfolio_video_provider
 _assert_real_portfolio_video_artifact = _MODULE._assert_real_portfolio_video_artifact
 _resolve_sample_config = _MODULE._resolve_sample_config
@@ -154,17 +155,61 @@ def test_real_portfolio_accepts_registered_model_motion_provider() -> None:
 
 def test_formal_portfolio_eligibility_requires_identity_keyframes() -> None:
     assert _formal_portfolio_eligible(
+        shot_count=8,
         mock_media=False,
         preview_only=False,
         video_provider="comfyui_wan_i2v",
         shot_keyframe_mode="auto",
     ) is True
     assert _formal_portfolio_eligible(
+        shot_count=8,
         mock_media=False,
         preview_only=False,
         video_provider="comfyui_wan_i2v",
         shot_keyframe_mode="off",
     ) is False
+    assert _formal_portfolio_eligible(
+        shot_count=1,
+        mock_media=False,
+        preview_only=False,
+        video_provider="comfyui_wan_i2v",
+        shot_keyframe_mode="auto",
+    ) is False
+    assert _formal_portfolio_eligible(
+        shot_count=12,
+        mock_media=False,
+        preview_only=False,
+        video_provider="comfyui_wan_i2v",
+        shot_keyframe_mode="always",
+    ) is True
+
+
+def test_portfolio_sample_mode_distinguishes_smoke_from_formal_runs() -> None:
+    assert _portfolio_sample_mode(
+        shot_count=1,
+        mock_media=False,
+        preview_only=False,
+    ) == "smoke"
+    assert _portfolio_sample_mode(
+        shot_count=7,
+        mock_media=False,
+        preview_only=False,
+    ) == "smoke"
+    assert _portfolio_sample_mode(
+        shot_count=8,
+        mock_media=False,
+        preview_only=False,
+    ) == "formal"
+    assert _portfolio_sample_mode(
+        shot_count=12,
+        mock_media=False,
+        preview_only=False,
+    ) == "formal"
+    assert _portfolio_sample_mode(
+        shot_count=1,
+        mock_media=False,
+        preview_only=True,
+    ) == "preview_only"
 
 
 def test_preview_only_report_cannot_be_ready_for_portfolio() -> None:
