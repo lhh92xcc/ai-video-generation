@@ -2,10 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ApiClientError } from '../api/client'
 import { cancelProductionRun, pauseProductionRun, resumeProductionRun } from '../api/novels'
-import { cleanupTemporaryFiles, getOperationalHealth, getProductionQueue } from '../api/productionQueue'
+import { cleanupTemporaryFiles, getDeadLetters, getOperationalHealth, getProductionQueue, requeueDeadLetterTask } from '../api/productionQueue'
 import { retryTask } from '../api/tasks'
 import type {
   GenerationTaskRecord,
+  DeadLetterTaskRecord,
   OperationalComponentHealth,
   OperationalComponentStatus,
   OperationalHealthResponse,
@@ -20,6 +21,8 @@ const loading = ref(true)
 const refreshing = ref(false)
 const cleaning = ref(false)
 const retryingId = ref<string | null>(null)
+const deadLetters = ref<DeadLetterTaskRecord[]>([])
+const requeueingDeadLetterId = ref<string | null>(null)
 const runControlId = ref<string | null>(null)
 const runControlAction = ref<'pause' | 'resume' | 'cancel' | null>(null)
 const errorMessage = ref<string | null>(null)
@@ -30,6 +33,7 @@ const counts = computed(() => snapshot.value?.counts ?? {})
 const recentTasks = computed(() => snapshot.value?.tasks.slice(0, 30) ?? [])
 const activeCount = computed(() => (counts.value.queued ?? 0) + (counts.value.created ?? 0) + (counts.value.running ?? 0))
 const failedCount = computed(() => counts.value.failed ?? 0)
+const deadLetterCount = computed(() => counts.value.dead_letter ?? deadLetters.value.length)
 
 const componentLabels: Record<string, string> = {
   redis: 'Redis 队列',
@@ -84,14 +88,34 @@ async function refresh(showLoading = false) {
   else refreshing.value = true
   errorMessage.value = null
   try {
-    const [healthResponse, queueResponse] = await Promise.all([getOperationalHealth(), getProductionQueue({ limit: 100 })])
+    const [healthResponse, queueResponse, deadLetterResponse] = await Promise.all([
+      getOperationalHealth(),
+      getProductionQueue({ limit: 100 }),
+      getDeadLetters({ limit: 100 }),
+    ])
     health.value = healthResponse
     snapshot.value = queueResponse
+    deadLetters.value = deadLetterResponse.items
   } catch (error) {
     errorMessage.value = displayError(error)
   } finally {
     loading.value = false
     refreshing.value = false
+  }
+}
+
+async function requeueDeadLetter(item: DeadLetterTaskRecord) {
+  requeueingDeadLetterId.value = item.task_id
+  errorMessage.value = null
+  noticeMessage.value = null
+  try {
+    await requeueDeadLetterTask(item.task_id)
+    noticeMessage.value = '任务已人工恢复，并重新开始自动重试预算。'
+    await refresh()
+  } catch (error) {
+    errorMessage.value = displayError(error)
+  } finally {
+    requeueingDeadLetterId.value = null
   }
 }
 
@@ -181,6 +205,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
       <article class="summary-card"><div class="summary-icon blue"><span>◎</span></div><div><span>待处理任务</span><strong>{{ activeCount }}</strong><small>{{ counts.queued ?? 0 }} 排队 · {{ counts.running ?? 0 }} 运行</small></div><span class="summary-state" :class="{ good: activeCount === 0 }">{{ activeCount ? '进行中' : '空闲' }}</span></article>
       <article class="summary-card"><div class="summary-icon purple"><span>↻</span></div><div><span>自动生产 Run</span><strong>{{ snapshot?.auto_runs.length ?? 0 }}</strong><small>{{ snapshot?.profile || 'default' }}</small></div><span class="summary-state">DAG</span></article>
       <article class="summary-card"><div class="summary-icon green"><span>✓</span></div><div><span>可用磁盘</span><strong>{{ health?.disk_free_gb ?? '—' }} <em>GB</em></strong><small>临时目录可安全清理</small></div><span class="summary-state" :class="{ good: (health?.disk_free_gb ?? 0) >= 10 }">{{ (health?.disk_free_gb ?? 0) >= 10 ? '充足' : '偏低' }}</span></article>
+      <article class="summary-card"><div class="summary-icon amber"><span>!</span></div><div><span>需人工处理</span><strong>{{ deadLetterCount }}</strong><small>自动重试已耗尽</small></div><span class="summary-state" :class="{ good: deadLetterCount === 0 }">{{ deadLetterCount ? '需处理' : '清空' }}</span></article>
     </section>
 
     <section class="queue-top-grid">
@@ -204,7 +229,13 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
     <section class="card queue-runs-card">
       <div class="task-toolbar"><div><h2>自动生产 DAG</h2><p>失败任务会先按退避策略自动恢复；需要人工处理的 Run 会显示为“需处理”。</p></div><span class="table-count">{{ snapshot?.auto_runs.length ?? 0 }} 个 Run</span></div>
       <div v-if="!snapshot?.auto_runs.length" class="queue-empty">还没有自动生产 Run。可在创作者前台的分集生产计划中开启自动推进。</div>
-      <div v-else class="queue-run-list"><article v-for="run in snapshot.auto_runs" :key="run.id" class="queue-run-row"><div class="queue-run-copy"><strong>{{ run.id }}</strong><small>{{ run.succeeded_count }}/{{ run.task_count }} 完成 · {{ run.failed_count }} 失败 · 更新于 {{ formatTime(run.updated_at) }}</small></div><div class="queue-run-progress"><i><b :style="{ width: `${run.progress}%` }" /></i><small>{{ run.progress }}%</small></div><span class="task-status" :class="run.status"><i />{{ formatRunStatus(run) }}</span><div v-if="canPauseRun(run) || canResumeRun(run) || canCancelRun(run)" class="queue-run-controls"><button v-if="canPauseRun(run)" class="table-action" type="button" :aria-label="`暂停 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'pause')">{{ isControllingRun(run) && runControlAction === 'pause' ? '暂停中…' : '暂停' }}</button><button v-if="canResumeRun(run)" class="table-action primary" type="button" :aria-label="`恢复 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'resume')">{{ isControllingRun(run) && runControlAction === 'resume' ? '恢复中…' : '恢复' }}</button><button v-if="canCancelRun(run)" class="table-action danger" type="button" :aria-label="`取消 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'cancel')">{{ isControllingRun(run) && runControlAction === 'cancel' ? '取消中…' : '取消' }}</button></div></article></div>
+      <div v-else class="queue-run-list"><article v-for="run in snapshot.auto_runs" :key="run.id" class="queue-run-row"><div class="queue-run-copy"><strong>{{ run.id }}</strong><small>{{ run.succeeded_count }}/{{ run.task_count }} 完成 · {{ run.failed_count }} 失败 · {{ run.dead_letter_count ?? 0 }} 个需人工处理 · 更新于 {{ formatTime(run.updated_at) }}</small></div><div class="queue-run-progress"><i><b :style="{ width: `${run.progress}%` }" /></i><small>{{ run.progress }}%</small></div><span class="task-status" :class="run.status"><i />{{ formatRunStatus(run) }}</span><div v-if="canPauseRun(run) || canResumeRun(run) || canCancelRun(run)" class="queue-run-controls"><button v-if="canPauseRun(run)" class="table-action" type="button" :aria-label="`暂停 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'pause')">{{ isControllingRun(run) && runControlAction === 'pause' ? '暂停中…' : '暂停' }}</button><button v-if="canResumeRun(run)" class="table-action primary" type="button" :aria-label="`恢复 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'resume')">{{ isControllingRun(run) && runControlAction === 'resume' ? '恢复中…' : '恢复' }}</button><button v-if="canCancelRun(run)" class="table-action danger" type="button" :aria-label="`取消 Run ${run.id}`" :disabled="isControllingRun(run)" @click="controlRun(run, 'cancel')">{{ isControllingRun(run) && runControlAction === 'cancel' ? '取消中…' : '取消' }}</button></div></article></div>
+    </section>
+
+    <section class="card queue-task-card dead-letter-card">
+      <div class="task-toolbar"><div><h2>需人工处理</h2><p>这些任务已耗尽自动重试预算；人工恢复会保留历史，并重新开始一轮自动重试。</p></div><span class="table-count">{{ deadLetters.length }} 个任务</span></div>
+      <div v-if="!deadLetters.length" class="queue-empty">当前没有需要人工处理的任务。</div>
+      <div v-else class="queue-task-list"><article v-for="item in deadLetters" :key="item.task_id" class="queue-task-row dead-letter-row"><span class="task-type-mark failed">!</span><div class="queue-task-copy"><strong>{{ formatKind(item.kind) }} · {{ item.error_code }}</strong><small>{{ item.error_message }} · 第 {{ item.auto_retry_count }}/{{ item.max_auto_retries }} 次自动恢复 · {{ formatTime(item.last_failed_at) }}</small></div><span class="task-status failed"><i />需人工处理</span><button class="table-action primary" type="button" :disabled="requeueingDeadLetterId === item.task_id" @click="requeueDeadLetter(item)">{{ requeueingDeadLetterId === item.task_id ? '恢复中…' : '人工恢复' }}</button></article></div>
     </section>
 
     <section class="card queue-task-card">

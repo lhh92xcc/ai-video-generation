@@ -14,6 +14,7 @@ from app.domain.models import (
     TaskBatchCreateRequest,
     TaskStatus,
 )
+from app.domain.dead_letter import open_dead_letter
 from app.services.task_batch_service import TaskBatchService
 from app.repositories.in_memory import InMemoryStore
 
@@ -66,6 +67,39 @@ def test_task_batch_aggregates_status_and_resumes_failed_tasks() -> None:
         assert resumed.retried_task_ids == [failed.id]
         assert resumed.skipped_task_ids == [succeeded.id]
         assert resumed.batch.status.value == "running"
+
+
+def test_task_batch_counts_open_dead_letters_separately_from_failed_tasks() -> None:
+    async def exercise() -> None:
+        store = InMemoryStore()
+        project = await store.create_project(
+            ProjectRecord(title="死信批次", topic="死信统计", language="zh-CN", target_duration_seconds=60, aspect_ratio="9:16", tone="清晰")
+        )
+        dead = _task(project.id, TaskStatus.FAILED)
+        open_dead_letter(
+            dead.input_data,
+            error_code="VIDEO_PROVIDER_TIMEOUT",
+            error_message="provider timeout",
+            auto_retry_count=3,
+            max_auto_retries=3,
+        )
+        normal_failed = _task(project.id, TaskStatus.FAILED)
+        await store.create_task(dead)
+        await store.create_task(normal_failed)
+
+        async def retry(_task_id):
+            return None
+
+        service = TaskBatchService(store, retry)
+        batch, _ = await service.create(
+            TaskBatchCreateRequest(project_id=project.id, task_ids=[dead.id, normal_failed.id], label="死信批次"),
+            "dead-letter-batch",
+        )
+
+        assert batch.failed_count == 2
+        assert batch.dead_letter_count == 1
+
+    asyncio.run(exercise())
 
     asyncio.run(exercise())
 

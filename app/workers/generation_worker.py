@@ -16,6 +16,7 @@ from uuid import UUID
 
 from app.config import load_settings
 from app.db import create_engine, create_session_factory, init_db
+from app.domain.dead_letter import open_dead_letter
 from app.domain.production_run import AUTO_RUN_ID, AUTO_RUN_STATUS, run_status_from_tasks
 from app.domain.topic_run import TOPIC_RUN_ID, TOPIC_RUN_STATUS, topic_run_status_from_tasks
 from app.domain.models import GenerationTaskKind, GenerationTaskRecord, TaskStatus
@@ -531,7 +532,9 @@ async def _maybe_auto_retry(task, service, settings) -> bool:
         return False
     if not settings.worker_auto_retry_enabled:
         return False
-    if not _retryable_error(task.error.code if task.error else ""):
+    error_code = task.error.code if task.error else ""
+    if not _retryable_error(error_code):
+        await _open_dead_letter(task, service, settings)
         return False
     now = datetime.now(timezone.utc)
     pending = task.input_data.get("auto_retry_pending") is True
@@ -542,6 +545,7 @@ async def _maybe_auto_retry(task, service, settings) -> bool:
     else:
         count = int(task.input_data.get("auto_retry_count", 0))
         if count >= settings.worker_max_auto_retries:
+            await _open_dead_letter(task, service, settings)
             return False
         delay = min(
             settings.worker_retry_max_backoff_seconds,
@@ -576,6 +580,29 @@ async def _maybe_auto_retry(task, service, settings) -> bool:
     retried_task.input_data.pop("next_retry_at", None)
     await service._store.update_task(retried_task)
     return True
+
+
+async def _open_dead_letter(task, service, settings) -> None:
+    """Persist an operator-visible marker after automatic recovery is spent."""
+
+    latest = await service.get_task(task.id)
+    if latest.status != TaskStatus.FAILED:
+        return
+    error = latest.error
+    open_dead_letter(
+        latest.input_data,
+        error_code=error.code if error else "TASK_FAILED",
+        error_message=error.message if error else "任务失败，需要人工处理",
+        auto_retry_count=int(latest.input_data.get("auto_retry_count", 0) or 0),
+        max_auto_retries=settings.worker_max_auto_retries,
+    )
+    await service._store.update_task(latest)
+    logger.warning(
+        "task moved to dead letter task_id=%s error_code=%s auto_retry_count=%s",
+        latest.id,
+        error.code if error else "TASK_FAILED",
+        latest.input_data.get("auto_retry_count", 0),
+    )
 
 
 async def _task_run_status(store, task) -> str | None:

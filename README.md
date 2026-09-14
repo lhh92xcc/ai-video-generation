@@ -22,6 +22,7 @@
 - 远程生产队列：后台可查看 Worker、Redis、Ollama、ComfyUI、MuseTalk、GPU 锁、自动 Run 和失败任务。
 - 运行日志：后台按时间回看任务状态、阶段尝试、错误码、安全运行上下文和 Artifact 摘要；不展示 Prompt、密钥或存储路径。
 - Redis Worker 异步任务、幂等、失败重试、批次编排和 Artifact Registry。
+- 死信任务人工恢复：自动重试耗尽或不可自动恢复的任务保留为 `failed`，通过死信 marker、队列统计和人工恢复接口继续处理。
 - FFmpeg 多镜头拼接、旁白/BGM 混音、中文字幕烧录和临时下载。
 - 本地/Mock Artifact 浏览器预览：通过授权的 `/api/v1/artifacts/{artifact_id}/content` 读取图片、视频、音频和下载文件，支持 HTTP Range；资产列表默认优先展示真实图片/视频缩略图，预览失败时提供重试和签名 URL 回退，不暴露磁盘路径或内部存储 URI。
 - Vue 创作者前台与内部制作后台；根路径默认进入普通用户前台，后台“概览”提供真实运行摘要和快捷入口，Provider 配置是独立的系统页面；创作者工作区按“内容理解 / 剧本与分镜 / 资产审核 / 媒体生成 / 审核与成片”五阶段导航，并明确区分 10 个核心门槛和 11 个详细执行步骤；镜头清单支持状态筛选和关键词搜索，任务记录支持重复任务聚合；媒体资产默认以图库展示真实图片/视频缩略图，也可切换列表视图，点击后通过授权内容接口预览、播放和下载。
@@ -345,7 +346,7 @@ uv run python scripts/run-novel-production.py \
 
 关键帧 Prompt 使用分字段长度预算（`shot-keyframe-generation-v3`），为角色外貌、可见人物、连续性、地点和构图保留空间，避免长画风说明挤掉角色设定。该修复需在后续真实镜头中检验效果。
 
-这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。Mac 前置检查已能通过，MPS-first 模式下单个 Flux 4-step Prompt 实测约 534 秒，因此 Mac 适合作为流程/单张图验证机，不作为批量吞吐基线。完整登录会话、组织级权限、全局优先级/成本配额、死信队列、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
+这是用于学习、面试和端到端工程展示的 Demo，不等同于生产 SaaS。身份校准、失败镜头批量重试、声音资产、多角色音频、MuseTalk 任务/Mock/HTTP/Assembly 接口、GPU 主机运维闭环、死信任务人工恢复和远程队列页面已完成；真实 MuseTalk 仍需在目标主机配置独立 runtime、wrapper 和模型目录。Mac 前置检查已能通过，MPS-first 模式下单个 Flux 4-step Prompt 实测约 534 秒，因此 Mac 适合作为流程/单张图验证机，不作为批量吞吐基线。跨节点调度、完整登录会话、组织级权限、全局优先级/成本配额、自动发布和正式画面质量验收仍需继续完善。自动身份相似度只是初审，异常镜头仍必须人工看片。
 
 ## 作品集 Demo 验收清单
 
@@ -484,4 +485,4 @@ python scripts\recommend-quality-profile.py --vram-gb 12 --json
 
 如果要把 MuseTalk 作为正式对话镜头的必需依赖，再追加 `-RequireMuseTalk`；启动器也支持同名参数。如果暂时只检查 Docker/API 基础设施，可省略媒体检查参数。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
 
-远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue` 和 `POST /api/v1/system/cleanup`。健康接口可带 `image_provider_profile_id` / `video_provider_profile_id`，让创作者前台按当前选择的视觉档案探测 ComfyUI。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。
+远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue`、`GET /api/v1/system/dead-letters` 和 `POST /api/v1/system/cleanup`。死信任务可以通过 `POST /api/v1/system/dead-letters/{task_id}/requeue` 人工恢复；历史重试次数保留，人工恢复后重新开始自动重试预算。健康接口可带 `image_provider_profile_id` / `video_provider_profile_id`，让创作者前台按当前选择的视觉档案探测 ComfyUI。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。

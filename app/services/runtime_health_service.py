@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.domain.dead_letter import record_from_input
 from app.domain.production_run import run_status_from_tasks
 from app.domain.models import (
     OperationalComponentHealth,
@@ -111,6 +112,11 @@ class RuntimeHealthService:
         counts = {status.value: 0 for status in TaskStatus}
         for task in tasks:
             counts[task.status.value] = counts.get(task.status.value, 0) + 1
+        counts["dead_letter"] = sum(
+            task.status == TaskStatus.FAILED
+            and record_from_input(task.input_data) is not None
+            for task in tasks
+        )
         counts["total"] = len(tasks)
 
         runs: dict[str, list] = {}
@@ -127,6 +133,11 @@ class RuntimeHealthService:
             )
             succeeded = sum(task.status == TaskStatus.SUCCEEDED for task in run_tasks)
             failed = sum(task.status == TaskStatus.FAILED for task in run_tasks)
+            dead_letter = sum(
+                task.status == TaskStatus.FAILED
+                and record_from_input(task.input_data) is not None
+                for task in run_tasks
+            )
             progress = round(sum(task.progress for task in run_tasks) / len(run_tasks))
             marker_status = run_status_from_tasks(run_tasks)
             if failed and marker_status == "active":
@@ -148,6 +159,7 @@ class RuntimeHealthService:
                     "active_count": active,
                     "succeeded_count": succeeded,
                     "failed_count": failed,
+                    "dead_letter_count": dead_letter,
                     "progress": progress,
                     "episode_ids": episode_ids,
                     "updated_at": latest.isoformat(),

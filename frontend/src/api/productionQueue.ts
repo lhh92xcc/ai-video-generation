@@ -1,5 +1,11 @@
 import { apiRequest } from './client'
-import type { CleanupResponse, OperationalHealthResponse, ProductionQueueSnapshot } from '../types/task'
+import type {
+  CleanupResponse,
+  DeadLetterListResponse,
+  GenerationTaskRecord,
+  OperationalHealthResponse,
+  ProductionQueueSnapshot,
+} from '../types/task'
 
 export function getOperationalHealth(params: {
   imageProviderProfileId?: string
@@ -23,4 +29,14 @@ export function getProductionQueue(params: {
 
 export function cleanupTemporaryFiles(): Promise<CleanupResponse> {
   return apiRequest<CleanupResponse>('/api/v1/system/cleanup', { method: 'POST' })
+}
+
+export function getDeadLetters(params: { projectId?: string; limit?: number } = {}): Promise<DeadLetterListResponse> {
+  const query = new URLSearchParams({ limit: String(params.limit ?? 100) })
+  if (params.projectId) query.set('project_id', params.projectId)
+  return apiRequest<DeadLetterListResponse>(`/api/v1/system/dead-letters?${query.toString()}`)
+}
+
+export function requeueDeadLetterTask(taskId: string): Promise<GenerationTaskRecord> {
+  return apiRequest<GenerationTaskRecord>(`/api/v1/system/dead-letters/${taskId}/requeue`, { method: 'POST' })
 }

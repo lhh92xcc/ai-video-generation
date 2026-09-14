@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
+from app.domain.dead_letter import record_from_input
 from app.domain.models import (
     TaskBatchCreateRequest,
     TaskBatchRecord,
@@ -103,6 +104,11 @@ class TaskBatchService:
         existing = [task for task in tasks if task is not None]
         succeeded = sum(task.status == TaskStatus.SUCCEEDED for task in existing)
         failed = sum(task.status == TaskStatus.FAILED for task in existing)
+        dead_letter = sum(
+            task.status == TaskStatus.FAILED
+            and record_from_input(task.input_data) is not None
+            for task in existing
+        )
         active = sum(
             task.status in {
                 TaskStatus.CREATED,
@@ -127,6 +133,7 @@ class TaskBatchService:
                 "total_count": len(batch.task_ids),
                 "succeeded_count": succeeded,
                 "failed_count": failed,
+                "dead_letter_count": dead_letter,
                 "active_count": active,
                 "updated_at": utc_now(),
             }

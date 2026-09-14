@@ -29,6 +29,7 @@ from app.domain.models import (
     AudioNarrationCreateRequest,
     AudioBGMCreateRequest,
     CleanupResponse,
+    DeadLetterListResponse,
     IdentityCalibrationRequest,
     IdentityCalibrationResponse,
     IdentityRetryRequest,
@@ -158,6 +159,7 @@ from app.services.novel_service import (
 from app.services.task_service import (
     ProjectNotFoundError,
     TaskNotFoundError,
+    TaskNotDeadLetterError,
     TaskNotRetryableError,
     TaskService,
 )
@@ -553,6 +555,38 @@ async def system_queue(
         limit=limit,
         project_ids=project_ids,
     )
+
+
+@router.get(
+    "/api/v1/system/dead-letters",
+    response_model=DeadLetterListResponse,
+    tags=["system"],
+)
+async def list_dead_letters(
+    request: Request,
+    project_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+) -> DeadLetterListResponse:
+    """List failed tasks that exhausted automatic recovery."""
+
+    if project_id is not None:
+        await _require_artifact_read_permission(request, project_id)
+        items = await _service(request).list_dead_letter_tasks(
+            project_id=project_id,
+            limit=limit,
+        )
+    elif request.app.state.settings.auth_mode != "local":
+        accessible = await _access_service(request).list_accessible_projects(
+            await _novel_service(request).list_projects(),
+            _identity(request),
+        )
+        items = await _service(request).list_dead_letter_tasks(
+            project_ids={project.id for project in accessible},
+            limit=limit,
+        )
+    else:
+        items = await _service(request).list_dead_letter_tasks(limit=limit)
+    return DeadLetterListResponse(items=items, total=len(items))
 
 
 @router.post(
@@ -984,6 +1018,28 @@ async def retry_task(request: Request, task_id: UUID) -> GenerationTaskRecord:
         return await _service(request).retry_task(task_id)
     except TaskNotFoundError as exc:
         raise ApiError(404, "TASK_NOT_FOUND", "Generation task was not found") from exc
+    except TaskNotRetryableError as exc:
+        raise ApiError(409, "TASK_NOT_RETRYABLE", "Task is not in a retryable failed state") from exc
+
+
+@router.post(
+    "/api/v1/system/dead-letters/{task_id}/requeue",
+    response_model=GenerationTaskRecord,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["system"],
+)
+async def requeue_dead_letter(
+    request: Request,
+    task_id: UUID,
+) -> GenerationTaskRecord:
+    try:
+        task = await _service(request).get_task(task_id)
+        await _require_task_batch_permission(request, task.project_id, ProjectPermission.MANAGE_TASKS)
+        return await _service(request).requeue_dead_letter_task(task_id)
+    except TaskNotFoundError as exc:
+        raise ApiError(404, "TASK_NOT_FOUND", "Generation task was not found") from exc
+    except TaskNotDeadLetterError as exc:
+        raise ApiError(409, "TASK_NOT_DEAD_LETTER", "Task is not an open dead-letter task") from exc
     except TaskNotRetryableError as exc:
         raise ApiError(409, "TASK_NOT_RETRYABLE", "Task is not in a retryable failed state") from exc
 

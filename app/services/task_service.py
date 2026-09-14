@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from app.domain.dead_letter import mark_dead_letter_requeued, record_from_input
 from app.domain.models import (
     ArtifactSummary,
+    DeadLetterTaskRecord,
     GenerationTaskKind,
     GenerationTaskRecord,
     ProjectCreateRequest,
@@ -45,6 +48,10 @@ class TaskNotFoundError(Exception):
 
 class TaskNotRetryableError(Exception):
     """Raised when a task is not currently in a retryable state."""
+
+
+class TaskNotDeadLetterError(Exception):
+    """Raised when an operator requeue is requested for a normal task."""
 
 
 class TaskService:
@@ -144,6 +151,66 @@ class TaskService:
         limit: int = 50,
     ) -> list[GenerationTaskRecord]:
         return await self._store.list_tasks(project_id, kind, status, limit)
+
+    async def list_dead_letter_tasks(
+        self,
+        *,
+        project_id: UUID | None = None,
+        project_ids: set[UUID] | None = None,
+        limit: int = 100,
+    ) -> list[DeadLetterTaskRecord]:
+        """List failed tasks that exhausted automatic recovery.
+
+        Dead-letter state is deliberately derived from the durable task JSON,
+        so the endpoint works for both the in-memory and PostgreSQL stores
+        without a migration.  The task itself remains ``failed`` and can be
+        requeued only through an explicit operator action.
+        """
+
+        tasks = await self._store.list_tasks(
+            project_id=project_id,
+            status=TaskStatus.FAILED.value,
+            limit=5000,
+        )
+        result: list[DeadLetterTaskRecord] = []
+        for task in tasks:
+            if project_ids is not None and task.project_id not in project_ids:
+                continue
+            marker = record_from_input(task.input_data)
+            if marker is None:
+                continue
+            try:
+                error_code = str(
+                    marker.get("error_code")
+                    or (task.error.code if task.error else "TASK_FAILED")
+                )
+                error_message = str(
+                    marker.get("error_message")
+                    or (task.error.message if task.error else "任务失败，需要人工处理")
+                )
+                result.append(
+                    DeadLetterTaskRecord(
+                        task_id=task.id,
+                        project_id=task.project_id,
+                        kind=task.kind,
+                        error_code=error_code,
+                        error_message=error_message,
+                        auto_retry_count=max(0, int(marker.get("auto_retry_count", 0) or 0)),
+                        max_auto_retries=max(0, int(marker.get("max_auto_retries", 0) or 0)),
+                        reopen_count=max(0, int(marker.get("reopen_count", 0) or 0)),
+                        requeue_count=max(0, int(marker.get("requeue_count", 0) or 0)),
+                        opened_at=_parse_marker_datetime(marker.get("opened_at"), task.updated_at),
+                        last_failed_at=_parse_marker_datetime(marker.get("last_failed_at"), task.updated_at),
+                        updated_at=task.updated_at,
+                    )
+                )
+            except (TypeError, ValueError):
+                # A malformed historical marker must not hide all other
+                # operator work; it is ignored until the task is manually
+                # retried or repaired by a future migration.
+                continue
+        result.sort(key=lambda item: item.updated_at, reverse=True)
+        return result[: max(1, min(200, limit))]
 
     async def run_task(self, task_id: UUID) -> None:
         task = await self.get_task(task_id)
@@ -306,6 +373,17 @@ class TaskService:
         if stage is None:
             raise TaskNotRetryableError
 
+        # Closing the marker happens as part of the same durable task update
+        # as the manual retry.  If the task fails again, the Worker can open a
+        # fresh marker and retain the requeue history.
+        dead_letter = mark_dead_letter_requeued(task.input_data)
+        if dead_letter is not None:
+            # A deliberate operator action starts a fresh automatic recovery
+            # budget.  The marker retains the complete requeue history.
+            task.input_data["auto_retry_count"] = 0
+            task.input_data["auto_retry_pending"] = False
+
+
         task.status = TaskStatus.QUEUED
         task.current_stage = stage
         task.progress = 0
@@ -353,6 +431,11 @@ class TaskService:
         await self._task_queue.enqueue(saved_task.id)
         return saved_task
 
+    async def requeue_dead_letter_task(self, task_id: UUID) -> GenerationTaskRecord:
+        task = await self.get_task(task_id)
+        if task.status != TaskStatus.FAILED or record_from_input(task.input_data) is None:
+            raise TaskNotDeadLetterError
+        return await self.retry_task(task_id)
     @staticmethod
     def _mark_canceled_task(task: GenerationTaskRecord) -> None:
         now = utc_now()
@@ -442,3 +525,17 @@ class TaskService:
             stage_run.error_code = code
             stage_run.finished_at = failed_at
         return await self._store.update_task(task)
+
+
+def _parse_marker_datetime(value: object, fallback: datetime) -> datetime:
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    if fallback.tzinfo is None:
+        return fallback.replace(tzinfo=timezone.utc)
+    return fallback.astimezone(timezone.utc)

@@ -1468,6 +1468,28 @@ class TaskError(BaseModel):
     message: str
 
 
+class DeadLetterTaskRecord(BaseModel):
+    """Operator-facing summary for a task that exhausted automatic recovery."""
+
+    task_id: UUID
+    project_id: UUID
+    kind: GenerationTaskKind
+    error_code: str = Field(min_length=1, max_length=120)
+    error_message: str = Field(min_length=1, max_length=300)
+    auto_retry_count: int = Field(ge=0)
+    max_auto_retries: int = Field(ge=0)
+    reopen_count: int = Field(default=0, ge=0)
+    requeue_count: int = Field(default=0, ge=0)
+    opened_at: datetime
+    last_failed_at: datetime
+    updated_at: datetime
+
+
+class DeadLetterListResponse(BaseModel):
+    items: list[DeadLetterTaskRecord] = Field(default_factory=list)
+    total: int = Field(ge=0)
+
+
 class ReferenceImageRecord(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     task_id: UUID
@@ -1576,6 +1598,7 @@ class TaskBatchRecord(BaseModel):
     total_count: int = Field(default=0, ge=0)
     succeeded_count: int = Field(default=0, ge=0)
     failed_count: int = Field(default=0, ge=0)
+    dead_letter_count: int = Field(default=0, ge=0)
     active_count: int = Field(default=0, ge=0)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)

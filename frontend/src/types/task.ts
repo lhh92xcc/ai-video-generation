@@ -82,6 +82,7 @@ export interface TaskBatchRecord {
   total_count: number
   succeeded_count: number
   failed_count: number
+  dead_letter_count: number
   active_count: number
   created_at: string
   updated_at: string
@@ -179,6 +180,7 @@ export interface ProductionQueueRun {
   active_count: number
   succeeded_count: number
   failed_count: number
+  dead_letter_count: number
   progress: number
   episode_ids: string[]
   updated_at: string
@@ -193,6 +195,26 @@ export interface ProductionQueueSnapshot {
   worker: Record<string, unknown>
   auto_runs: ProductionQueueRun[]
   tasks: GenerationTaskRecord[]
+}
+
+export interface DeadLetterTaskRecord {
+  task_id: string
+  project_id: string
+  kind: string
+  error_code: string
+  error_message: string
+  auto_retry_count: number
+  max_auto_retries: number
+  reopen_count: number
+  requeue_count: number
+  opened_at: string
+  last_failed_at: string
+  updated_at: string
+}
+
+export interface DeadLetterListResponse {
+  items: DeadLetterTaskRecord[]
+  total: number
 }
 
 export interface CleanupResponse {

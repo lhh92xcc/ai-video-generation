@@ -9,6 +9,8 @@ const queueMocks = vi.hoisted(() => ({
     { id: 'failed-run', status: 'failed', active_count: 0, failed_count: 1 },
     { id: 'canceled-run', status: 'canceled', active_count: 0 },
   ] })),
+  getDeadLetters: vi.fn(async () => ({ items: [], total: 0 })),
+  requeueDeadLetterTask: vi.fn(async () => ({})),
   cleanupTemporaryFiles: vi.fn(),
 }))
 const runControlMocks = vi.hoisted(() => ({
@@ -20,6 +22,8 @@ const runControlMocks = vi.hoisted(() => ({
 vi.mock('../src/api/productionQueue', () => ({
   getOperationalHealth: queueMocks.getOperationalHealth,
   getProductionQueue: queueMocks.getProductionQueue,
+  getDeadLetters: queueMocks.getDeadLetters,
+  requeueDeadLetterTask: queueMocks.requeueDeadLetterTask,
   cleanupTemporaryFiles: queueMocks.cleanupTemporaryFiles,
 }))
 vi.mock('../src/api/tasks', () => ({ retryTask: vi.fn() }))
@@ -73,6 +77,41 @@ describe('production queue status wording', () => {
     } finally {
       wrapper.unmount()
       vi.restoreAllMocks()
+    }
+  })
+
+  it('shows dead-letter work and lets an operator requeue it', async () => {
+    vi.useFakeTimers()
+    queueMocks.getDeadLetters.mockResolvedValue({
+      items: [{
+        task_id: 'dead-task-1',
+        project_id: 'project-1',
+        kind: 'video_clip',
+        error_code: 'VIDEO_PROVIDER_TIMEOUT',
+        error_message: '视频服务超时',
+        auto_retry_count: 2,
+        max_auto_retries: 2,
+        reopen_count: 0,
+        requeue_count: 0,
+        opened_at: '2026-09-14T00:00:00Z',
+        last_failed_at: '2026-09-14T00:01:00Z',
+        updated_at: '2026-09-14T00:01:00Z',
+      }],
+      total: 1,
+    })
+    const wrapper = mount(ProductionQueue)
+    try {
+      await flushPromises()
+      expect(wrapper.text()).toContain('需人工处理')
+      expect(wrapper.text()).toContain('自动重试已耗尽')
+      const requeueButton = wrapper.findAll('button').find((button) => button.text() === '人工恢复')
+      expect(requeueButton).toBeDefined()
+      await requeueButton!.trigger('click')
+      await flushPromises()
+      expect(queueMocks.requeueDeadLetterTask).toHaveBeenCalledWith('dead-task-1')
+      expect(wrapper.text()).toContain('任务已人工恢复')
+    } finally {
+      wrapper.unmount()
     }
   })
 })
