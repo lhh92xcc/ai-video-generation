@@ -144,6 +144,22 @@ function moveSelection(event: KeyboardEvent, index: number) {
 .quality-choice-guidance dl { display: grid; gap: 12px; margin: 16px 0 0; }
 .quality-choice-guidance dt { font-size: 13px; font-weight: 600; }
 .quality-choice-guidance dd { margin: 3px 0 0; }
+/* Parameter values must remain readable at narrow card widths. */
+.visual-quality-option-title strong,
+.visual-quality-option-recommended,
+.visual-quality-option-metrics span,
+.visual-quality-selected-summary strong,
+.visual-quality-selected-summary p {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.visual-quality-option-description { display: block; overflow: visible; -webkit-line-clamp: unset; }
+.visual-quality-option-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.visual-quality-selected-summary { flex-wrap: wrap; align-items: flex-start; }
+.visual-quality-selected-summary > div { flex-basis: calc(100% - 32px); }
+.visual-quality-selected-summary > small { max-width: none; margin-left: 27px; text-align: left; }
 .visual-quality-option:focus-visible, summary:focus-visible { outline: 3px solid #7678e4; outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) { .visual-quality-option { transition: none; } }
 </style>
