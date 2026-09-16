@@ -2710,6 +2710,19 @@ def _reference_prompt(asset_name: str) -> str:
             'flat color fills, simple cel shadows, even illustrated lighting. A single centered '
             'portrait.'
         )
+    # Verified with service guardrails: frontal face, visible long hair, closed lips.
+    # The generated crop remains wider than a strict headshot.
+    if asset_name == "黑伞女孩":
+        return (
+            'A straight-on head-and-shoulders portrait of one young Chinese woman. Her face and both '
+            'shoulders face directly toward the viewer. Her head is upright and her eyes look straight '
+            'ahead. Long loose straight black hair falls visibly over both shoulders, with two dark '
+            'lengths of hair continuing below the bottom edge of the portrait. Her lips are gently closed '
+            'with a calm serious neutral expression. The frame shows her full head, neck and the collar '
+            'of a black coat, ending at the upper chest. Her face fills most of the image. Plain '
+            'cool-gray background. Flat 2D manhwa illustration, clean bold black ink outlines, matte flat '
+            'color fills, simple cel shadows, even illustrated lighting. A single centered portrait.'
+        )
     # A reference request has a tighter budget than a video prompt. Avoid
     # repeating the full video style lock before appending shared guardrails.
     reference_style = (
@@ -2722,12 +2735,6 @@ def _reference_prompt(asset_name: str) -> str:
         "no character sheet, no duplicate subject, no text, no watermark"
     )
     prompts = {
-        "黑伞女孩": (
-            "single subject front-facing head-and-shoulders portrait, "
-            "exactly one young Chinese woman with long black hair, "
-            "black long coat, calm mysterious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
-            "centered face, clean portrait crop, vertical 9:16 composition, no umbrella and no props, " + single_frame
-        ),
         "旧城区钟表店": (
             "single empty continuous background plate, "
             "one coherent old Chinese urban clock shop at night, "

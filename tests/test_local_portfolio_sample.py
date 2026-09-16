@@ -518,19 +518,23 @@ def test_reference_prompts_are_single_subject_or_scene() -> None:
     assert "leather gloves" not in prompts["林默"]
     assert "dark long coat" not in prompts["林默"]
     assert "short black hair, slim face" in prompts["林默"].lower()
-    assert "exactly one" in prompts["黑伞女孩"]
+    assert "portrait of one young Chinese woman" in prompts["黑伞女孩"]
+    assert "both shoulders face directly toward the viewer" in prompts["黑伞女孩"]
+    assert "hair falls visibly over both shoulders" in prompts["黑伞女孩"]
+    assert "lips are gently closed" in prompts["黑伞女孩"]
+    assert "black long coat" not in prompts["黑伞女孩"]
     assert "no people" in prompts["旧城区钟表店"]
     assert "one antique bronze mechanical pocket watch" in prompts["铜色怀表"]
     assert all(len(prompt) <= 1500 for prompt in prompts.values())
     assert all("flat 2d manhwa" in prompt.lower() for prompt in prompts.values())
-    # Environment/prop and unvalidated character prompts retain their existing
-    # style constraints. The validated portrait uses direct positive framing.
-    for name in ("黑伞女孩", "旧城区钟表店", "铜色怀表"):
+    # Environment/prop prompts retain their existing style constraints.
+    # Visually checked portraits use direct positive framing.
+    for name in ("旧城区钟表店", "铜色怀表"):
         prompt = prompts[name]
         assert "Reference quality guardrails:" in prompt
         assert "no depth-of-field blur" in prompt
         assert f"Avoid: {_MODULE.PORTFOLIO_STYLE_NEGATIVE_LOCK}." in prompt
-    assert "long black hair" in prompts["黑伞女孩"]
+    assert "long loose straight black hair" in prompts["黑伞女孩"].lower()
     assert "rainy street visible through one window" in prompts["旧城区钟表店"]
     assert "hands stopped at twelve o'clock" in prompts["铜色怀表"]
 
