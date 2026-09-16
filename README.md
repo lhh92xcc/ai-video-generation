@@ -33,11 +33,14 @@
 - 作品集帧运动证据：视频 Artifact 会用 FFmpeg 抽样相邻灰度帧，记录 `motion_evidence`；完全冻结的视频会阻塞正式样片，低运动或无法抽样的结果保持待人工审核，不把简单的“帧在变化”误写成动作质量通过。
 - 参考图失败重试：参考图任务的 `generation_attempt` 会随统一 Retry API 递增，ComfyUI 本地 Provider 将它纳入确定性 seed；同一尝试可复现，下一次尝试才会真正抽取不同结果。
 - 统一视觉 Bible：参考图、逐镜头关键帧和 I2V Prompt 共同锁定同一套扁平 2D 漫剧方向、线条粗细、赛璐璐阴影、受控色板和光照语言，并明确排除半写实、油画笔触、3D 渲染和画风漂移；当前运行时版本为 `reference-image-generation-v2`、`shot-keyframe-generation-v3` 和 `video-motion-generation-v3`。
-- 本地作品集 runner 还会对四类参考图和 12 个预置镜头应用固定的 `PORTFOLIO_STYLE_LOCK` 与构图多样性约束：明确扁平 2D 漫剧、清晰线稿、禁止摄影虚化，并为远景、插入、过肩、镜面和收束镜头保留不同视觉焦点；这只是画风一致性护栏，真实样片仍需目标 GPU 主机抽帧和人工验收。
+- 本地作品集 runner 还会对四类参考图和 12 个预置镜头应用固定的 `PORTFOLIO_STYLE_LOCK` 与构图多样性约束：明确扁平 2D 漫剧、动画背景平涂、清晰线稿、禁止真实材质/摄影虚化，并按环境、角色、道具语义选择每个镜头的首帧；这只是画风和输入一致性护栏，真实样片仍需目标 GPU 主机抽帧和人工验收。
 - Windows 目标主机提供 `scripts/run-portfolio-demo.ps1` 一键入口：按实际运行环境选择质量档案，先做 1 个 3 秒 smoke，再做 8～12 个镜头候选样片，支持 manifest 复用、断点恢复和本地验收报告；不绑定具体显卡型号。
 - 参考图绑定防串图：作品集 runner 会写出 `reference-manifest.json`，按资产名称、`asset_key`、版本和 `storage_key` 精确复用参考图；不再按目录 mtime 猜测“最近四张图片”，避免角色、场景和道具首帧错配。
 - 参考图实际文件门禁：本地 ComfyUI 产物在写入身份锚点前会用 FFprobe 校验真实二进制可读性和实际宽高，尺寸不符合当前质量档案会失败，不会把错误画幅的图片继续送入 Wan。
-- 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头，默认 10 个；`--stop-after-shot` 与 `--resume` 使用同一范围。
+- 本地作品集 runner 的 `--shots` 支持 1～12：1～7 个镜头用于 smoke/断点演练，正式作品集目标为 8～12 个镜头；入口默认只生成 1 个 3 秒 smoke，`--stop-after-shot` 与 `--resume` 使用同一范围。
+- 为减少本机卡顿，runner 支持 `--references-only`：先只生成/复用参考图并输出 manifest、暂停 checkpoint 和报告；人工筛选后按报告中的继续命令复用参考图，再执行单镜头视频 Smoke。
+- 视频仍可直接调用真实模型，但不能保证显存永远不满；`local_safe`、GPU 串行锁、1 个 3 秒 Smoke 和参考图优先流程用于降低峰值。OOM 时应降档、降分辨率或降 steps，而不是无限重试。
+- 创作者工作区启动“完整生产（含视频）”前会提示预计资源占用并要求确认；取消确认不会创建 Run，适合先完成单镜头 smoke 后再开始整集生成。
 - 创作者前台已完成一轮可读性与视觉层级优化：统一提升正文、辅助说明、质量档案卡和作品集门禁的字号与间距，增加轻量渐变背景、层次阴影和清晰状态反馈；移动端仍使用单列布局。该优化只改善操作体验，不改变任务、Provider 或质量结论。
 - 自动生产 Run 完成态已闭环：Worker/scheduler 在推进 DAG 时只把 `created`/`reused` 任务视为下一波工作，不会把用于界面追踪的已完成任务 ID误判为新任务；最终 Assembly 成功后 Run 会稳定进入 `completed`。
 - 自动生产 Run 生命周期控制已闭环：创作者前台和远程生产队列支持暂停、恢复和取消；暂停不会强杀正在执行的模型调用，恢复会重新入队尚未执行的任务，取消会保留已完成 Artifact 并阻止排队任务继续执行。
@@ -160,13 +163,15 @@ Windows 配置中的 ComfyUI 模型名默认与本地目标 workflow 对齐：`f
 `high_quality` 质量档案按目标主机的实际显存与稳定性选择起点。先在目标主机准备
 Ollama、ComfyUI 和本仓库，再执行一个 3 秒单镜头 smoke：
 
+PowerShell 入口默认就是 `local_safe`、1 个 3 秒镜头和 `.tmp/portfolio-smoke`，用于控制本地模型负载；正式样片必须显式传入镜头数量、时长和质量档案。
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
   -Shots 1 -ShotDuration 3 -QualityProfile local_safe `
   -OutputDir .tmp\portfolio-smoke
 ```
 
-Smoke 通过后，再运行 8～12 个镜头的正式候选样片（默认 10 个、每镜头 5 秒）：
+Smoke 通过后，再显式运行 8～12 个镜头的正式候选样片（示例为 10 个、每镜头 5 秒）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
@@ -238,7 +243,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
 
 工作区还会在本地模式卡片下执行一次运行前门禁：按当前选择的视觉 Profile 检查 ComfyUI、Ollama、Worker、GPU 锁和可用磁盘，并明确区分“Provider 已选择”和“本地运行时已就绪”。ComfyUI 未响应、Ollama 被启用但不可用、Worker 离线、磁盘低于 10 GB 或 API 无法取得健康状态时，“一键启动完整生产”会保持禁用；这只阻止新的本地完整 Run，不会隐藏已有任务，也不会替代 Windows 主机上的严格前置检查。
 
-后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
+后端接口为 `GET /api/v1/provider-profiles?capability=image` 和 `GET /api/v1/provider-profiles?capability=video`。真实云端档案的密钥只从运行环境读取：`AI_VIDEO_IMAGE_SILICONFLOW_API_KEY`、`AI_VIDEO_IMAGE_OPENAI_COMPATIBLE_API_KEY`、`AI_VIDEO_VIDEO_SILICONFLOW_API_KEY`、`AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY`；即梦预留还使用 `AI_VIDEO_JIMENG_BASE_URL`、`AI_VIDEO_JIMENG_MODEL`、`AI_VIDEO_JIMENG_API_KEY` 和显式开关 `AI_VIDEO_JIMENG_PROTOCOL_READY=1`；兼容保留 `AI_VIDEO_IMAGE_API_KEY` 和 `AI_VIDEO_VIDEO_API_KEY`。
 
 视觉质量档案通过 `GET /api/v1/visual-quality-profiles` 提供给创作者前台，当前包含 `local_safe`、`local_balanced` 和 `high_quality` 三档。它们统一约束参考图/视频分辨率、采样步数、CFG、身份权重、帧率和 I2V 噪声增强参数；选择结果会写入新任务快照，后续修改默认档案不会改变历史任务。质量档案不等同于画质保证，真实 ComfyUI/Wan 运行仍需在目标 GPU 主机人工验收。
 
@@ -280,7 +285,9 @@ npm run build --prefix frontend
 docker compose config --quiet
 ```
 
-截至 2026-09-14，后端全量回归为 `428 passed、7 skipped、1 warning`；前端隔离组件测试为 `21 passed`，Docker 生产构建中的 TypeScript 检查和 Vite 构建完成 `63 modules transformed`。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 通过。本轮已用最新公开提交重建并重启 Docker Compose 的 `frontend`、`api`、`worker`，`/healthz` 返回 HTTP 200，死信列表接口返回 HTTP 200；主目录前端依赖仍不作为独立测试依据。本轮没有启动 Windows/CUDA、真实 Wan、InsightFace、MuseTalk 或外部付费 API；真实媒体质量仍需目标 GPU 主机验收。
+截至 2026-09-15，可复用的工程回归基线为后端 `435 passed、7 skipped、1 warning`；前端隔离组件测试为 `21 passed`，Docker 生产构建中的 TypeScript 检查和 Vite 构建完成 `63 modules transformed`。Python compileall、`docker compose config --quiet`、`rg --files` 和 `git diff --check` 的上一轮基线均通过。本轮主目录 `uv run pytest`/`compileall` 再次受 iCloud 工作区 dataless 文件读取阻塞，未把无输出等待写成通过；主目录前端依赖仍不作为独立测试依据。
+
+本轮新增了真实 Mac ComfyUI Flux/Wan 环境镜头 Smoke：参考图语义和画风方向改善，Wan 输出 `288×512`、12fps、37 帧、3.083333 秒且可播放；36 个相邻帧有非零差异，但首/中/尾抽帧几乎静止，因此只算“有可检测微变化”的环境镜头证据，不算自然动作或作品集画质通过。`noise_aug_strength=0.025` 的受控 A/B 已完成，运动指标和观感都没有改善，推荐值保持 `0.012`；下一步只测试首帧 latent 保留强度与轻微视差 Prompt。角色身份仍受上一轮 PuLID 审核失败阻塞；8～12 镜头、声音、字幕和完整观看人工验收仍未完成。没有启动 Windows/CUDA、MuseTalk 或即梦真实 API，也没有产生外部付费调用。
 
 公开仓库配置了 `.github/workflows/ci.yml`：推送或提交 Pull Request 时自动安装 FFmpeg、执行锁定依赖安装、后端测试、Python 编译检查、前端生产构建、Docker Compose 配置校验和 Windows PowerShell 脚本语法解析。CI 不需要任何供应商密钥，也不会调用真实模型或付费 API。
 
@@ -362,7 +369,7 @@ uv run python scripts/run-novel-production.py \
 - 作品集运动报告：正式运行还要求所有成功视频片段都有 `motion_evidence.status=motion_detected`；`frozen` 直接阻塞，`indeterminate`/`unavailable` 等状态要求补生成或人工确认。该检测只排除完全冻结/静态回退，不评价动作是否自然、人物是否崩坏。
 - 参考图抽卡策略：首次失败的角色锚点或镜头关键帧可直接重试；不要手动改 Prompt 只为制造随机性，先让任务重试递增 `generation_attempt`，这样失败原因、seed 和 Artifact 历史仍然可追踪。
 - 正式样片门禁：非 Mock 且非预览模式、8～12 个镜头、启用 `auto`/`always` 逐镜头身份关键帧，并且只允许已登记的真实视频 Provider（当前为 `comfyui_wan_i2v`、`openai_compatible`、`siliconflow`）；`ffmpeg_motion`、`local_fixture` 和 `mock` 会在启动前被拒绝，片段 Artifact 还会再次校验 Provider/运动元数据。1～7 个镜头即使使用真实 Provider 也只属于 Smoke/断点演练，报告的 `sample_mode` 为 `smoke` 且 `formal_portfolio_eligible=false`。需要在 Mac 上只验证流程时可使用 `--preview-only`，报告会标记 `sample_mode=preview_only`，不会被当作正式作品集证据；报告中的 `real_motion_provider` 记录实际配置和观察到的 Provider 来源。
-- 云端扩展边界：即梦尚未写入业务层；拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需新增独立 `VideoGenerationProvider` 适配器，并用单镜头 smoke 验证，再接入 Provider 选择 UI。
+- 云端扩展边界：即梦已增加为默认关闭的独立 Adapter 预留，Provider 列表会显示“适配器预留”，但没有官方协议资料时不可选、不会发起请求。拿到官方 endpoint、模型名、鉴权和异步响应样例后，只需在 `app/providers/jimeng_video.py` 收口字段映射/签名/轮询，再用单镜头 smoke 验证，最后才打开前台 Provider 选择。
 
 这条清单把“工程闭环已完成”和“媒体质量尚未验收”分开，避免把通过单测或 FFprobe 误写成成片质量结论。
 
@@ -374,7 +381,7 @@ uv run python scripts/run-novel-production.py \
 | --- | --- | --- |
 | 小说到结构化剧本/分镜 | 工程链路已具备 | 用一段自有或已授权短文本跑通，并人工检查改编是否忠实、对白是否自然 |
 | 角色/场景/道具一致性 | 资产版本、标准人设图、Prompt 和自动初审已具备 | 实际生成 2～3 个角色镜头，筛掉变脸、重复人物、手部和构图失败结果 |
-| 真实视频片段 | Wan I2V Provider、断点恢复和 FFprobe 门禁已具备 | 在目标主机完成 3 秒 smoke，再完成 45～60 秒成片并记录耗时、失败和重试 |
+| 真实视频片段 | 已完成一个环境镜头的真实 Mac Wan Smoke，Provider、断点恢复和 FFprobe 门禁已具备 | 先在目标主机复现 3 秒 smoke，再完成 45～60 秒成片并记录耗时、失败和重试；当前环境片段仍需解决“有帧差但观感近静止”问题 |
 | 声音与字幕 | 连续旁白、ASR/对齐、字幕 Artifact 和渲染已具备 | 人工听审自然度、发音、音画同步和字幕可读性；保留评分表和样片 |
 | 成片与可复盘性 | Assembly、Artifact、任务、日志、远程队列和就绪度面板已具备 | 将最终视频、关键截图、`report.json` 和一段架构说明放入作品集展示材料 |
 | 跨机器质量可复现 | runner 支持 `--quality-profile`，checkpoint/report 会记录完整参数快照 | 在目标 GPU 主机用同一档案重跑，并把真实耗时、失败镜头和人工筛选结果补入报告 |
@@ -384,11 +391,11 @@ uv run python scripts/run-novel-production.py \
 
 ## 即梦 API 接入计划
 
-即梦适合作为后续的高质量对照样片 Provider，但在没有官方接口文档、模型名、鉴权方式、请求示例和异步响应示例前，本项目不会猜测 endpoint 或协议，也不会把供应商字段散落到业务层。
+即梦适合作为后续的高质量对照样片 Provider。当前仓库已经放入 `app/providers/jimeng_video.py` 的协议隔离骨架：它复用已测试的提交/轮询/下载生命周期，并把参考图、画幅、帧率、采样参数和生成尝试号集中映射在 Adapter 内；默认仍由 `AI_VIDEO_JIMENG_PROTOCOL_READY` 关闭，不会把临时猜测当成官方协议，也不会把供应商字段散落到业务层。
 
 接入时保持以下边界：
 
-1. 新增独立 `JimengVideoGenerationProvider`，实现现有 `VideoGenerationProvider` 契约。
+1. 用官方资料替换 `JimengVideoGenerationProvider` 的临时请求映射，并实现真实鉴权/签名。
 2. 适配器负责请求体映射、鉴权、提交任务、轮询/回调、下载、超时、限流、余额和供应商错误码映射。
 3. 业务层继续只传镜头 Prompt、negative Prompt、参考图、时长、尺寸和生成尝试号；供应商原始响应写入脱敏 metadata。
 4. 先做单镜头 smoke，再做 2～3 镜头对照；确认画面、费用和稳定性后，才接入前台 Provider 选择和批量 Run。

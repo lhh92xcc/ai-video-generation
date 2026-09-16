@@ -42,6 +42,7 @@ class OpenAICompatibleVideoGenerationProvider:
         max_poll_seconds: int = 900,
         max_download_bytes: int = 524_288_000,
         client: httpx.AsyncClient | None = None,
+        provider_name: str = "openai_compatible",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -52,6 +53,7 @@ class OpenAICompatibleVideoGenerationProvider:
         self.poll_interval_seconds = max(0.0, poll_interval_seconds)
         self.max_poll_seconds = max(1, max_poll_seconds)
         self.max_download_bytes = max(1, max_download_bytes)
+        self.provider_name = provider_name
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
         self._owns_client = client is None
 
@@ -62,13 +64,7 @@ class OpenAICompatibleVideoGenerationProvider:
         self._require_configuration()
         started = monotonic()
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        payload = {
-            "model": self.model,
-            "prompt": request.prompt,
-            "negative_prompt": request.negative_prompt,
-            "duration_seconds": request.duration_seconds,
-            "asset_refs": [item.model_dump(mode="json") for item in request.asset_refs],
-        }
+        payload = self._build_payload(request)
 
         response_json = await self._request_json(
             "post",
@@ -134,6 +130,36 @@ class OpenAICompatibleVideoGenerationProvider:
             headers,
             metadata={"request_id": task_id, "polls": polls},
         )
+
+    def _build_payload(self, request: VideoClipGenerationRequest) -> dict[str, Any]:
+        """Build the intentionally small common HTTP contract.
+
+        Provider-specific adapters can override this method while retaining the
+        submit/poll/download lifecycle and its error handling.
+        """
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "prompt": request.prompt,
+            "negative_prompt": request.negative_prompt,
+            "duration_seconds": request.duration_seconds,
+            "asset_refs": [item.model_dump(mode="json") for item in request.asset_refs],
+        }
+        quality = {
+            "width": request.width,
+            "height": request.height,
+            "fps": request.fps,
+            "steps": request.steps,
+            "cfg": request.cfg,
+            "noise_aug_strength": request.noise_aug_strength,
+        }
+        payload.update({key: value for key, value in quality.items() if value is not None})
+        if request.keyframe_bytes:
+            payload["reference_image"] = {
+                "mime_type": request.keyframe_mime_type or "image/png",
+                "data": base64.b64encode(request.keyframe_bytes).decode("ascii"),
+            }
+        return payload
 
     async def close(self) -> None:
         if self._owns_client:
@@ -227,7 +253,7 @@ class OpenAICompatibleVideoGenerationProvider:
             output_uri=output_uri,
             video_base64=video_base64,
             mime_type=mime_type,
-            provider="openai_compatible",
+            provider=self.provider_name,
             model=self.model,
             duration_seconds=request.duration_seconds,
             duration_ms=max(1, int((monotonic() - started) * 1000)),

@@ -67,3 +67,79 @@ def test_local_visual_profiles_use_the_runtime_comfyui_endpoint() -> None:
         windows_registry.resolve("video", "video.comfyui_wan_i2v").base_url
         == "http://host.docker.internal:8188"
     )
+
+
+def test_jimeng_profile_stays_disabled_until_protocol_is_explicitly_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AI_VIDEO_JIMENG_API_KEY", raising=False)
+    monkeypatch.delenv("AI_VIDEO_JIMENG_PROTOCOL_READY", raising=False)
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+
+    profile = registry.resolve("video", "video.jimeng")
+
+    assert profile.configured is False
+    assert profile.label == "即梦视频（适配器预留）"
+
+
+def test_jimeng_unconfigured_error_explains_all_enablement_requirements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "AI_VIDEO_JIMENG_API_KEY",
+        "AI_VIDEO_JIMENG_BASE_URL",
+        "AI_VIDEO_JIMENG_MODEL",
+        "AI_VIDEO_JIMENG_PROTOCOL_READY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+
+    with pytest.raises(ProviderProfileError) as caught:
+        registry.ensure_configured(registry.resolve("video", "video.jimeng"))
+
+    assert caught.value.code == "PROVIDER_PROFILE_NOT_CONFIGURED"
+    assert "AI_VIDEO_JIMENG_PROTOCOL_READY" in caught.value.message
+    assert "AI_VIDEO_JIMENG_BASE_URL" in caught.value.message
+
+
+def test_jimeng_profile_becomes_configured_only_with_key_and_protocol_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_VIDEO_JIMENG_API_KEY", "test-key")
+    monkeypatch.setenv("AI_VIDEO_JIMENG_BASE_URL", "https://jimeng.example")
+    monkeypatch.setenv("AI_VIDEO_JIMENG_MODEL", "official-model")
+    monkeypatch.setenv("AI_VIDEO_JIMENG_PROTOCOL_READY", "1")
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+
+    profile = registry.resolve("video", "video.jimeng")
+
+    assert profile.configured is True
+    assert profile.base_url == "https://jimeng.example"
+    assert profile.model == "official-model"
+    assert profile.as_public_dict()["api_key_env"] == "AI_VIDEO_JIMENG_API_KEY"
+    assert "api_key" not in profile.as_public_dict()
+
+
+def test_jimeng_profile_stays_disabled_if_protocol_is_enabled_without_endpoint_or_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_VIDEO_JIMENG_API_KEY", "test-key")
+    monkeypatch.setenv("AI_VIDEO_JIMENG_PROTOCOL_READY", "1")
+    monkeypatch.delenv("AI_VIDEO_JIMENG_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_VIDEO_JIMENG_MODEL", raising=False)
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+
+    assert registry.resolve("video", "video.jimeng").configured is False
+
+
+def test_jimeng_profile_does_not_reuse_generic_video_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_VIDEO_VIDEO_PROVIDER", "jimeng")
+    monkeypatch.setenv("AI_VIDEO_VIDEO_BASE_URL", "https://jimeng.example")
+    monkeypatch.setenv("AI_VIDEO_VIDEO_MODEL", "official-model")
+    monkeypatch.setenv("AI_VIDEO_VIDEO_API_KEY", "generic-key")
+    monkeypatch.setenv("AI_VIDEO_JIMENG_PROTOCOL_READY", "1")
+    monkeypatch.delenv("AI_VIDEO_JIMENG_API_KEY", raising=False)
+    monkeypatch.delenv("AI_VIDEO_JIMENG_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_VIDEO_JIMENG_MODEL", raising=False)
+
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+
+    assert registry.resolve("video", "video.jimeng").configured is False

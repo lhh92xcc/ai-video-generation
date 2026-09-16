@@ -129,6 +129,9 @@ max_poll_seconds = 600
 # 不会把静态图 Ken Burns 结果当成真实 I2V 视频。
 # openai_compatible 使用“提交任务 -> 轮询 -> 下载”HTTP 约定，需配置真实供应商的 URL 和 Key。
 # siliconflow 使用 /v1/video/submit -> /v1/video/status -> 下载 URL，需配置 API Key。
+# jimeng 是预留的独立 Adapter：在拿到官方 endpoint、模型名、鉴权和响应样例前保持关闭。
+# 仅在完成脱敏契约测试后，才设置 AI_VIDEO_JIMENG_PROTOCOL_READY=1、
+# AI_VIDEO_JIMENG_API_KEY、AI_VIDEO_JIMENG_BASE_URL 和 AI_VIDEO_JIMENG_MODEL；Key 不写入此文件。
 # 低成本试跑示例：base_url = "https://api.siliconflow.cn"、model = "Wan-AI/Wan2.2-T2V-A14B"。
 # 不同厂商的特殊字段仍应通过独立 Provider 适配器实现，不要把厂商 SDK 放入业务层。
 # default_negative_prompt/prompt_suffix 会在视频任务创建时组成最终 Prompt，确保每个镜头

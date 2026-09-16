@@ -1142,6 +1142,12 @@ async function startEpisodeTaskPlan() {
 
 async function startFullProduction() {
   if (!productionRunCanSubmit.value) return
+  const confirmed = window.confirm(
+    '即将启动完整生产，系统会按当前质量档案生成全部视频片段，并持续占用本地模型资源。\n\n'
+      + '建议先完成 1 个 3 秒 smoke，确认参考图、画风和运动后再继续。\n\n'
+      + '确定要现在启动吗？',
+  )
+  if (!confirmed) return
   await runAction('production-run', '完整生产 Run 已启动，后续会由后台 Worker 自动推进。', async () => {
     productionRun.value = await startProductionRun(
       projectData.value.id,
@@ -1410,10 +1416,14 @@ onUnmounted(() => {
               <span class="creator-visual-quality-mark">✦</span>
               <div><strong>当前视觉质量基线</strong><p>单主体、清晰轮廓、干净背景、稳定曝光；视频限制为 3～5 秒连续轻动作，优先保持角色身份和构图稳定。</p><small>这是可复现的输入约束，不等同于画质保证。分辨率、采样步数和超时由运行档案决定，完成后仍需人工看片并筛掉失败镜头。</small></div>
             </div>
+            <div class="creator-reference-first-note">
+              <span class="creator-reference-first-icon">01</span>
+              <div><strong>建议先筛参考图，再生成视频</strong><p>本地模型容易被连续视频推理占满。先用 runner 的 <code>--references-only</code> 生成并人工挑选角色、场景和道具图，再复用 manifest 做 1 个 3 秒 Smoke。</p><small>这样不会误触发整集视频；正式作品集仍需 8～12 个镜头和人工验收。</small></div>
+            </div>
           </div>
           <div v-if="sourceReady" class="creator-auto-run-panel">
-            <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>一键创建从故事设定到最终成片的完整 DAG。分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
-            <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" :title="productionRunCanSubmit ? '' : localRuntimeGateMessage" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '一键启动完整生产' }} <span>→</span></button>
+            <div><span class="creator-auto-run-icon">▶</span><div><strong>本地 GPU 自动生产</strong><small>会创建包含视频片段的完整 DAG。建议先用单镜头 smoke 验证，再启动整集；分镜资产审核仍然是门禁，不会绕过人工审核。</small></div></div>
+            <button class="creator-primary-button" type="button" :disabled="!productionRunCanSubmit" :title="productionRunCanSubmit ? '将按当前质量档案生成全部视频片段' : localRuntimeGateMessage" @click="startFullProduction">{{ action === 'production-run' ? '启动中…' : productionRun?.status === 'active' ? 'Run 已启动' : '启动完整生产（含视频）' }} <span>→</span></button>
           </div>
           <div v-if="productionRun" class="creator-auto-run-status" :class="productionRun.status"><span>{{ productionRunStatusIcon(productionRun.status) }}</span><div><strong>Run {{ productionRunStatusLabel(productionRun.status) }}</strong><small>{{ productionRun.run_id }} · 当前阶段 {{ productionRun.stage }} · {{ productionRun.message }}</small></div></div>
           <div v-if="productionRun && (productionRunCanPause || productionRunCanResume || productionRunCanCancel)" class="creator-auto-run-controls">

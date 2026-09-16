@@ -390,6 +390,14 @@ class VisualProviderProfileRegistry:
     def ensure_configured(self, profile: RuntimeProviderProfile) -> None:
         if profile.configured:
             return
+        if profile.provider == "jimeng":
+            raise VisualProviderProfileError(
+                "PROVIDER_PROFILE_NOT_CONFIGURED",
+                "即梦视频 Adapter 尚未启用；确认官方协议后，同时设置 "
+                "AI_VIDEO_JIMENG_PROTOCOL_READY=1、AI_VIDEO_JIMENG_API_KEY、"
+                "AI_VIDEO_JIMENG_BASE_URL 和 AI_VIDEO_JIMENG_MODEL",
+                status_code=409,
+            )
         raise VisualProviderProfileError(
             "PROVIDER_PROFILE_NOT_CONFIGURED",
             f"Provider profile {profile.profile_id!r} is not configured; set {profile.api_key_env}",
@@ -606,6 +614,15 @@ class VisualProviderProfileRegistry:
                 "https://api.openai.com/v1",
                 "AI_VIDEO_VIDEO_OPENAI_COMPATIBLE_API_KEY",
             ),
+            (
+                "video.jimeng",
+                "即梦视频（适配器预留）",
+                "video",
+                "jimeng",
+                "待官方确认",
+                "",
+                "AI_VIDEO_JIMENG_API_KEY",
+            ),
         )
         profiles: dict[str, RuntimeProviderProfile] = {}
         for profile_id, label, capability, provider, default_model, default_url, api_key_env in definitions:
@@ -622,12 +639,22 @@ class VisualProviderProfileRegistry:
             is_current = current_provider == provider
             model = current_model if is_current and current_model else default_model
             base_url = current_url if is_current and current_url else default_url
-            api_key = cls._resolve_api_key(
-                current_provider,
-                current_key,
-                provider,
-                api_key_env,
-            )
+            if provider == "jimeng":
+                api_key = os.getenv("AI_VIDEO_JIMENG_API_KEY")
+            else:
+                api_key = cls._resolve_api_key(
+                    current_provider,
+                    current_key,
+                    provider,
+                    api_key_env,
+                )
+            if provider == "jimeng":
+                model = os.getenv("AI_VIDEO_JIMENG_MODEL") or model
+                base_url = os.getenv("AI_VIDEO_JIMENG_BASE_URL") or base_url
+            protocol_ready = provider != "jimeng" or os.getenv("AI_VIDEO_JIMENG_PROTOCOL_READY") == "1"
+            configured = api_key_env is None or bool(api_key)
+            if provider == "jimeng":
+                configured = configured and protocol_ready and bool(base_url) and model not in {"", "待官方确认"}
             profiles[profile_id] = RuntimeProviderProfile(
                 profile_id=profile_id,
                 capability=capability,
@@ -636,7 +663,7 @@ class VisualProviderProfileRegistry:
                 model=model,
                 base_url=base_url,
                 api_key_env=api_key_env,
-                configured=api_key_env is None or bool(api_key),
+                configured=configured,
                 default=is_current,
                 api_key=api_key,
             )

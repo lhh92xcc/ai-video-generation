@@ -45,6 +45,7 @@ def test_visual_provider_profile_lists_are_safe_for_frontend_dropdown(client: Te
             "video.comfyui_wan_i2v",
             "video.siliconflow",
             "video.openai_compatible",
+            "video.jimeng",
         },
     }
     for capability, expected_ids in expected.items():

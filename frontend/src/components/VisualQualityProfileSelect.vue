@@ -24,6 +24,13 @@ function selectProfile(profileId: string) {
   emit('update:modelValue', profileId)
 }
 
+function profileBadge(profile: VisualQualityProfile): string | null {
+  if (profile.profile_id === props.defaultProfileId) return '默认起点'
+  if (profile.profile_id === 'local_balanced') return '作品集推荐'
+  if (profile.profile_id === 'high_quality') return '正式候选'
+  return null
+}
+
 function moveSelection(event: KeyboardEvent, index: number) {
   if (props.disabled || !props.profiles.length) return
   let next = index
@@ -76,7 +83,7 @@ function moveSelection(event: KeyboardEvent, index: number) {
           <span class="visual-quality-option-index">{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="visual-quality-option-title">
             <strong>{{ profile.label }}</strong>
-            <small v-if="profile.profile_id === props.defaultProfileId">默认</small>
+            <small v-if="profileBadge(profile)">{{ profileBadge(profile) }}</small>
           </span>
           <span v-if="profile.profile_id === props.modelValue" class="visual-quality-option-check" aria-hidden="true">✓</span>
         </span>
@@ -87,6 +94,8 @@ function moveSelection(event: KeyboardEvent, index: number) {
           <span><b>画幅</b>{{ profile.aspect_ratio ?? '9:16' }}</span>
           <span><b>帧率</b>{{ profile.video_fps }} fps</span>
           <span><b>采样</b>{{ profile.image_steps }}/{{ profile.video_steps }}</span>
+          <span><b>噪声</b>{{ profile.video_noise_aug_strength }}</span>
+          <span><b>运动</b>×{{ profile.video_motion_zoom }}</span>
         </span>
         <span class="visual-quality-option-description">{{ profile.description }}</span>
       </button>
@@ -99,6 +108,7 @@ function moveSelection(event: KeyboardEvent, index: number) {
         <p>
           图像 {{ selectedProfile.image_steps }} steps / guidance {{ selectedProfile.image_guidance }} ·
           视频 {{ selectedProfile.video_steps }} steps / CFG {{ selectedProfile.video_cfg }} ·
+          I2V 噪声 {{ selectedProfile.video_noise_aug_strength }} / 运动 ×{{ selectedProfile.video_motion_zoom }} ·
           身份权重 {{ Math.round(selectedProfile.image_identity_weight * 100) }}% ·
           画幅 {{ selectedProfile.aspect_ratio ?? '9:16' }}
         </p>
@@ -110,7 +120,7 @@ function moveSelection(event: KeyboardEvent, index: number) {
       <span class="quality-choice-kicker">下一步怎么做</span>
       <strong v-if="selectedProfile.profile_id === 'local_safe'">先确认一张人设图和一个短镜头</strong>
       <strong v-else-if="selectedProfile.profile_id === 'local_balanced'">用同一人物试拍两个不同景别</strong>
-      <strong v-else>先对比关键镜头，再决定是否批量使用</strong>
+      <strong v-else>先完成平衡档，再做 8～12 镜头正式候选</strong>
       <p>确认脸型、服装、动作和声音满意后，再生成整集。提高分辨率会增加资源消耗；更多采样步数不保证效果更好。</p>
       <details>
         <summary>这些参数分别影响什么？</summary>

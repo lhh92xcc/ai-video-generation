@@ -187,9 +187,9 @@ class VisualQualityProfileRegistry:
         ),
         VisualQualityProfile(
             profile_id="high_quality",
-            label="High Quality · 高质量候选",
-            description="单任务高质量候选：提高分辨率和采样预算；必须先完成平衡档验收，不能盲目并发。",
-            recommended_for="高质量对照样片、单任务低并发",
+            label="Portfolio Candidate · 作品集候选",
+            description="作品集候选档：提高参考图和视频的细节预算；必须先完成平衡档验收，再逐镜头筛选。",
+            recommended_for="8～12 镜头正式候选、单任务低并发",
             image_width=720,
             image_height=1280,
             image_steps=8,

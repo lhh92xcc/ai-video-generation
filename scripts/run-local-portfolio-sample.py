@@ -78,9 +78,9 @@ from app.media.video_validation import FFprobeVideoValidator
 from app.media.video_motion import FFmpegMotionEvidenceValidator
 from app.media.visual_prompts import (
     DEFAULT_REFERENCE_NEGATIVE_PROMPT,
-    DEFAULT_REFERENCE_STYLE,
     DEFAULT_VIDEO_NEGATIVE_PROMPT,
     build_shot_keyframe_prompt,
+    strengthen_reference_prompt,
 )
 from app.providers.factory import (
     create_image_generation_provider,
@@ -135,10 +135,11 @@ PORTFOLIO_MAX_SHOTS = int(PORTFOLIO_TARGET["shot_count"]["max"])
 # so the positive style lock is intentionally repeated in the prompt itself.
 PORTFOLIO_STYLE_LOCK = (
     "flat 2D manhwa/webtoon animation keyframe, shared visual bible across the entire sample, "
-    "bold clean ink outlines with stable line weight, matte cel-shaded color blocks, "
-    "simplified graphic shapes, crisp readable silhouettes, controlled illustrated lighting, "
+    "anime production-art linework with bold clean black ink outlines and stable line weight, "
+    "flat matte color fills and simple cel shadows, simplified graphic shapes, crisp readable silhouettes, "
+    "controlled illustrated lighting with no gradients or volumetric realism, "
     "one clear visual focal point, sharp illustration with no depth-of-field blur, "
-    "never photographic, never semi-realistic, never a 3D render"
+    "no realistic skin or material texture, never photographic, never semi-realistic, never a 3D render"
 )
 PORTFOLIO_STYLE_NEGATIVE_LOCK = (
     "photorealistic, photographic lens, cinematic bokeh, depth-of-field blur, soft focus, "
@@ -755,26 +756,26 @@ _PORTFOLIO_CAMERA_MOVEMENTS: tuple[str, ...] = (
     "tracking",
 )
 _PORTFOLIO_SHOT_ASSETS: tuple[tuple[str, ...], ...] = (
-    ("林默", "旧城区钟表店"),
-    ("林默", "旧城区钟表店"),
+    ("旧城区钟表店",),
+    ("旧城区钟表店",),
     ("黑伞女孩", "旧城区钟表店", "铜色怀表"),
     ("黑伞女孩", "旧城区钟表店", "铜色怀表"),
+    ("铜色怀表",),
     ("铜色怀表", "旧城区钟表店"),
+    ("林默", "旧城区钟表店"),
+    ("黑伞女孩", "林默", "旧城区钟表店"),
     ("林默", "铜色怀表", "旧城区钟表店"),
-    ("林默", "黑伞女孩", "旧城区钟表店"),
-    ("黑伞女孩", "旧城区钟表店"),
     ("林默", "铜色怀表", "旧城区钟表店"),
-    ("林默", "铜色怀表", "旧城区钟表店"),
-    ("林默", "黑伞女孩", "铜色怀表"),
+    ("林默", "旧城区钟表店"),
     ("林默", "铜色怀表", "旧城区钟表店"),
 )
 _PORTFOLIO_REFERENCE_NAMES: tuple[str, ...] = (
-    "林默",
-    "林默",
+    "旧城区钟表店",
+    "旧城区钟表店",
     "黑伞女孩",
     "黑伞女孩",
     "铜色怀表",
-    "林默",
+    "铜色怀表",
     "林默",
     "黑伞女孩",
     "林默",
@@ -815,13 +816,13 @@ def parse_args() -> argparse.Namespace:
         "--shots",
         type=int,
         choices=tuple(range(1, PORTFOLIO_MAX_SHOTS + 1)),
-        default=10,
+        default=1,
     )
     parser.add_argument(
         "--shot-duration",
         type=int,
         choices=(3, 4, 5),
-        default=5,
+        default=3,
         help="Seconds per Wan I2V shot; use 3 for the first hardware smoke.",
     )
     parser.add_argument(
@@ -855,6 +856,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--references-only",
+        action="store_true",
+        help=(
+            "Generate or reuse reference images, write a paused report, and stop "
+            "before creating any video task."
+        ),
+    )
+    parser.add_argument(
         "--reference-manifest",
         default=None,
         help=(
@@ -884,7 +893,10 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Pause after this shot; useful for validating checkpoint recovery.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.references_only and args.resume:
+        parser.error("--references-only cannot be combined with --resume; use a new output directory")
+    return args
 
 
 def _resolve_sample_config(config: str | None) -> str | None:
@@ -2684,21 +2696,30 @@ def _reference_prompt(asset_name: str) -> str:
         "旧城区钟表店": (
             f"{PORTFOLIO_STYLE_LOCK}, single empty continuous background plate, "
             "one coherent old Chinese urban clock shop at night, "
-            "wooden counter, many mechanical clocks on the wall, warm amber lamps, "
-            "rainy street visible through one window, flat illustrated vertical composition, "
+            "wooden counter, simplified graphic mechanical clocks on the wall, flat warm color blocks, "
+            "rainy street visible through one window, 2D animation background plate with inked contours, "
             "no people, no duplicate windows, no duplicate room, " + single_frame
         ),
         "铜色怀表": (
             f"{PORTFOLIO_STYLE_LOCK}, single illustrated prop design plate, exactly one antique bronze mechanical pocket watch, "
             "front-facing circular watch, hands stopped at twelve o'clock, "
             "on a dark wooden clockmaker counter with a black seamless background, "
-            "matte illustrated surfaces, restrained warm light, centered object, clean 2D illustration plate, " + single_frame
+            "flat graphic bronze and cream color blocks, bold ink contour, no realistic metal reflections, "
+            "centered object, clean 2D illustration plate, 2D animation prop plate, " + single_frame
         ),
     }
-    return (
-        f"{DEFAULT_REFERENCE_STYLE}. {prompts[asset_name]}. "
+    # Put asset-specific identity/composition facts first. The bounded helper
+    # may trim the source before appending its shared guardrail, so a long
+    # generic style preamble must not push facts such as "no people" or the
+    # single-pocket-watch constraint out of the provider request.
+    raw_prompt = (
+        f"{prompts[asset_name]}. "
         f"Avoid: {PORTFOLIO_STYLE_NEGATIVE_LOCK}."
     )
+    # ReferenceImageCreateRequest.prompt_override is capped at 1500 chars.
+    # Keep the asset-specific identity/composition facts first, then append the
+    # shared positive guardrail through the provider-neutral bounded helper.
+    return strengthen_reference_prompt(raw_prompt, max_chars=1500)
 
 
 async def _wait_for_task(
@@ -3068,7 +3089,11 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                     "title": title,
                     "location": "旧城区钟表店",
                     "time": "雨夜",
-                    "characters": ["林默"] if index == 1 else ["林默", "黑伞女孩"],
+                    "characters": [
+                        name
+                        for name in _PORTFOLIO_SHOT_ASSETS[index - 1]
+                        if by_name[name].asset_type == AssetType.CHARACTER
+                    ],
                     "duration_seconds": script_scene_durations[index - 1],
                     "action": visual_prompt,
                     "narration": voiceover,
@@ -3227,9 +3252,74 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         encoding="utf-8",
     )
 
+    if args.references_only:
+        checkpoint["status"] = "paused"
+        checkpoint["reference_only"] = True
+        checkpoint["completed_shots"] = []
+        _write_checkpoint(_checkpoint_path(output_dir), checkpoint)
+        portfolio_readiness = _portfolio_readiness_report(
+            args=args,
+            shot_count=len(shots),
+            reference_image_count=len(reference_tasks),
+            clip_count=0,
+            narration_artifact=None,
+            subtitle_artifact=None,
+            subtitle_metadata={},
+            rendered_artifact=None,
+            clip_task_snapshots=[],
+            video_provider=settings.video_provider,
+        )
+        partial_report = {
+            "report_schema_version": PORTFOLIO_REPORT_SCHEMA_VERSION,
+            "status": "paused",
+            "quality_profile_id": quality_profile_id,
+            "quality_profile": visual_quality_snapshot,
+            "sample_mode": "references_only",
+            "project_id": str(project_id),
+            "episode_id": str(episode.id),
+            "script_id": str(script.id),
+            "shots_requested": len(shots),
+            "shots_completed": 0,
+            "reference_image_count": len(reference_tasks),
+            "reference_manifest": str(reference_manifest_path_out.resolve()),
+            "clip_count": 0,
+            "real_motion_provider": None,
+            "preview_only": preview_only,
+            "checkpoint_path": str(_checkpoint_path(output_dir)),
+            "output_dir": str(output_dir),
+            "artifact_ids": {
+                "rendered_video": None,
+                "source_video_clips": [],
+                "narration": [],
+                "subtitles": None,
+            },
+            "portfolio_readiness": portfolio_readiness,
+            "formal_portfolio_eligible": False,
+            "human_review_required": True,
+            "next_command": (
+                f"{config_prefix}python scripts/run-local-portfolio-sample.py "
+                f"--shots {args.shots} --shot-duration {args.shot_duration} "
+                f"--quality-profile {quality_profile_id} --resume "
+                f"--reuse-recent-references --reference-manifest "
+                f"{reference_manifest_path_out} --output-dir {output_dir}"
+            ),
+        }
+        (output_dir / "report.json").write_text(
+            json.dumps(partial_report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        await _close_provider(image_provider)
+        await _close_provider(identity_provider)
+        await _close_provider(video_provider)
+        await _close_provider(tts_provider)
+        await visual_profile_registry.close()
+        await storage.close()
+        return partial_report
+
     clip_tasks: list[UUID] = []
     shot_reference_names = _PORTFOLIO_REFERENCE_NAMES[: args.shots]
     shot_reference_ids: dict[int, UUID] = {}
+    stop_after_shot_reached = False
     for shot, reference_name in zip(shots, shot_reference_names, strict=True):
         checkpoint_entry = _shot_checkpoint_entry(checkpoint, shot.shot_index)
         checkpointed_content = (
@@ -3257,6 +3347,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             _set_shot_checkpoint_entry(checkpoint, shot.shot_index, checkpoint_entry)
             _write_checkpoint(_checkpoint_path(output_dir), checkpoint)
             if args.stop_after_shot == shot.shot_index:
+                stop_after_shot_reached = True
                 break
             continue
 
@@ -3382,9 +3473,10 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             _write_checkpoint(_checkpoint_path(output_dir), checkpoint)
             raise
         if args.stop_after_shot == shot.shot_index:
+            stop_after_shot_reached = True
             break
 
-    if len(clip_tasks) < len(shots):
+    if len(clip_tasks) < len(shots) or stop_after_shot_reached:
         checkpoint["status"] = "paused"
         checkpoint["completed_shots"] = [
             int(shot_index)

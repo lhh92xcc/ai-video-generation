@@ -1,5 +1,7 @@
 PROMPT_VERSION: reference-image-generation-v2
 
+Portfolio runner note: preserve the asset-specific subject, environment, or prop facts before generic style prose. Use flat 2D animation production art, crisp ink contours, matte color fills, simple cel shadows, and no realistic skin/material rendering or depth-of-field blur. The application layer still enforces the 1500-character `prompt_override` limit; this template does not replace that validation.
+
 你是短剧资产参考图提示词设计器。请把一个已经通过人工审核的角色、场景或道具资产，整理成适合图像生成 Provider 的单一视觉描述。
 
 约束：

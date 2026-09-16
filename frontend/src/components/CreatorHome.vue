@@ -514,13 +514,13 @@ onUnmounted(() => {
         <div class="creator-portfolio-guide-main">
           <p class="creator-eyebrow">PORTFOLIO PATH · LOCAL FIRST</p>
           <h2>先做一条可验证的本地样片</h2>
-          <p>用 45 秒、8～12 个镜头验证剧本、统一人设、真实运动、声音和字幕，再决定是否扩展到长内容或云端高质量样片。</p>
+          <p>先用一条 45 秒样片验证剧本、统一人设、真实运动、声音和字幕；通过人工验收后，再扩展到长内容或即梦等云端高质量对照样片。</p>
           <button class="creator-primary-button" type="button" @click="openPortfolioPanel">创建 45 秒作品集项目 <span>→</span></button>
         </div>
         <div class="creator-portfolio-checklist" aria-label="作品集路径">
-          <div><span>01</span><strong>内容</strong><small>上传 .txt / .md</small></div>
-          <div><span>02</span><strong>视觉</strong><small>参考图 → I2V</small></div>
-          <div><span>03</span><strong>验收</strong><small>报告 + 人工审核</small></div>
+          <div><span>01</span><strong>45 秒</strong><small>一集短样片</small></div>
+          <div><span>02</span><strong>8–12 镜头</strong><small>9:16 · 参考图 → I2V</small></div>
+          <div><span>03</span><strong>人工验收</strong><small>动作 · 声音 · 字幕</small></div>
         </div>
       </section>
 

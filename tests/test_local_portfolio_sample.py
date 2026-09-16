@@ -510,16 +510,46 @@ def test_runner_quality_profile_can_override_windows_default() -> None:
 
 
 def test_reference_prompts_are_single_subject_or_scene() -> None:
-    assert "no collage" in _reference_prompt("林默")
-    assert "no split screen" in _reference_prompt("林默")
-    assert "exactly one" in _reference_prompt("黑伞女孩")
-    assert "no people" in _reference_prompt("旧城区钟表店")
-    assert "one antique bronze mechanical pocket watch" in _reference_prompt("铜色怀表")
+    prompts = {name: _reference_prompt(name) for name in ("林默", "黑伞女孩", "旧城区钟表店", "铜色怀表")}
+
+    assert "no collage" in prompts["林默"]
+    assert "no split screen" in prompts["林默"]
+    assert "exactly one" in prompts["黑伞女孩"]
+    assert "no people" in prompts["旧城区钟表店"]
+    assert "one antique bronze mechanical pocket watch" in prompts["铜色怀表"]
+    assert all(len(prompt) <= 1500 for prompt in prompts.values())
+    assert all("Reference quality guardrails:" in prompt for prompt in prompts.values())
     assert all(
-        _MODULE.PORTFOLIO_STYLE_LOCK in _reference_prompt(name)
-        for name in ("林默", "黑伞女孩", "旧城区钟表店", "铜色怀表")
+        _MODULE.PORTFOLIO_STYLE_LOCK in prompt
+        for prompt in prompts.values()
     )
-    assert "Avoid:" in _reference_prompt("铜色怀表")
+    assert "Avoid:" in prompts["铜色怀表"]
+
+
+def test_portfolio_shots_use_semantically_matching_reference_assets() -> None:
+    assert _MODULE._PORTFOLIO_REFERENCE_NAMES[:7] == (
+        "旧城区钟表店",
+        "旧城区钟表店",
+        "黑伞女孩",
+        "黑伞女孩",
+        "铜色怀表",
+        "铜色怀表",
+        "林默",
+    )
+    assert _MODULE._PORTFOLIO_REFERENCE_NAMES[7:] == (
+        "黑伞女孩",
+        "林默",
+        "林默",
+        "林默",
+        "林默",
+    )
+
+
+def test_stop_after_shot_is_a_pause_boundary_even_when_it_is_the_last_requested_shot() -> None:
+    source = Path(_MODULE.__file__).read_text(encoding="utf-8")
+
+    assert "stop_after_shot_reached = False" in source
+    assert "if len(clip_tasks) < len(shots) or stop_after_shot_reached:" in source
 
 
 def test_recent_reference_files_are_sorted_newest_first(tmp_path: Path) -> None:
@@ -1001,3 +1031,11 @@ def test_portfolio_assembly_accepts_one_narration_track_per_ten_shots() -> None:
     )
 
     assert len(request.audio_tracks) == 10
+
+
+def test_portfolio_runner_exposes_references_only_mode() -> None:
+    source = _SCRIPT_PATH.read_text(encoding="utf-8")
+    assert "--references-only" in source
+    assert '"sample_mode": "references_only"' in source
+    assert '"clip_count": 0' in source
+    assert "--references-only cannot be combined with --resume" in source

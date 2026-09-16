@@ -179,6 +179,26 @@ def create_video_generation_provider(settings: Settings) -> VideoGenerationProvi
             max_poll_seconds=settings.video_max_poll_seconds,
             max_download_bytes=settings.video_max_download_bytes,
         )
+    if settings.video_provider == "jimeng":
+        import os
+
+        from app.providers.jimeng_video import JimengVideoGenerationProvider
+
+        return JimengVideoGenerationProvider(
+            base_url=os.getenv("AI_VIDEO_JIMENG_BASE_URL") or settings.video_base_url,
+            api_key=os.getenv("AI_VIDEO_JIMENG_API_KEY"),
+            model=os.getenv("AI_VIDEO_JIMENG_MODEL") or settings.video_model,
+            timeout_seconds=settings.video_timeout_seconds,
+            create_path=os.getenv("AI_VIDEO_JIMENG_CREATE_PATH") or settings.video_create_path,
+            status_path_template=os.getenv(
+                "AI_VIDEO_JIMENG_STATUS_PATH_TEMPLATE",
+                settings.video_status_path_template,
+            ) or settings.video_status_path_template,
+            poll_interval_seconds=settings.video_poll_interval_seconds,
+            max_poll_seconds=settings.video_max_poll_seconds,
+            max_download_bytes=settings.video_max_download_bytes,
+            protocol_ready=os.getenv("AI_VIDEO_JIMENG_PROTOCOL_READY") == "1",
+        )
     if settings.video_provider == "siliconflow":
         return SiliconFlowVideoGenerationProvider(
             base_url=settings.video_base_url or "https://api.siliconflow.cn",
@@ -210,7 +230,7 @@ def create_video_generation_provider(settings: Settings) -> VideoGenerationProvi
         )
     raise ValueError(
         f"Unsupported video provider: {settings.video_provider}. "
-        "Use mock, local_fixture, ffmpeg_motion, openai_compatible, siliconflow or comfyui_wan_i2v."
+        "Use mock, local_fixture, ffmpeg_motion, openai_compatible, jimeng, siliconflow or comfyui_wan_i2v."
     )
 
 

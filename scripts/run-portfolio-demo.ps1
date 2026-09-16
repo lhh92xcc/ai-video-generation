@@ -5,12 +5,12 @@ param(
     [string]$ComfyUIUrl = "http://127.0.0.1:8188",
     [string]$OllamaUrl = "http://127.0.0.1:11434",
     [ValidateSet("local_safe", "local_balanced", "high_quality")]
-    [string]$QualityProfile = "local_balanced",
+    [string]$QualityProfile = "local_safe",
     [ValidateRange(1, 12)]
-    [int]$Shots = 10,
+    [int]$Shots = 1,
     [ValidateSet(3, 4, 5)]
-    [int]$ShotDuration = 5,
-    [string]$OutputDir = ".tmp/portfolio-demo",
+    [int]$ShotDuration = 3,
+    [string]$OutputDir = ".tmp/portfolio-smoke",
     [string]$ReferenceManifest,
     [switch]$ReuseRecentReferences,
     [switch]$Resume,
