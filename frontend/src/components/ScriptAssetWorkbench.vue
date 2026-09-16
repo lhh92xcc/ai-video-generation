@@ -1261,6 +1261,10 @@ onMounted(loadProjects)
   .workbench-toolbar, .workbench-summary-grid, .member-form-grid, .invitation-form-grid { grid-template-columns: 1fr; }
   .workbench-main-grid { display: block; }
   .asset-panel { margin-top: 18px; }
+  .asset-panel > .card-header { align-items: stretch; flex-direction: column; gap: 12px; }
+  .asset-panel .card-header-actions { flex-wrap: wrap; }
+  .asset-panel .card-header-actions .table-count { flex-basis: 100%; }
+  .asset-panel .card-header-actions button { flex: 1 1 auto; min-height: 40px; white-space: nowrap; }
   .hook-grid, .asset-workspace, .review-form, .editor-grid { grid-template-columns: 1fr; }
   .editor-grid .form-field-wide { grid-column: auto; }
   .dialogue-editor-row { grid-template-columns: 1fr; }
