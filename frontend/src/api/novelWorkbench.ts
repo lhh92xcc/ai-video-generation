@@ -134,6 +134,10 @@ export function getEpisodeShots(episodeId: string): Promise<ShotListRecord> {
   return apiRequest<ShotListRecord>(`/api/v1/episodes/${episodeId}/shots`)
 }
 
+export function syncStoryBibleAssets(projectId: string): Promise<AssetRecord[]> {
+  return apiRequest<AssetRecord[]>(`/api/v1/novel-projects/${projectId}/assets/sync`, { method: 'POST' })
+}
+
 export function getAssets(projectId: string, assetType?: AssetType): Promise<AssetRecord[]> {
   const query = assetType ? `?asset_type=${encodeURIComponent(assetType)}` : ''
   return apiRequest<AssetRecord[]>(`/api/v1/novel-projects/${projectId}/assets${query}`)

@@ -5,6 +5,7 @@ import { getEpisodes, getNovelProjects } from '../api/novels'
 import {
   getAssetReviews,
   getAssets,
+  syncStoryBibleAssets,
   getAuditLogs,
   getProjectInvitations,
   getEpisodeScriptDraft,
@@ -113,6 +114,7 @@ const loadingMembers = ref(false)
 const loadingInvitations = ref(false)
 const submittingReview = ref(false)
 const submittingBatchReview = ref(false)
+const syncingAssets = ref(false)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 
@@ -573,6 +575,28 @@ async function saveAsset() {
   }
 }
 
+async function syncAssets() {
+  if (!projectId.value || !canEditAsset.value || syncingAssets.value) return
+  const targetProjectId = projectId.value
+  syncingAssets.value = true
+  errorMessage.value = null
+  successMessage.value = null
+  try {
+    await syncStoryBibleAssets(targetProjectId)
+    const updatedAssets = await getAssets(targetProjectId)
+    if (projectId.value !== targetProjectId) return
+    assets.value = updatedAssets
+    if (!updatedAssets.some(asset => asset.id === selectedAssetId.value)) {
+      selectedAssetId.value = updatedAssets[0]?.id ?? ''
+    }
+    successMessage.value = `故事设定资产已同步，当前共 ${updatedAssets.length} 个资产。请检查内容后再审核。`
+  } catch (error) {
+    if (projectId.value === targetProjectId) errorMessage.value = displayError(error)
+  } finally {
+    syncingAssets.value = false
+  }
+}
+
 async function loadProjects() {
   loadingProjects.value = true
   errorMessage.value = null
@@ -929,7 +953,7 @@ onMounted(loadProjects)
   </section>
 
   <div v-if="errorMessage" class="alert-card error-card"><div><strong>工作台读取失败</strong><p>{{ errorMessage }}</p></div><button class="secondary-button" type="button" @click="loadProjectResources">重试</button></div>
-  <div v-if="successMessage" class="alert-card success-card"><div><strong>审核已保存</strong><p>{{ successMessage }}</p></div><button class="secondary-button" type="button" @click="successMessage = null">知道了</button></div>
+  <div v-if="successMessage" class="alert-card success-card"><div><strong>操作已完成</strong><p>{{ successMessage }}</p></div><button class="secondary-button" type="button" @click="successMessage = null">知道了</button></div>
 
   <section class="workbench-summary-grid" aria-label="脚本与资产摘要">
     <article class="summary-card"><div class="summary-icon blue"><span>剧</span></div><div><span>当前剧本</span><strong>{{ script ? `v${script.version}` : '未生成' }}</strong><small>{{ script ? `${script.content.scenes.length} 个场景 · ${script.content.total_duration_seconds} 秒` : '先生成分场剧本' }}</small></div><span class="summary-state" :class="{ good: script }">{{ script ? '可查看' : '待处理' }}</span></article>
@@ -989,7 +1013,7 @@ onMounted(loadProjects)
     </article>
 
     <article class="card asset-panel">
-      <div class="card-header"><div><h2>资产审核</h2><p>版本化管理角色、场景和道具，审核不会覆盖历史版本。</p></div><div class="card-header-actions"><span class="table-count">{{ filteredAssets.length }} 个结果</span><button v-if="canReviewAsset" class="primary-button compact-button" type="button" :disabled="!canSubmitBatchReview" @click="submitBatchReview">{{ submittingBatchReview ? '批量审核中…' : `一键审核待审核资产（${reviewableAssetCount}）` }}</button></div></div>
+      <div class="card-header"><div><h2>资产审核</h2><p>版本化管理角色、场景和道具，审核不会覆盖历史版本。</p></div><div class="card-header-actions"><span class="table-count">{{ filteredAssets.length }} 个结果</span><button v-if="canEditAsset" class="secondary-button compact-button" type="button" :disabled="!projectId || syncingAssets || loadingResources || editingAsset || submittingBatchReview" @click="syncAssets">{{ syncingAssets ? '同步中…' : '同步故事设定资产' }}</button><button v-if="canReviewAsset" class="primary-button compact-button" type="button" :disabled="!canSubmitBatchReview" @click="submitBatchReview">{{ submittingBatchReview ? '批量审核中…' : `一键审核待审核资产（${reviewableAssetCount}）` }}</button></div></div>
       <div class="asset-filter-row"><select v-model="assetTypeFilter"><option v-for="(label, value) in assetTypeLabels" :key="value" :value="value">{{ label }}</option></select><select v-model="assetStatusFilter"><option v-for="(label, value) in assetStatusLabels" :key="value" :value="value">{{ label }}</option></select></div>
       <div v-if="loadingResources" class="task-empty"><span class="spinner" />正在读取资产库…</div>
       <div v-else-if="filteredAssets.length === 0" class="task-empty"><strong>暂无匹配资产</strong><span>请先同步 StoryBible 资产，或调整筛选条件。</span></div>
