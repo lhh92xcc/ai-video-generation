@@ -512,18 +512,24 @@ def test_runner_quality_profile_can_override_windows_default() -> None:
 def test_reference_prompts_are_single_subject_or_scene() -> None:
     prompts = {name: _reference_prompt(name) for name in ("林默", "黑伞女孩", "旧城区钟表店", "铜色怀表")}
 
-    assert "no collage" in prompts["林默"]
-    assert "no split screen" in prompts["林默"]
+    assert "head-and-shoulders portrait of one young Chinese man" in prompts["林默"]
+    assert "both shoulders face directly toward the viewer" in prompts["林默"]
+    assert "ending just below the shoulders" in prompts["林默"]
+    assert "leather gloves" not in prompts["林默"]
+    assert "dark long coat" not in prompts["林默"]
+    assert "short black hair, slim face" in prompts["林默"].lower()
     assert "exactly one" in prompts["黑伞女孩"]
     assert "no people" in prompts["旧城区钟表店"]
     assert "one antique bronze mechanical pocket watch" in prompts["铜色怀表"]
     assert all(len(prompt) <= 1500 for prompt in prompts.values())
-    assert all("Reference quality guardrails:" in prompt for prompt in prompts.values())
-    for prompt in prompts.values():
-        assert "flat 2D manhwa" in prompt
+    assert all("flat 2d manhwa" in prompt.lower() for prompt in prompts.values())
+    # Environment/prop and unvalidated character prompts retain their existing
+    # style constraints. The validated portrait uses direct positive framing.
+    for name in ("黑伞女孩", "旧城区钟表店", "铜色怀表"):
+        prompt = prompts[name]
+        assert "Reference quality guardrails:" in prompt
         assert "no depth-of-field blur" in prompt
         assert f"Avoid: {_MODULE.PORTFOLIO_STYLE_NEGATIVE_LOCK}." in prompt
-    assert "short black hair, slim face" in prompts["林默"]
     assert "long black hair" in prompts["黑伞女孩"]
     assert "rainy street visible through one window" in prompts["旧城区钟表店"]
     assert "hands stopped at twelve o'clock" in prompts["铜色怀表"]

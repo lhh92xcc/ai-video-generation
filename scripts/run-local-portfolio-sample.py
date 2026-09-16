@@ -2697,6 +2697,19 @@ def _character_facts(asset: AssetRecord) -> str:
 
 
 def _reference_prompt(asset_name: str) -> str:
+    # This positive portrait prompt was validated with a fixed-seed Flux run.
+    # Out-of-frame gloves and coat hems pulled the older prompt toward half-body.
+    if asset_name == "林默":
+        return (
+            'A straight-on head-and-shoulders portrait of one young Chinese man in his late twenties. '
+            'His face and both shoulders face directly toward the viewer. His head is upright, eyes '
+            'looking straight ahead, ears equally visible on both sides. Short black hair, slim face, '
+            'quiet serious neutral expression. The frame shows his full head, neck and the collar of '
+            'a dark coat, ending just below the shoulders. His face fills most of the image. Plain '
+            'cool-gray background. Flat 2D manhwa illustration, clean bold black ink outlines, matte '
+            'flat color fills, simple cel shadows, even illustrated lighting. A single centered '
+            'portrait.'
+        )
     # A reference request has a tighter budget than a video prompt. Avoid
     # repeating the full video style lock before appending shared guardrails.
     reference_style = (
@@ -2709,13 +2722,6 @@ def _reference_prompt(asset_name: str) -> str:
         "no character sheet, no duplicate subject, no text, no watermark"
     )
     prompts = {
-        "林默": (
-            "single subject front-facing head-and-shoulders portrait, "
-            "exactly one young Chinese male clockmaker, late 20s, "
-            "short black hair, slim face, dark long coat and old leather gloves, "
-            "quiet serious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
-            "centered face, clean portrait crop, vertical 9:16 composition, no props, " + single_frame
-        ),
         "黑伞女孩": (
             "single subject front-facing head-and-shoulders portrait, "
             "exactly one young Chinese woman with long black hair, "
