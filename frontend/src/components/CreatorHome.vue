@@ -34,7 +34,7 @@ type TopicLaunchState = {
   task: GenerationTaskRecord | null
 }
 
-const emit = defineEmits<{ openOperator: [view?: OperatorView] }>()
+const emit = defineEmits<{ openOperator: [view?: OperatorView, projectId?: string] }>()
 
 const projects = ref<NovelProjectRecord[]>([])
 const topicProjects = ref<TopicProjectRecord[]>([])
@@ -308,7 +308,7 @@ function closeProjectWorkspace() {
 }
 
 function openOperator(view?: OperatorView) {
-  emit('openOperator', view)
+  emit('openOperator', view, activeProjectId.value ?? undefined)
 }
 
 function stopTopicTaskPolling() {

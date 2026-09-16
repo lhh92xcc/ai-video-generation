@@ -95,6 +95,16 @@ describe('creator home', () => {
     vi.useRealTimers()
   })
 
+  it('includes the active project when opening its workbench', async () => {
+    const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
+    try {
+      await flushPromises()
+      await wrapper.get('.creator-project-row').trigger('click')
+      wrapper.findComponent({ name: 'CreatorProjectWorkspace' }).vm.$emit('openOperator', 'workbench')
+      expect(wrapper.emitted('openOperator')?.at(-1)).toEqual(['workbench', 'project-1'])
+    } finally { wrapper.unmount() }
+  })
+
   it('renders real dashboard data and opens the novel project form', async () => {
     const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
     try {

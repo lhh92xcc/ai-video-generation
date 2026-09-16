@@ -50,6 +50,8 @@ import type {
 } from '../types/novel'
 import type { EpisodeRecord, NovelProjectRecord } from '../types/task'
 
+const props = defineProps<{ initialProjectId?: string }>()
+
 type ContentTab = 'script' | 'shots'
 
 const projects = ref<NovelProjectRecord[]>([])
@@ -602,7 +604,12 @@ async function loadProjects() {
   errorMessage.value = null
   try {
     projects.value = await getNovelProjects()
-    if (!projectId.value && projects.value.length) projectId.value = projects.value[0].id
+    if (!projectId.value && projects.value.length) {
+      if (props.initialProjectId) {
+        if (projects.value.some(project => project.id === props.initialProjectId)) projectId.value = props.initialProjectId
+        else errorMessage.value = '原项目不可访问，请选择需要查看的项目。'
+      } else projectId.value = projects.value[0].id
+    }
   } catch (error) {
     errorMessage.value = displayError(error)
   } finally {

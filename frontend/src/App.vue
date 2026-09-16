@@ -64,7 +64,10 @@ function openHelpCreator() {
   openCreatorSurface()
 }
 
-function openOperator(view: AppView = 'overview') {
+const workbenchProjectId = ref('')
+
+function openOperator(view: AppView = 'overview', projectId?: string) {
+  workbenchProjectId.value = projectId ?? ''
   setOperatorView(view)
 }
 
@@ -448,7 +451,7 @@ onUnmounted(() => window.removeEventListener('popstate', syncLocation))
         <TaskCenter v-else-if="activeView === 'tasks'" />
         <ProductionQueue v-else-if="activeView === 'queue'" />
         <ArtifactLibrary v-else-if="activeView === 'artifacts'" @open-tasks="setOperatorView('tasks')" />
-        <ScriptAssetWorkbench v-else />
+        <ScriptAssetWorkbench v-else :initial-project-id="workbenchProjectId" />
       </main>
     </div>
     <div v-if="showHelp" class="operator-modal-backdrop" role="presentation" @click.self="showHelp = false">
