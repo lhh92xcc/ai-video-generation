@@ -170,8 +170,8 @@ class VisualQualityProfileRegistry:
         VisualQualityProfile(
             profile_id="local_balanced",
             label="Local Balanced · 平衡质量",
-            description="作品集推荐档：提高视频流畅度与关键帧清晰度，同时保持逐镜头串行和低漂移。",
-            recommended_for="本地 GPU 运行主机的首轮作品集验收",
+            description="提高分辨率与采样预算的本地实验档；保持逐镜头串行，画质、动作与身份仍需实测。",
+            recommended_for="单镜头通过后的本地质量对照",
             image_width=576,
             image_height=1024,
             image_steps=6,
@@ -188,7 +188,7 @@ class VisualQualityProfileRegistry:
         VisualQualityProfile(
             profile_id="high_quality",
             label="Portfolio Candidate · 作品集候选",
-            description="作品集候选档：提高参考图和视频的细节预算；必须先完成平衡档验收，再逐镜头筛选。",
+            description="提高细节预算的候选档；少步数 Wan 输出尚未完成画质验收，需先单镜头对照再筛选。",
             recommended_for="8～12 镜头正式候选、单任务低并发",
             image_width=720,
             image_height=1280,

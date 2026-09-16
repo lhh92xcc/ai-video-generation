@@ -254,7 +254,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-portfolio-demo.ps1 `
 | 档案 | 参考图 | 视频片段 | 适用场景 |
 | --- | --- | --- | --- |
 | `local_safe` | 432×768，4 steps | 288×512，12fps，6 steps | 首次联调、低显存和失败范围控制 |
-| `local_balanced` | 576×1024，6 steps | 432×768，16fps，8 steps | 本地 GPU 运行主机的首轮作品集样片 |
+| `local_balanced` | 576×1024，6 steps | 432×768，16fps，8 steps | 单镜头通过后的本地质量对照，画质待实测 |
 | `high_quality` | 720×1280，8 steps | 576×1024，16fps，12 steps | 单任务高质量候选，必须先实测 |
 
 档案只提供可复现的起始参数；显存、耗时、身份一致性和动作质量必须以目标机器的真实 smoke 与人工看片为准。
@@ -493,3 +493,7 @@ python scripts\recommend-quality-profile.py --vram-gb 12 --json
 如果要把 MuseTalk 作为正式对话镜头的必需依赖，再追加 `-RequireMuseTalk`；启动器也支持同名参数。如果暂时只检查 Docker/API 基础设施，可省略媒体检查参数。首次使用真实 MuseTalk 前，需要设置 `MUSETALK_WRAPPER_PATH`、`MUSETALK_MODEL_ROOT`，并让 wrapper 接受 `--video`、`--audio`、`--output`、`--face-region`、`--face-padding`、`--device`（可选 `--model-root`），在 `--output` 写出 MP4。
 
 远程队列页面位于 <http://127.0.0.1:3000> 的“远程队列”；接口为 `GET /api/v1/system/health`、`GET /api/v1/system/queue`、`GET /api/v1/system/dead-letters` 和 `POST /api/v1/system/cleanup`。死信任务可以通过 `POST /api/v1/system/dead-letters/{task_id}/requeue` 人工恢复；历史重试次数保留，人工恢复后重新开始自动重试预算。健康接口可带 `image_provider_profile_id` / `video_provider_profile_id`，让创作者前台按当前选择的视觉档案探测 ComfyUI。完整小说生产可以从前台“自动生产”入口创建 `production run`，Worker 会按依赖自动推进 StoryBible、分集、剧本、分镜、参考图、音频、字幕、视频和 Assembly。
+
+### 模型采样预算说明
+
+当前 Wan 档位的 6/8/12 步是控制本机负载的实验设置，尚未完成正式画质验收；Wan2.1 官方 I2V 入口默认 40 步，不能把 GGUF 量化等同于少步数蒸馏。Flux Schnell 官方示例使用 4 步，也不能据此推断 Wan 同样适用。先固定参考图、模型、seed、尺寸和帧数做单变量对照，再依据画质和内存实测调整；本项目不会因官方示例更高步数而自动提高本机生成负载。
