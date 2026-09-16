@@ -519,11 +519,14 @@ def test_reference_prompts_are_single_subject_or_scene() -> None:
     assert "one antique bronze mechanical pocket watch" in prompts["铜色怀表"]
     assert all(len(prompt) <= 1500 for prompt in prompts.values())
     assert all("Reference quality guardrails:" in prompt for prompt in prompts.values())
-    assert all(
-        _MODULE.PORTFOLIO_STYLE_LOCK in prompt
-        for prompt in prompts.values()
-    )
-    assert "Avoid:" in prompts["铜色怀表"]
+    for prompt in prompts.values():
+        assert "flat 2D manhwa" in prompt
+        assert "no depth-of-field blur" in prompt
+        assert f"Avoid: {_MODULE.PORTFOLIO_STYLE_NEGATIVE_LOCK}." in prompt
+    assert "short black hair, slim face" in prompts["林默"]
+    assert "long black hair" in prompts["黑伞女孩"]
+    assert "rainy street visible through one window" in prompts["旧城区钟表店"]
+    assert "hands stopped at twelve o'clock" in prompts["铜色怀表"]
 
 
 def test_portfolio_shots_use_semantically_matching_reference_assets() -> None:
@@ -1039,3 +1042,54 @@ def test_portfolio_runner_exposes_references_only_mode() -> None:
     assert '"sample_mode": "references_only"' in source
     assert '"clip_count": 0' in source
     assert "--references-only cannot be combined with --resume" in source
+
+
+def test_references_only_runs_with_empty_environment_scene(tmp_path, monkeypatch) -> None:
+    import asyncio
+    import json
+
+    monkeypatch.setenv("AI_VIDEO_STORAGE_BASE_PATH", str(tmp_path / "artifacts"))
+    output = tmp_path / "sample"
+    args = argparse.Namespace(
+        config="config/config.example.toml", output_dir=str(output), shots=1,
+        shot_duration=3, quality_profile="local_safe", mock_media=True,
+        preview_only=False, reuse_recent_references=False, references_only=True,
+        reference_manifest=None, shot_keyframe_mode="auto", resume=False,
+        stop_after_shot=None,
+    )
+    report = asyncio.run(_MODULE.run_sample(args))
+    assert report["sample_mode"] == "references_only"
+    assert report["clip_count"] == 0
+    assert report["reference_image_count"] == 4
+    assert report["formal_portfolio_eligible"] is False
+    checkpoint = json.loads((output / "run-checkpoint.json").read_text())
+    assert checkpoint["completed_shots"] == []
+    assert Path(report["reference_manifest"]).is_file()
+    import shlex
+    command = shlex.split(report["next_command"])
+    assert "--mock-media" in command
+    assert command[command.index("--shot-keyframe-mode") + 1] == "auto"
+    assert command[command.index("--output-dir") + 1] == str(output)
+    assert "--references-only" not in command
+    manifest = json.loads(Path(report["reference_manifest"]).read_text())
+    assert all(item["placeholder"] and item["source_path"] is None
+               for item in manifest["assets"].values())
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_resume_command_keeps_reference_binding_and_keyframe_mode(preview) -> None:
+    import shlex
+
+    args = argparse.Namespace(shots=1, shot_duration=3, quality_profile="local_safe",
+                              shot_keyframe_mode="off", mock_media=False, preview_only=preview)
+    command = shlex.split(_MODULE._resume_command(
+        args, "config/my config.toml", Path("output with spaces/manifest.json"),
+        Path("output with spaces"),
+    ))
+    assert command[command.index("--config") + 1] == "config/my config.toml"
+    assert command[command.index("--shot-keyframe-mode") + 1] == "off"
+    assert command[command.index("--reference-manifest") + 1] == str(Path("output with spaces/manifest.json"))
+    assert command[command.index("--output-dir") + 1] == "output with spaces"
+    assert "--reuse-recent-references" in command
+    assert ("--preview-only" in command) is preview
+    assert "--mock-media" not in command

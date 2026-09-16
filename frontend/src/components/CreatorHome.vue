@@ -255,6 +255,7 @@ function openCreatePanel(mode: 'novel' | 'topic' = 'novel') {
 }
 
 function openPortfolioPanel() {
+  episodeCount.value = 1
   episodeDuration.value = 45
   openCreatePanel('novel')
 }

@@ -140,12 +140,13 @@ describe('creator home', () => {
     }
   })
 
-  it('opens the portfolio shortcut with the 45-second target selected', async () => {
+  it('opens the portfolio shortcut with one 45-second episode selected', async () => {
     const wrapper = mount(CreatorHome, { global: { stubs: ['CreatorProjectWorkspace', 'MediaPreview'] } })
     try {
       await flushPromises()
       await wrapper.get('[data-test="portfolio-guide"] button').trigger('click')
       const formRowSelects = wrapper.findAll('[role="dialog"] .creator-form-row select')
+      expect((formRowSelects[0]!.element as HTMLSelectElement).value).toBe('1')
       expect((formRowSelects[1]!.element as HTMLSelectElement).value).toBe('45')
       expect(wrapper.get('[role="dialog"]').text()).toContain('45 秒 · 作品集')
     } finally {

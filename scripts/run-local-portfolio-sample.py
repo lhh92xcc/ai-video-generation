@@ -22,6 +22,7 @@ import json
 import math
 import os
 import re
+import shlex
 import sys
 import time
 from datetime import datetime, timezone
@@ -897,6 +898,30 @@ def parse_args() -> argparse.Namespace:
     if args.references_only and args.resume:
         parser.error("--references-only cannot be combined with --resume; use a new output directory")
     return args
+
+
+
+def _resume_command(args: argparse.Namespace, config_path: str | None,
+                    manifest_path: Path, output_dir: Path) -> str:
+    command = [sys.executable, "scripts/run-local-portfolio-sample.py"]
+    if config_path:
+        command.extend(["--config", config_path])
+    command.extend([
+        "--shots", str(args.shots), "--shot-duration", str(args.shot_duration),
+        "--quality-profile", args.quality_profile,
+        "--shot-keyframe-mode", args.shot_keyframe_mode,
+        "--resume", "--output-dir", str(output_dir),
+    ])
+    if args.mock_media:
+        command.append("--mock-media")
+    else:
+        command.extend(["--reuse-recent-references", "--reference-manifest", str(manifest_path)])
+    if args.preview_only:
+        command.append("--preview-only")
+    # The generated command is for the current host's standard shell.
+    if os.name == "nt":
+        return "& " + " ".join("'" + part.replace("'", "''") + "'" for part in command)
+    return shlex.join(command)
 
 
 def _resolve_sample_config(config: str | None) -> str | None:
@@ -2672,53 +2697,52 @@ def _character_facts(asset: AssetRecord) -> str:
 
 
 def _reference_prompt(asset_name: str) -> str:
+    # A reference request has a tighter budget than a video prompt. Avoid
+    # repeating the full video style lock before appending shared guardrails.
+    reference_style = (
+        "flat 2D manhwa/webtoon, shared visual bible, bold clean ink outlines, "
+        "flat matte color fills, simple cel shadows, crisp silhouettes, "
+        "no depth-of-field blur"
+    )
     single_frame = (
-        "one full-frame 2D manhwa illustration, one coherent composition, one camera view, "
-        "no split screen, no split frame, "
-        "no diptych, no triptych, no collage, no comic panels, no character sheet, "
-        "no inset image, no repeated face, no duplicate subject, no second view, "
-        "no text, no watermark"
+        "one full-frame view, no split screen, no collage, no panels, "
+        "no character sheet, no duplicate subject, no text, no watermark"
     )
     prompts = {
         "林默": (
-            f"{PORTFOLIO_STYLE_LOCK}, single subject front-facing head-and-shoulders portrait, "
+            "single subject front-facing head-and-shoulders portrait, "
             "exactly one young Chinese male clockmaker, late 20s, "
             "short black hair, slim face, dark long coat and old leather gloves, "
             "quiet serious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
             "centered face, clean portrait crop, vertical 9:16 composition, no props, " + single_frame
         ),
         "黑伞女孩": (
-            f"{PORTFOLIO_STYLE_LOCK}, single subject front-facing head-and-shoulders portrait, "
+            "single subject front-facing head-and-shoulders portrait, "
             "exactly one young Chinese woman with long black hair, "
             "black long coat, calm mysterious neutral expression, soft even illustrated studio lighting, plain cool-gray background, "
             "centered face, clean portrait crop, vertical 9:16 composition, no umbrella and no props, " + single_frame
         ),
         "旧城区钟表店": (
-            f"{PORTFOLIO_STYLE_LOCK}, single empty continuous background plate, "
+            "single empty continuous background plate, "
             "one coherent old Chinese urban clock shop at night, "
             "wooden counter, simplified graphic mechanical clocks on the wall, flat warm color blocks, "
             "rainy street visible through one window, 2D animation background plate with inked contours, "
             "no people, no duplicate windows, no duplicate room, " + single_frame
         ),
         "铜色怀表": (
-            f"{PORTFOLIO_STYLE_LOCK}, single illustrated prop design plate, exactly one antique bronze mechanical pocket watch, "
+            "single illustrated prop design plate, exactly one antique bronze mechanical pocket watch, "
             "front-facing circular watch, hands stopped at twelve o'clock, "
             "on a dark wooden clockmaker counter with a black seamless background, "
             "flat graphic bronze and cream color blocks, bold ink contour, no realistic metal reflections, "
             "centered object, clean 2D illustration plate, 2D animation prop plate, " + single_frame
         ),
     }
-    # Put asset-specific identity/composition facts first. The bounded helper
-    # may trim the source before appending its shared guardrail, so a long
-    # generic style preamble must not push facts such as "no people" or the
-    # single-pocket-watch constraint out of the provider request.
+    # Put identity and composition first; keep the complete negative list and
+    # shared positive guardrail within ReferenceImageCreateRequest's budget.
     raw_prompt = (
-        f"{prompts[asset_name]}. "
+        f"{prompts[asset_name]}. {reference_style}. "
         f"Avoid: {PORTFOLIO_STYLE_NEGATIVE_LOCK}."
     )
-    # ReferenceImageCreateRequest.prompt_override is capped at 1500 chars.
-    # Keep the asset-specific identity/composition facts first, then append the
-    # shared positive guardrail through the provider-neutral bounded helper.
     return strengthen_reference_prompt(raw_prompt, max_chars=1500)
 
 
@@ -2825,7 +2849,6 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
         )
     configured_environment_path = os.getenv("AI_VIDEO_CONFIG")
     next_config_path = config_path or configured_environment_path
-    config_prefix = f"AI_VIDEO_CONFIG={next_config_path} " if next_config_path else ""
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = _load_or_create_checkpoint(
@@ -3232,7 +3255,7 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             if reference_image is None:
                 raise RuntimeError(f"reference image record is missing for asset {asset_name!r}")
             storage_key = reference_image.metadata.get("storage_key")
-            if not isinstance(storage_key, str) or not storage_key:
+            if not args.mock_media and (not isinstance(storage_key, str) or not storage_key):
                 raise RuntimeError(
                     f"reference image Artifact is missing storage_key for {asset_name!r}"
                 )
@@ -3242,7 +3265,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 "asset_version": by_name[asset_name].version,
                 "reference_image_id": str(reference_image_id),
                 "storage_key": storage_key,
-                "source_path": str((artifact_root / storage_key).resolve()),
+                "source_path": str((artifact_root / storage_key).resolve()) if storage_key else None,
+                "placeholder": bool(args.mock_media),
                 "reused": False,
             }
 
@@ -3296,12 +3320,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
             "portfolio_readiness": portfolio_readiness,
             "formal_portfolio_eligible": False,
             "human_review_required": True,
-            "next_command": (
-                f"{config_prefix}python scripts/run-local-portfolio-sample.py "
-                f"--shots {args.shots} --shot-duration {args.shot_duration} "
-                f"--quality-profile {quality_profile_id} --resume "
-                f"--reuse-recent-references --reference-manifest "
-                f"{reference_manifest_path_out} --output-dir {output_dir}"
+            "next_command": _resume_command(
+                args, next_config_path, reference_manifest_path_out, output_dir,
             ),
         }
         (output_dir / "report.json").write_text(
@@ -3538,14 +3558,8 @@ async def run_sample(args: argparse.Namespace) -> dict[str, object]:
                 video_provider=settings.video_provider,
                 shot_keyframe_mode=getattr(args, "shot_keyframe_mode", "auto"),
             ),
-            "next_command": (
-                f"AI_VIDEO_PROFILE={settings.runtime_profile} "
-                f"{config_prefix}"
-                f"python scripts/run-local-portfolio-sample.py --shots {args.shots} "
-                f"--shot-duration {args.shot_duration} "
-                f"--quality-profile {quality_profile_id} "
-                f"{'--preview-only ' if preview_only else ''}"
-                f"--resume --output-dir {output_dir}"
+            "next_command": _resume_command(
+                args, next_config_path, reference_manifest_path_out, output_dir,
             ),
         }
         (output_dir / "report.json").write_text(

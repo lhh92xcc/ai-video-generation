@@ -457,7 +457,8 @@ class SceneScriptContent(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     location: str = Field(min_length=1, max_length=120)
     time: str = Field(min_length=1, max_length=80)
-    characters: list[str] = Field(min_length=1, max_length=30)
+    # Establishing shots and prop inserts can contain no visible characters.
+    characters: list[str] = Field(max_length=30)
     duration_seconds: int = Field(ge=1, le=300)
     action: str = Field(min_length=1, max_length=1500)
     narration: str = Field(default="", max_length=1000)
