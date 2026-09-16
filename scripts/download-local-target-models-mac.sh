@@ -8,6 +8,7 @@ hf_base="${HF_ENDPOINT:-https://hf-mirror.com}"
 download_file() {
   local url="$1"
   local target="$2"
+  local partial="${target}.part"
   mkdir -p "$(dirname "${target}")"
   if [[ -s "${target}" ]]; then
     echo "exists: ${target}"
@@ -15,10 +16,15 @@ download_file() {
   fi
   echo "download: ${target}"
   # Hugging Face mirrors occasionally reset long-lived TLS connections. Keep
-  # the partial file and retry all transient curl errors so rerunning this
-  # script is safe and does not restart a multi-GB download.
+  # partial bytes separate from the installed filename. Only publish after
+  # curl succeeds, so reruns resume interrupted transfers instead of skipping them.
   curl -L --fail --retry 10 --retry-all-errors --retry-delay 3 --continue-at - \
-    "${url}" -o "${target}"
+    "${url}" -o "${partial}" || return $?
+  if [[ ! -s "${partial}" ]]; then
+    echo "download returned an empty file: ${target}" >&2
+    return 1
+  fi
+  mv "${partial}" "${target}"
 }
 
 # Flux Schnell Q4 and its text/image dependencies.
