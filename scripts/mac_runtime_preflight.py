@@ -539,6 +539,8 @@ class MacRuntimePreflight:
             "api、worker 均在运行" if have_services else "需要运行 api 和 worker",
             required=required,
         )
+        has_subtitles = False
+        filter_message = "API 容器未运行，无法检查 subtitles/libass filter"
         if "api" in running:
             health, error = _request_json("http://127.0.0.1:8000/healthz")
             self.add("本地 API /healthz", health is not None, error or "API 健康检查通过", required=required)
@@ -548,10 +550,11 @@ class MacRuntimePreflight:
                 timeout=30.0,
             )
             has_subtitles = ok and "subtitles" in filters
+            filter_message = "容器内字幕 filter 可用" if has_subtitles else "容器内字幕 filter 检查失败或缺少 subtitles/libass"
         self.add(
             "Docker FFmpeg subtitles/libass",
             has_subtitles,
-            "容器内字幕 filter 可用" if has_subtitles else "容器内缺少 subtitles/libass filter",
+            filter_message,
             required=required and self._renderer_uses_docker_fallback,
         )
 

@@ -79,3 +79,22 @@ def test_mac_check_wrapper_is_read_only_and_forwards_options() -> None:
     assert "CHECK_LOCAL_MAC_REQUIRE_COMPOSE" in wrapper
     assert 'AI_VIDEO_PROFILE="${AI_VIDEO_PROFILE:-local_mac_16gb}"' in wrapper
     assert "docker compose up" not in wrapper
+
+
+def test_mac_preflight_reports_unavailable_docker_without_crashing(monkeypatch, tmp_path):
+    from scripts import mac_runtime_preflight as module
+
+    checker = MacRuntimePreflight(
+        project_root=PROJECT_ROOT, config_path=_write_minimal_local_config(tmp_path),
+        comfyui_root=tmp_path / "comfyui", validate_models=False,
+    )
+    checker._renderer_uses_docker_fallback = True
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/docker")
+    def command(args, **kwargs):
+        return (True, "") if "config" in args else (False, "Docker daemon unavailable")
+    monkeypatch.setattr(module, "_run_command", command)
+    checker._check_compose()
+    result = next(item for item in checker.results if item.name == "Docker FFmpeg subtitles/libass")
+    assert result.ok is False
+    assert result.required is True
+    assert "未运行" in result.message
