@@ -14,7 +14,7 @@ function api(permission = true, fail = false) {
     }
     let data: unknown = []
     if (path === '/api/v1/novel-projects') data = [{ id: 'p1', title: '同步验收', status: 'draft' }]
-    else if (path.endsWith('/access')) data = { permissions: permission ? ['asset:edit'] : [], role: 'editor', actor: {} }
+    else if (path.endsWith('/access')) data = { permissions: permission ? ['asset:edit', 'asset:review'] : [], role: 'editor', actor: {} }
     else if (path.endsWith('/members') || path.includes('/audit-logs')) data = { items: [], total: 0 }
     else if ((path.endsWith('/assets') || path.endsWith('/assets/sync')) && synced) data = [{ id: 'a1', asset_key: 'key1', name: '铜色怀表', asset_type: 'prop', version: 1, status: 'draft', content: { description: '铜色怀表' }, aliases: [], source_chapter_numbers: [] }]
     return new Response(JSON.stringify(data), { status: 200 })
@@ -33,6 +33,19 @@ describe('workbench asset synchronization', () => {
       expect(w.find('.asset-status-pill').text()).toBe('草稿')
       expect(mutations).toEqual(['/api/v1/novel-projects/p1/assets/sync'])
     } finally { w.unmount() }
+  })
+  it('disables review controls while synchronization is pending', async () => {
+    api(); const w = mount(Workbench)
+    let finish!: (response: Response) => void
+    try {
+      await flushPromises(); await syncButton(w)!.trigger('click'); await flushPromises()
+      vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
+      await syncButton(w)!.trigger('click'); await flushPromises()
+      expect(w.get('.review-submit').attributes('disabled')).toBeDefined()
+      expect(w.get('.review-form select').attributes('disabled')).toBeDefined()
+    } finally {
+      finish?.(new Response('[]')); await flushPromises(); w.unmount()
+    }
   })
   it('hides sync without asset editing permission', async () => {
     api(false); const w = mount(Workbench)
