@@ -57,6 +57,10 @@ download_file "${hf_base}/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-fp8_e4m
   "${comfyui_home}/models/text_encoders/umt5-xxl-enc-fp8_e4m3fn.safetensors"
 download_file "${hf_base}/Kijai/WanVideo_comfy/resolve/main/Wan2_1_VAE_bf16.safetensors?download=true" \
   "${comfyui_home}/models/vae/Wan2_1_VAE_bf16.safetensors"
+download_file "${hf_base}/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors?download=true" \
+  "${comfyui_home}/models/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"
+download_file "${hf_base}/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors?download=true" \
+  "${comfyui_home}/models/clip_vision/clip_vision_h.safetensors"
 
 echo "Target Flux/Wan/PuLID model files are ready."
 echo "ChatTTS and MuseTalk use separate MLX/local runtimes and are installed by their setup scripts."

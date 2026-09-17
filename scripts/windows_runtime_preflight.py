@@ -472,6 +472,8 @@ class WindowsRuntimePreflight:
             "AI_VIDEO_VIDEO_MODEL",
             "wan2.1-i2v-14b-480p-Q4_K_S.gguf",
         )
+        selected_quality = str(self.config.get("visual_quality", {}).get("default_profile", "local_safe"))
+        distilled_required = selected_quality == "local_distilled"
         required_files = (
             ("Flux 模型", self.comfyui_root / "models" / "unet" / image_model),
             ("Wan 模型", self.comfyui_root / "models" / "diffusion_models" / video_model),
@@ -496,9 +498,13 @@ class WindowsRuntimePreflight:
                 "Wan VAE",
                 self.comfyui_root / "models" / "vae" / "Wan2_1_VAE_bf16.safetensors",
             ),
+            ("Lightx2v LoRA", self.comfyui_root / "models" / "loras" / "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors", distilled_required),
+            ("Wan CLIP Vision", self.comfyui_root / "models" / "clip_vision" / "clip_vision_h.safetensors", distilled_required),
         )
-        for label, path in required_files:
-            self.add(label, path.is_file() and path.stat().st_size > 0, str(path))
+        for item in required_files:
+            label, path = item[:2]
+            required = item[2] if len(item) > 2 else True
+            self.add(label, path.is_file() and path.stat().st_size > 0, str(path), required=required)
 
         node_root = self.comfyui_root / "custom_nodes"
         for directory in (

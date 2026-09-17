@@ -299,6 +299,11 @@ class VisualProviderProfileRegistry:
         return replace(
             self._settings,
             visual_quality_profile=profile.profile_id,
+            video_workflow_path=(
+                "config/comfyui/wan2.1-i2v-lightx2v-api.json"
+                if profile.profile_id == "local_distilled"
+                else self._settings.video_workflow_path
+            ),
             image_width=profile.image_width,
             image_height=profile.image_height,
             image_steps=profile.image_steps,

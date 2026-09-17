@@ -143,3 +143,13 @@ def test_jimeng_profile_does_not_reuse_generic_video_key(monkeypatch: pytest.Mon
     registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
 
     assert registry.resolve("video", "video.jimeng").configured is False
+
+
+def test_distilled_quality_selects_matched_workflow_and_snapshot() -> None:
+    registry = VisualProviderProfileRegistry(load_settings("config/config.example.toml"))
+    snapshot = registry.quality_snapshot("local_distilled")
+    selected = registry.settings_for_quality("local_distilled", snapshot)
+    assert selected.video_workflow_path == "config/comfyui/wan2.1-i2v-lightx2v-api.json"
+    assert (selected.video_steps, selected.video_cfg) == (4, 1.0)
+    assert (selected.video_output_width, selected.video_output_height, selected.video_fps) == (288, 512, 12)
+    assert registry.settings_for_quality("local_safe").video_workflow_path.endswith("wan2.1-i2v-api.json")

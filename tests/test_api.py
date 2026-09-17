@@ -65,9 +65,10 @@ def test_visual_quality_profile_list_is_safe_for_frontend_selector(client: TestC
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total"] == 3
+    assert body["total"] == 4
     assert body["default_profile_id"] == "local_safe"
     assert {item["profile_id"] for item in body["items"]} == {
+        "local_distilled",
         "local_safe",
         "local_balanced",
         "high_quality",

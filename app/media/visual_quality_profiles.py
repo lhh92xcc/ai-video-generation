@@ -150,6 +150,25 @@ class VisualQualityProfileRegistry:
 
     _PROFILES: tuple[VisualQualityProfile, ...] = (
         VisualQualityProfile(
+            profile_id="local_distilled",
+            label="Local Distilled · 动作实验",
+            description="Wan + Lightx2v 蒸馏组合，固定 4 步 / CFG 1；两个短镜头已观察到明显运动，身份与成片质量仍需逐镜头验收。",
+            recommended_for="本地 Wan 单镜头动作验证，需安装 CLIP Vision 与 Lightx2v",
+            image_width=432,
+            image_height=768,
+            image_steps=4,
+            image_guidance=3.5,
+            image_identity_weight=0.90,
+            video_width=288,
+            video_height=512,
+            video_fps=12,
+            video_steps=4,
+            video_cfg=1.0,
+            video_noise_aug_strength=0.012,
+            video_motion_zoom=1.04,
+            version="lightx2v-i2v-v1",
+        ),
+        VisualQualityProfile(
             profile_id="local_safe",
             label="Local Safe · 保守稳定",
             description="严格 9:16 的低压验证档，优先保证单镜头能稳定跑通；不建议直接作为最终成片。",
